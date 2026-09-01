@@ -1,25 +1,70 @@
-# WORTH Query demo host seam
+# Interface Compiler WORTH Query host
 
-Status: unavailable by design. This binary is a fail-closed guard, not a
-WORTH runtime, an in-memory store, or a transport.
+This is a real, deliberately narrow WORTH Query host. It installs and
+publishes a typed Interface Compiler application runtime through the public
+`worth-query-host::facade`, admits the demo credential and principal mapping,
+and executes one bounded application query against WORTH's in-memory
+relational graph.
 
-Run it from the repository root:
+The host requires the complete matching checkout at:
 
-```powershell
-cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml
+```text
+C:\forge_workspace\worktree_2\workspaces\worth-query
 ```
 
-The command must produce no stdout, print an availability diagnostic to stderr,
-and exit with status `78`. It starts no state machine and emits no protocol
-messages. A caller must not treat the diagnostic as a successful host response.
+That path is a Cargo dependency only; this worktree does not modify Forge
+source. The full boundary evidence is in
+[WORTH_BRIDGE_EVIDENCE.md](../WORTH_BRIDGE_EVIDENCE.md).
 
-There is currently no checked-in production process binding for
-`@interface-compiler/worth-adapter`. That package accepts a binding only when an
-integration host supplies the complete `WorthRuntimePort` through the public
-`worth-query-host::facade` boundary; it has no local fallback. The boundary
-literal is routing metadata, not proof that an arbitrary object is backed by
-WORTH. Test doubles belong only in adapter tests.
+## Run the process host
 
-The reason this seam remains closed, the public-facade evidence, the failed
-installed-source checks, and the exact prerequisites for a future typed host
-are recorded in [WORTH_BRIDGE_EVIDENCE.md](../WORTH_BRIDGE_EVIDENCE.md).
+From the repository root:
+
+```powershell
+cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml -- --serve
+```
+
+The process accepts newline-delimited JSON and emits one response per line.
+For example:
+
+```json
+{"protocol":"interface-compiler.worth-host.v1","request_id":"demo-1","operation":"read_application","application_id":"application.interface-compiler","credential":"interface-compiler-demo","deadline_ms":5000}
+```
+
+The live response contains the WORTH-derived `worth_application` projection and
+query receipt evidence. Unsupported operations return a typed
+`unavailable/unsupported` response. Invalid credentials return a typed
+authentication denial.
+
+## TypeScript client
+
+Use the app-specific client from `@interface-compiler/worth-adapter`:
+
+```ts
+import {
+  createWorthApplicationReadAdapter,
+  InterfaceCompilerWorthClient,
+} from "@interface-compiler/worth-adapter"
+
+const client = new InterfaceCompilerWorthClient({
+  process: {
+    command: "cargo",
+    args: ["run", "--quiet", "--manifest-path", "examples/interface-compiler/worth-runtime-host/Cargo.toml", "--", "--serve"],
+  },
+  credential: "interface-compiler-demo",
+})
+const worth = createWorthApplicationReadAdapter(client)
+const result = await worth.readApplication(applicationId, context)
+await client.close()
+```
+
+The client retains only child-process transport and request correlation. It
+does not cache projections, run a reducer, own lifecycle/replay/evidence
+state, or serialize WORTH recovery handles. The returned read result includes a
+typed `found`, `not_found`, `denied`, `unavailable`, `cancelled`, or `timed_out`
+outcome.
+
+This is not a complete `WorthRuntimePort` implementation. The existing broad
+`createWorthAdapter` remains closed until every read, mutation, lifecycle,
+metrics, and event method is faithfully implemented through WORTH. No
+TypeScript fallback or test runtime is supplied.

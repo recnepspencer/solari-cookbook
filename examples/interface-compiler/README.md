@@ -380,11 +380,21 @@ demo-runtime restart is explicitly out of scope. This relaxes storage durability
 not ownership: while the demo runs, the orchestrator and adapters must still not
 keep a competing lifecycle, replay, evidence, execution, or projection state.
 
-The current checkout does not yet ship a live WORTH process binding. Its
-`worth-runtime-host` command is deliberately fail-closed until an approved
-typed Interface Compiler application package and cross-language transport are
-available; see [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md) for the
-facade evidence, exact prerequisite, and launch behavior.
+This checkout now ships a deliberately narrow live WORTH process binding for
+the application read path. The Rust host installs a typed application schema,
+admitted authentication/principal mapping, and bounded one-shot query through
+`worth-query-host::facade`; the TypeScript client carries only the immutable
+projection and query receipt evidence across an app-specific process boundary.
+The complete matching WORTH checkout is required at
+`C:\forge_workspace\worktree_2\workspaces\worth-query`.
+
+The binding does not open the broad `WorthRuntimePort`: capability, replay,
+experiment, evidence, execution, metrics, mutation/lifecycle, and event
+operations remain explicit typed unavailable outcomes. There is no TypeScript
+fallback store, marker-only binding, local replay/evidence authority, or
+serialized recovery handle. See [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md)
+for the exact live/unavailable surface, old-versus-complete checkout evidence,
+and launch behavior.
 
 The other components have deliberately narrower roles:
 

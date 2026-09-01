@@ -15,13 +15,20 @@ from local observations; those values are returned only when WORTH has an
 authoritative measured projection for them.
 
 This package intentionally contains no in-memory registry, cache, reducer,
-event bus, persistence, replay engine, or projection store. It also does not
-invent an HTTP, RPC, or process protocol. The `boundary` field is integration
-routing metadata, not an attestation token: a marker-only object is not a valid
-production binding. At present no production binding is checked in; the
-Interface Compiler host seam therefore fails closed when it is launched. See
-[the bridge evidence](../../WORTH_BRIDGE_EVIDENCE.md) for the exact blocker and
-required prerequisites.
+event bus, persistence, replay engine, or projection store. The complete-port
+`WorthQueryHostFacadeBinding` remains closed unless an integration supplies all
+of `WorthRuntimePort`; its `boundary` field is routing metadata, not an
+attestation token, and a marker-only object is not a valid production binding.
+
+The package also exposes the separate app-specific
+`InterfaceCompilerWorthClient` and `createWorthApplicationReadAdapter`. That
+client crosses the checked-in demo's explicit process boundary and supports
+only the WORTH-backed `readApplication` vertical slice. It returns typed
+unavailable/denied outcomes for the boundary without pretending to implement
+the complete port. The client owns only process transport and request
+correlation; it has no local authority or WORTH recovery-handle serialization.
+See [the bridge evidence](../../WORTH_BRIDGE_EVIDENCE.md) for the exact
+live/unavailable surface and remaining prerequisites.
 
 A future app-specific typed host can implement the port without changing its
 consumers, provided it enters WORTH through the supported public facade and
