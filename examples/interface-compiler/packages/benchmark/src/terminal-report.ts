@@ -212,8 +212,8 @@ function validateEvidence(
   const expected = kind === "execution"
     ? { queryName: "interface_compiler_execution_read", projectedFieldCount: 8 }
     : kind === "capability"
-      ? { queryName: "interface_compiler_capability_read", projectedFieldCount: 8 }
-      : { queryName: "interface_compiler_active_replay_read", projectedFieldCount: 11 }
+      ? { queryName: "interface_compiler_capability_read", projectedFieldCount: 10 }
+      : { queryName: "interface_compiler_active_replay_read", projectedFieldCount: 14 }
   if (evidence.queryName !== expected.queryName || !isNonEmptyText(evidence.queryIdentity) || !Number.isSafeInteger(evidence.basisVersion) || evidence.basisVersion < 0 || evidence.projectedRecordCount !== 1 || evidence.projectedFieldCount !== expected.projectedFieldCount || evidence.basisReleased !== true) {
     issues.push(issue(path, "invalid_worth_evidence", `WORTH evidence must identify one released ${kind} projection from ${expected.queryName}`))
   }

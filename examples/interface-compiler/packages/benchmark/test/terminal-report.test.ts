@@ -28,8 +28,8 @@ function evidence(identity: string, kind: "execution" | "capability" | "replay" 
   const shape = kind === "execution"
     ? { queryName: "interface_compiler_execution_read", projectedFieldCount: 8 }
     : kind === "capability"
-      ? { queryName: "interface_compiler_capability_read", projectedFieldCount: 8 }
-      : { queryName: "interface_compiler_active_replay_read", projectedFieldCount: 11 }
+      ? { queryName: "interface_compiler_capability_read", projectedFieldCount: 10 }
+      : { queryName: "interface_compiler_active_replay_read", projectedFieldCount: 14 }
   return { ...shape, queryIdentity: identity, basisVersion: 17, projectedRecordCount: 1, basisReleased: true } as const
 }
 
