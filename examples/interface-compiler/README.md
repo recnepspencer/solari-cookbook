@@ -380,6 +380,12 @@ demo-runtime restart is explicitly out of scope. This relaxes storage durability
 not ownership: while the demo runs, the orchestrator and adapters must still not
 keep a competing lifecycle, replay, evidence, execution, or projection state.
 
+The current checkout does not yet ship a live WORTH process binding. Its
+`worth-runtime-host` command is deliberately fail-closed until an approved
+typed Interface Compiler application package and cross-language transport are
+available; see [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md) for the
+facade evidence, exact prerequisite, and launch behavior.
+
 The other components have deliberately narrower roles:
 
 * The **orchestrator** is a Worth-delegated external-effect worker. It obtains

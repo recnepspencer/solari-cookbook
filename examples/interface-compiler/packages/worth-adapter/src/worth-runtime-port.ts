@@ -41,12 +41,15 @@ export interface WorthRuntimePort extends WorthAuthority, WorthMetricsQueries {
 }
 
 /**
- * Explicit bridge handshake for a binding backed by the public
+ * Binding descriptor for an integration backed by the public
  * `worth-query-host::facade` boundary.
  *
  * The wrapper keeps transport and FFI details out of the adapter while making
- * an absent Node binding fail closed. It is not a runtime implementation and
- * it does not define an HTTP, RPC, or process protocol.
+ * an absent Node binding fail closed. `boundary` is routing metadata, not an
+ * attestation token: the adapter validates the port shape but cannot prove
+ * that an arbitrary JavaScript object is backed by WORTH. Production code must
+ * obtain this descriptor from an actual host integration. This package does
+ * not define an HTTP, RPC, or process protocol.
  */
 export const WORTH_QUERY_HOST_FACADE_BOUNDARY = "worth-query-host::facade" as const
 
