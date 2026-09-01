@@ -20,5 +20,7 @@ export type {
 export { ExperimentRunner } from "./runner.js"
 export type { ExperimentRunResult, ExperimentTerminal, OrchestratorPorts, RuntimeCleanup } from "./runner.js"
 export type { OrchestratorWorthPort } from "./worth-ports.js"
+export { activateExploredReplacement } from "./recovery.js"
+export type { ExploredReplacementRequest, ExploredReplacementResult } from "./recovery.js"
 export { assessObservationSafety, assessReplayStepSafety, detectSafetySignal } from "./safety.js"
 export type { SemanticVerificationRequest, SemanticVerificationResult, SemanticVerifier } from "./semantic-verifier.js"

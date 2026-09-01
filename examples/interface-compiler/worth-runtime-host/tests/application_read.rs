@@ -84,6 +84,7 @@ fn unsupported_operations_are_explicitly_unavailable() {
             expected_revision: None,
             settlement: None,
             event: None,
+            ..Default::default()
         },
         &host,
     );

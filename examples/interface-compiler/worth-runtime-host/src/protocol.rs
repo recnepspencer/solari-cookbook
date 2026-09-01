@@ -1,9 +1,9 @@
 //! The explicit application-specific process boundary.
 //!
-//! This is a product transport for two application operations, not a generic
-//! WORTH wire protocol. Only published projections/evidence and typed terminal
-//! outcomes cross it. WORTH runtime-local proof, graph, and recovery handles
-//! never cross the boundary.
+//! This is a finite product transport for application-specific operations, not
+//! a generic WORTH wire protocol. Only command values, published
+//! projections/evidence, and typed terminal outcomes cross it. WORTH
+//! runtime-local proof, graph, and recovery handles never cross the boundary.
 
 use std::time::Duration;
 
@@ -15,6 +15,7 @@ use crate::host::{
 };
 
 mod compiled_plan_read;
+mod replay_recovery;
 mod settlement;
 mod start_execution;
 pub use start_execution::{InterfaceCompilerHostCommitKind, InterfaceCompilerHostExecution};
@@ -27,9 +28,13 @@ pub const COMPLETE_EXECUTION_OPERATION: &str = "complete_execution";
 pub const PUBLISH_DOMAIN_EVENT_OPERATION: &str = "publish_domain_event";
 pub const READ_CAPABILITY_OPERATION: &str = "read_capability";
 pub const READ_ACTIVE_REPLAY_OPERATION: &str = "read_active_replay";
+pub const DEGRADE_REPLAY_OPERATION: &str = "degrade_replay";
+pub const ACCEPT_REPLACEMENT_CANDIDATE_OPERATION: &str = "accept_replacement_candidate";
+pub const RECORD_REPLACEMENT_VERIFICATION_OPERATION: &str = "record_replacement_verification";
+pub const ACTIVATE_REPLACEMENT_OPERATION: &str = "activate_replacement";
 pub const MAX_PROCESS_LINE_BYTES: usize = 64 * 1024;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct InterfaceCompilerHostRequest {
     pub protocol: String,
@@ -38,11 +43,20 @@ pub struct InterfaceCompilerHostRequest {
     pub application_id: Option<String>,
     pub execution_id: Option<String>,
     pub capability_id: Option<String>,
+    pub replay_version_id: Option<String>,
+    pub broken_replay_version_id: Option<String>,
     pub credential: Option<String>,
     pub deadline_ms: Option<u64>,
     pub expected_revision: Option<u64>,
+    pub expected_execution_revision: Option<u64>,
+    pub expected_capability_revision: Option<u64>,
+    pub expected_replay_revision: Option<u64>,
+    pub expected_broken_replay_revision: Option<u64>,
     pub settlement: Option<serde_json::Value>,
     pub event: Option<serde_json::Value>,
+    pub candidate: Option<serde_json::Value>,
+    pub verification_run: Option<serde_json::Value>,
+    pub verified_at: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -111,7 +125,14 @@ pub struct InterfaceCompilerHostCapability {
     pub name: String,
     pub description: String,
     pub status: String,
-    pub active_replay_version_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_replay_version_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub candidate_replay_version_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broken_replay_version_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<serde_json::Value>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct InterfaceCompilerHostActiveReplay {
@@ -124,8 +145,16 @@ pub struct InterfaceCompilerHostActiveReplay {
     pub confidence: f64,
     pub status: String,
     pub created_at: String,
-    pub verified_at: String,
+    pub discovered_from_experiment_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub supersedes: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verified_at: Option<String>,
     pub verification: InterfaceCompilerHostReplayVerification,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub broken_at: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -188,6 +217,8 @@ pub struct InterfaceCompilerHostVerificationRun {
     pub session_id: String,
     pub fresh_session: bool,
     pub outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failure_message: Option<String>,
     pub evidence_ids: Vec<String>,
     pub completed_at: String,
 }
@@ -287,6 +318,46 @@ pub enum InterfaceCompilerHostResponse {
         replay: InterfaceCompilerHostActiveReplay,
         evidence: InterfaceCompilerHostQueryEvidence,
     },
+    ReplayRecoveryApplied {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        commit: InterfaceCompilerHostCommitKind,
+        capability: InterfaceCompilerHostCapability,
+        replay: InterfaceCompilerHostActiveReplay,
+        capability_evidence: InterfaceCompilerHostQueryEvidence,
+        replay_evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    ReplayRecoveryStale {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        entity: crate::host::InterfaceCompilerReplayRecoveryEntity,
+        entity_id: String,
+        expected_revision: u64,
+        actual_revision: u64,
+    },
+    ReplayRecoveryStopped {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        reason: crate::host::InterfaceCompilerReplayRecoveryStopReason,
+        message: String,
+    },
+    ReplayRecoveryCommittedProjectionUnavailable {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        commit: InterfaceCompilerHostCommitKind,
+        message: String,
+    },
+    ReplayRecoveryDenied {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        stage: crate::host::InterfaceCompilerReplayRecoveryStage,
+        message: String,
+    },
     CompiledReadNotFound {
         protocol: &'static str,
         request_id: String,
@@ -363,13 +434,22 @@ pub fn handle_request(
     {
         return compiled_plan_read::handle_compiled_plan_read(request_id, request, host);
     }
+    if matches!(
+        request.operation.as_str(),
+        DEGRADE_REPLAY_OPERATION
+            | ACCEPT_REPLACEMENT_CANDIDATE_OPERATION
+            | RECORD_REPLACEMENT_VERIFICATION_OPERATION
+            | ACTIVATE_REPLACEMENT_OPERATION
+    ) {
+        return replay_recovery::handle_replay_recovery(request_id, request, host);
+    }
     if request.operation != READ_APPLICATION_OPERATION {
         return InterfaceCompilerHostResponse::Unavailable {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
             operation: request.operation,
             reason: InterfaceCompilerHostUnavailableReason::Unsupported,
-            message: "this host exposes only read_application, admit_execution, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay".to_string(),
+            message: "this host exposes only its declared application reads, execution/event operations, and typed replay-recovery operations".to_string(),
         };
     }
     let Some(application_id) = request.application_id else {

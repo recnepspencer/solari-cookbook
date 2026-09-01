@@ -18,6 +18,12 @@ pub const EVENT_JOURNAL_READ_QUERY_NAME: &str = "interface_compiler_event_journa
 pub const CAPABILITY_READ_QUERY_NAME: &str = "interface_compiler_capability_read";
 pub const ACTIVE_REPLAY_READ_QUERY_NAME: &str = "interface_compiler_active_replay_read";
 
+use super::replay_recovery_schema::{
+    AcceptReplacementCandidate, ActivateReplacement, CapabilityBrokenReplayIdentifier,
+    CapabilityCandidateReplayIdentifier, CapabilityFailureJson, DegradeReplay,
+    RecordReplacementVerification, ReplayBrokenAt, ReplayDiscoveredFromExperimentIdentifier,
+    ReplayFailureJson, ReplaySupersedesIdentifier,
+};
 use super::{
     active_replay_read_query_definition, application_read_query_definition,
     capability_read_query_definition, event_journal_query::event_journal_read_query_definition,
@@ -63,7 +69,8 @@ worth_query_application_schema! {
                 .field(EventJournal::reference(), EventJournalRevision::reference())
                 .field(EventJournal::reference(), EventJournalEventsJson::reference())
                 .field(Capability::reference(), CapabilityIdentifier::reference()).field(Capability::reference(), CapabilityRevision::reference()).field(Capability::reference(), CapabilityApplicationIdentifier::reference()).field(Capability::reference(), CapabilityName::reference()).field(Capability::reference(), CapabilityDescription::reference()).field(Capability::reference(), CapabilityStatus::reference()).field(Capability::reference(), CapabilityActiveReplayIdentifier::reference())
-                .field(Replay::reference(), ReplayIdentifier::reference()).field(Replay::reference(), ReplayRevision::reference()).field(Replay::reference(), ReplayCapabilityIdentifier::reference()).field(Replay::reference(), ReplayVersion::reference()).field(Replay::reference(), ReplayStepsJson::reference()).field(Replay::reference(), ReplayConfidenceMillis::reference()).field(Replay::reference(), ReplayStatus::reference()).field(Replay::reference(), ReplayCreatedAt::reference()).field(Replay::reference(), ReplayVerifiedAt::reference()).field(Replay::reference(), ReplayVerificationJson::reference())
+                .field(Capability::reference(), CapabilityCandidateReplayIdentifier::reference()).field(Capability::reference(), CapabilityBrokenReplayIdentifier::reference()).field(Capability::reference(), CapabilityFailureJson::reference())
+                .field(Replay::reference(), ReplayIdentifier::reference()).field(Replay::reference(), ReplayRevision::reference()).field(Replay::reference(), ReplayCapabilityIdentifier::reference()).field(Replay::reference(), ReplayVersion::reference()).field(Replay::reference(), ReplayStepsJson::reference()).field(Replay::reference(), ReplayConfidenceMillis::reference()).field(Replay::reference(), ReplayStatus::reference()).field(Replay::reference(), ReplayCreatedAt::reference()).field(Replay::reference(), ReplayDiscoveredFromExperimentIdentifier::reference()).field(Replay::reference(), ReplaySupersedesIdentifier::reference()).field(Replay::reference(), ReplayVerifiedAt::reference()).field(Replay::reference(), ReplayVerificationJson::reference()).field(Replay::reference(), ReplayFailureJson::reference()).field(Replay::reference(), ReplayBrokenAt::reference())
                 .relation(
                     MappingTarget::reference(),
                     ExternalMapping::reference(),
@@ -120,6 +127,33 @@ worth_query_application_schema! {
                 .operation_read_field(PublishDomainEvent::reference(), EventJournalEventsJson::reference())
                 .operation_write(PublishDomainEvent::reference(), EventJournalRevision::reference())
                 .operation_write(PublishDomainEvent::reference(), EventJournalEventsJson::reference())
+                .operation(DegradeReplay::reference().definition().no_external_effect().no_aftermath().finish())
+                .operation_decision_fact_budget(DegradeReplay::reference(), 18)
+                .operation_projection_work_budget(DegradeReplay::reference(), 48)
+                .operation_read_field(DegradeReplay::reference(), ExecutionIdentifier::reference()).operation_read_field(DegradeReplay::reference(), ExecutionLifecycle::reference()).operation_read_field(DegradeReplay::reference(), ExecutionRevision::reference()).operation_read_field(DegradeReplay::reference(), ExecutionSettlementJson::reference()).operation_read_field(DegradeReplay::reference(), ExecutionCapabilityIdentifier::reference()).operation_read_field(DegradeReplay::reference(), ExecutionReplayIdentifier::reference())
+                .operation_read_field(DegradeReplay::reference(), CapabilityIdentifier::reference()).operation_read_field(DegradeReplay::reference(), CapabilityRevision::reference()).operation_read_field(DegradeReplay::reference(), CapabilityStatus::reference()).operation_read_field(DegradeReplay::reference(), CapabilityActiveReplayIdentifier::reference()).operation_read_field(DegradeReplay::reference(), CapabilityBrokenReplayIdentifier::reference()).operation_read_field(DegradeReplay::reference(), CapabilityFailureJson::reference())
+                .operation_read_field(DegradeReplay::reference(), ReplayIdentifier::reference()).operation_read_field(DegradeReplay::reference(), ReplayRevision::reference()).operation_read_field(DegradeReplay::reference(), ReplayCapabilityIdentifier::reference()).operation_read_field(DegradeReplay::reference(), ReplayStatus::reference()).operation_read_field(DegradeReplay::reference(), ReplayFailureJson::reference()).operation_read_field(DegradeReplay::reference(), ReplayBrokenAt::reference())
+                .operation_write(DegradeReplay::reference(), CapabilityRevision::reference()).operation_write(DegradeReplay::reference(), CapabilityStatus::reference()).operation_write(DegradeReplay::reference(), CapabilityBrokenReplayIdentifier::reference()).operation_write(DegradeReplay::reference(), CapabilityFailureJson::reference()).operation_write(DegradeReplay::reference(), ReplayRevision::reference()).operation_write(DegradeReplay::reference(), ReplayStatus::reference()).operation_write(DegradeReplay::reference(), ReplayFailureJson::reference()).operation_write(DegradeReplay::reference(), ReplayBrokenAt::reference())
+                .operation(AcceptReplacementCandidate::reference().definition().no_external_effect().no_aftermath().finish())
+                .operation_decision_fact_budget(AcceptReplacementCandidate::reference(), 13)
+                .operation_projection_work_budget(AcceptReplacementCandidate::reference(), 40)
+                .operation_read_field(AcceptReplacementCandidate::reference(), CapabilityIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityRevision::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityStatus::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityActiveReplayIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityCandidateReplayIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityBrokenReplayIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), CapabilityFailureJson::reference())
+                .operation_read_field(AcceptReplacementCandidate::reference(), ReplayIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), ReplayRevision::reference()).operation_read_field(AcceptReplacementCandidate::reference(), ReplayCapabilityIdentifier::reference()).operation_read_field(AcceptReplacementCandidate::reference(), ReplayVersion::reference()).operation_read_field(AcceptReplacementCandidate::reference(), ReplayStatus::reference()).operation_read_field(AcceptReplacementCandidate::reference(), ReplayBrokenAt::reference())
+                .operation_create(AcceptReplacementCandidate::reference(), Replay::reference())
+                .operation_write(AcceptReplacementCandidate::reference(), CapabilityRevision::reference()).operation_write(AcceptReplacementCandidate::reference(), CapabilityStatus::reference()).operation_write(AcceptReplacementCandidate::reference(), CapabilityCandidateReplayIdentifier::reference())
+                .operation_write(AcceptReplacementCandidate::reference(), ReplayIdentifier::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayRevision::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayCapabilityIdentifier::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayVersion::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayStepsJson::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayConfidenceMillis::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayStatus::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayCreatedAt::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayDiscoveredFromExperimentIdentifier::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplaySupersedesIdentifier::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayVerifiedAt::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayVerificationJson::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayFailureJson::reference()).operation_write(AcceptReplacementCandidate::reference(), ReplayBrokenAt::reference())
+                .operation(RecordReplacementVerification::reference().definition().no_external_effect().no_aftermath().finish())
+                .operation_decision_fact_budget(RecordReplacementVerification::reference(), 10)
+                .operation_projection_work_budget(RecordReplacementVerification::reference(), 28)
+                .operation_read_field(RecordReplacementVerification::reference(), CapabilityIdentifier::reference()).operation_read_field(RecordReplacementVerification::reference(), CapabilityRevision::reference()).operation_read_field(RecordReplacementVerification::reference(), CapabilityStatus::reference()).operation_read_field(RecordReplacementVerification::reference(), CapabilityCandidateReplayIdentifier::reference())
+                .operation_read_field(RecordReplacementVerification::reference(), ReplayIdentifier::reference()).operation_read_field(RecordReplacementVerification::reference(), ReplayRevision::reference()).operation_read_field(RecordReplacementVerification::reference(), ReplayCapabilityIdentifier::reference()).operation_read_field(RecordReplacementVerification::reference(), ReplayStatus::reference()).operation_read_field(RecordReplacementVerification::reference(), ReplayCreatedAt::reference()).operation_read_field(RecordReplacementVerification::reference(), ReplayVerificationJson::reference())
+                .operation_write(RecordReplacementVerification::reference(), ReplayRevision::reference()).operation_write(RecordReplacementVerification::reference(), ReplayVerificationJson::reference())
+                .operation(ActivateReplacement::reference().definition().no_external_effect().no_aftermath().finish())
+                .operation_decision_fact_budget(ActivateReplacement::reference(), 15)
+                .operation_projection_work_budget(ActivateReplacement::reference(), 40)
+                .operation_read_field(ActivateReplacement::reference(), CapabilityIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityRevision::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityStatus::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityActiveReplayIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityCandidateReplayIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityBrokenReplayIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), CapabilityFailureJson::reference())
+                .operation_read_field(ActivateReplacement::reference(), ReplayIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), ReplayRevision::reference()).operation_read_field(ActivateReplacement::reference(), ReplayCapabilityIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), ReplayStatus::reference()).operation_read_field(ActivateReplacement::reference(), ReplayCreatedAt::reference()).operation_read_field(ActivateReplacement::reference(), ReplaySupersedesIdentifier::reference()).operation_read_field(ActivateReplacement::reference(), ReplayVerificationJson::reference()).operation_read_field(ActivateReplacement::reference(), ReplayVerifiedAt::reference())
+                .operation_write(ActivateReplacement::reference(), CapabilityRevision::reference()).operation_write(ActivateReplacement::reference(), CapabilityStatus::reference()).operation_write(ActivateReplacement::reference(), CapabilityActiveReplayIdentifier::reference()).operation_write(ActivateReplacement::reference(), CapabilityCandidateReplayIdentifier::reference()).operation_write(ActivateReplacement::reference(), CapabilityBrokenReplayIdentifier::reference()).operation_write(ActivateReplacement::reference(), CapabilityFailureJson::reference()).operation_write(ActivateReplacement::reference(), ReplayRevision::reference()).operation_write(ActivateReplacement::reference(), ReplayStatus::reference()).operation_write(ActivateReplacement::reference(), ReplayVerifiedAt::reference())
                 .application_query(application_read_query_definition())
                 .application_query(execution_read_query_definition())
                 .application_query(event_journal_read_query_definition())
@@ -244,22 +278,22 @@ worth_query_field!(
     String, read_only, equality
 );
 worth_query_field!(pub CapabilityIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
-worth_query_field!(pub CapabilityRevision in InterfaceCompilerSchema, Capability, CapabilityFacts: u64, read_only, equality);
+worth_query_field!(pub CapabilityRevision in InterfaceCompilerSchema, Capability, CapabilityFacts: u64, read_write, equality);
 worth_query_field!(pub CapabilityApplicationIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
 worth_query_field!(pub CapabilityName in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
 worth_query_field!(pub CapabilityDescription in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
-worth_query_field!(pub CapabilityStatus in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
-worth_query_field!(pub CapabilityActiveReplayIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityStatus in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_write, equality);
+worth_query_field!(pub CapabilityActiveReplayIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_write, equality);
 worth_query_field!(pub ReplayIdentifier in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
-worth_query_field!(pub ReplayRevision in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
+worth_query_field!(pub ReplayRevision in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_write, equality);
 worth_query_field!(pub ReplayCapabilityIdentifier in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
 worth_query_field!(pub ReplayVersion in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
 worth_query_field!(pub ReplayStepsJson in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
 worth_query_field!(pub ReplayConfidenceMillis in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
-worth_query_field!(pub ReplayStatus in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayStatus in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_write, equality);
 worth_query_field!(pub ReplayCreatedAt in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
-worth_query_field!(pub ReplayVerifiedAt in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
-worth_query_field!(pub ReplayVerificationJson in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayVerifiedAt in InterfaceCompilerSchema, Replay, ReplayFacts: optional String, read_write, equality);
+worth_query_field!(pub ReplayVerificationJson in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_write, equality);
 
 worth_query_relation!(
     pub MappingTarget in InterfaceCompilerSchema,

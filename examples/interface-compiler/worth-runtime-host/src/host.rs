@@ -15,8 +15,9 @@ use crate::application::{
     ExecutionReplayIdentifier, ExecutionRevision, ExecutionSettlementJson,
     ExecutionStartMetricsJson, InterfaceCompilerApplicationProjection,
     InterfaceCompilerPrincipalBinding, InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier,
-    ReplayConfidenceMillis, ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus,
-    ReplayStepsJson, ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
+    ReplayConfidenceMillis, ReplayCreatedAt, ReplayDiscoveredFromExperimentIdentifier,
+    ReplayIdentifier, ReplayRevision, ReplayStatus, ReplayStepsJson, ReplayVerificationJson,
+    ReplayVerifiedAt, ReplayVersion,
 };
 
 mod bootstrap;
@@ -27,6 +28,8 @@ mod execution_admission;
 mod execution_contract;
 mod execution_idempotency;
 mod execution_metrics;
+mod replay_recovery;
+pub use replay_recovery::*;
 mod settlement;
 mod settlement_query;
 mod settlement_support;
@@ -61,7 +64,7 @@ pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 pub const MAX_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 
 const QUERY_RESULT_LIMIT: usize = 1;
-const QUERY_RESULT_BYTES: usize = 16 * 1024;
+const QUERY_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InterfaceCompilerApplicationReadRequest {

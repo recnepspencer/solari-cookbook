@@ -136,6 +136,7 @@ fn process_protocol_maps_the_real_start_transition_and_lifecycle_rejection() {
             expected_revision: None,
             settlement: None,
             event: None,
+            ..Default::default()
         };
 
         assert!(matches!(

@@ -21,6 +21,9 @@ pub fn capability_read_query_definition(
     .field(capability_description_result())
     .field(capability_status_result())
     .field(capability_active_replay_id_result())
+    .optional_field(capability_candidate_replay_id_result())
+    .optional_field(capability_broken_replay_id_result())
+    .optional_field(capability_failure_json_result())
     .build();
     declaration::application_query::ApplicationQueryDefinitionBuilder::declare(
         CapabilityReadQuery::reference(),
@@ -30,7 +33,7 @@ pub fn capability_read_query_definition(
     .result_shape(shape)
     .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
     .dependency_ceiling(
-        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 7),
+        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 10),
     )
     .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
     .basis_support(
@@ -63,8 +66,12 @@ pub fn active_replay_read_query_definition(
     .field(replay_confidence_millis_result())
     .field(replay_status_result())
     .field(replay_created_at_result())
-    .field(replay_verified_at_result())
+    .field(replay_discovered_from_experiment_id_result())
+    .optional_field(replay_supersedes_id_result())
+    .optional_field(replay_verified_at_result())
     .field(replay_verification_json_result())
+    .optional_field(replay_failure_json_result())
+    .optional_field(replay_broken_at_result())
     .build();
     declaration::application_query::ApplicationQueryDefinitionBuilder::declare(
         ActiveReplayReadQuery::reference(),
@@ -74,7 +81,7 @@ pub fn active_replay_read_query_definition(
     .result_shape(shape)
     .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
     .dependency_ceiling(
-        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 10),
+        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 15),
     )
     .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
     .basis_support(

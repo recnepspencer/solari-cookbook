@@ -4,14 +4,16 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 import { promisify } from "node:util"
-import type { ApplicationId, CapabilityId, EventId, ExecutionId, InterfaceCompilerEvent, IsoTimestamp, OperationContext } from "@interface-compiler/domain"
+import type { ApplicationId, CapabilityId, CandidateReplayInput, EventId, ExecutionId, InterfaceCompilerEvent, IsoTimestamp, OperationContext, ReplayVersionId } from "@interface-compiler/domain"
 import {
   createWorthApplicationReadAdapter,
   createCompiledPlanReadAdapter,
   createWorthStartExecutionAdapter,
   InterfaceCompilerWorthClient,
+  mapReplayRecoveryResponse,
   type WorthApplicationReadResult,
 } from "../src/index.js"
+import { INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_PROTOCOL, parseHostResponse } from "../src/worth-query-wire.js"
 
 const interfaceCompilerRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)))
 const hostManifest = resolve(interfaceCompilerRoot, "worth-runtime-host/Cargo.toml")
@@ -105,8 +107,8 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
     assert.equal(replay.value.capabilityId, capability.value.id)
     assert.equal(capability.evidence.queryName, "interface_compiler_capability_read")
     assert.equal(replay.evidence.queryName, "interface_compiler_active_replay_read")
-    assert.equal(capability.evidence.projectedFieldCount, 7)
-    assert.equal(replay.evidence.projectedFieldCount, 10)
+    assert.equal(capability.evidence.projectedFieldCount, 10)
+    assert.equal(replay.evidence.projectedFieldCount, 14)
     assert.equal(capability.evidence.basisReleased, true)
     assert.equal(replay.evidence.basisReleased, true)
   }
@@ -124,7 +126,7 @@ test("compiled-plan reads fail closed on a mismatched projection identity", asyn
 })
 
 test("compiled-plan replay fails closed on foreign verification lineage", async () => {
-  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.foreign", replayVersionId: "replay.expected", sessionId: "session-1", freshSession: true, outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", discovered_from_experiment_id: "experiment.expected", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.foreign", replayVersionId: "replay.expected", sessionId: "session-1", freshSession: true, outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 14, basis_released: true } })
   const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
   const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-lineage"))
   await client.close()
@@ -133,7 +135,7 @@ test("compiled-plan replay fails closed on foreign verification lineage", async 
 })
 
 test("compiled-plan replay does not mint missing fresh-session evidence", async () => {
-  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.expected", replayVersionId: "replay.expected", sessionId: "session-1", outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", discovered_from_experiment_id: "experiment.expected", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.expected", replayVersionId: "replay.expected", sessionId: "session-1", outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 14, basis_released: true } })
   const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
   const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-fresh-session"))
   await client.close()
@@ -210,7 +212,7 @@ test("real host binary preserves unsupported operations as correlated unavailabl
     request_id: "unsupported-binary-1",
     operation: "submit_lifecycle_command",
     reason: "unsupported",
-    message: "this host exposes only read_application, admit_execution, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay",
+    message: "this host exposes only its declared application reads, execution/event operations, and typed replay-recovery operations",
   })
 })
 
@@ -255,12 +257,143 @@ test("start execution preserves cancellation, timeout, and request correlation p
   assert.deepEqual(correlated, { kind: "timed_out", operationId: shortContext.operationId, posture: { kind: "unknown", recovery: "owner_reconciliation_required" } })
 })
 
+test("recovery mutations distinguish interruption before dispatch from an uncertain sent request", async () => {
+  const capability = capabilityId("capability.walmart.search-products")
+  const replay = "replay.walmart.search-products.v1" as ReplayVersionId
+  const execution = executionId("execution.recovery-interruption")
+  const request = { executionId: execution, capabilityId: capability, replayVersionId: replay, expectedExecutionRevision: 2, expectedCapabilityRevision: 3, expectedReplayRevision: 5 }
+  const cancelledContext = context("operation.recovery-cancelled")
+  const cancelledClient = new InterfaceCompilerWorthClient({ process: { command: "unused" }, credential: "interface-compiler-demo" })
+  const cancelled = await cancelledClient.degradeReplay(request, {
+    ...cancelledContext,
+    cancellation: { ...cancelledContext.cancellation, isCancellationRequested: () => true },
+  })
+  assert.deepEqual(cancelled, { kind: "cancelled", operationId: cancelledContext.operationId, posture: { kind: "not_started" } })
+
+  const delayedClient = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", "process.stdin.resume(); setTimeout(() => {}, 1000)"] }, credential: "interface-compiler-demo" })
+  const shortContext = { ...context("operation.recovery-timeout"), budget: { maxWallClockMs: 25 } }
+  const timedOut = await delayedClient.degradeReplay(request, shortContext)
+  await delayedClient.close()
+  assert.deepEqual(timedOut, { kind: "timed_out", operationId: shortContext.operationId, posture: { kind: "unknown", recovery: "owner_reconciliation_required" } })
+})
+
+test("adapter preserves typed unresolved and known-committed WORTH recovery outcomes", () => {
+  const capability = capabilityId("capability.walmart.search-products")
+  const replay = "replay.walmart.search-products.v1" as ReplayVersionId
+  const response = parseHostResponse(JSON.stringify({
+    outcome: "replay_recovery_stopped",
+    protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+    request_id: "request.commit-stop",
+    operation: INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION,
+    reason: "indeterminate",
+    message: "WORTH could not resolve the recovery commit",
+  }))
+  assert.ok(response)
+  assert.deepEqual(
+    mapReplayRecoveryResponse(INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, capability, replay, response),
+    { kind: "authority_stopped", reason: "indeterminate", message: "WORTH could not resolve the recovery commit" },
+  )
+  const committed = parseHostResponse(JSON.stringify({
+    outcome: "replay_recovery_committed_projection_unavailable",
+    protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+    request_id: "request.committed-query-stop",
+    operation: INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION,
+    commit: "committed",
+    message: "WORTH committed recovery but could not publish its projections",
+  }))
+  assert.ok(committed)
+  assert.deepEqual(
+    mapReplayRecoveryResponse(INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, capability, replay, committed),
+    { kind: "committed_projection_unavailable", commit: "committed", message: "WORTH committed recovery but could not publish its projections" },
+  )
+})
+
 test("client settles through the real host and publishes a retained concrete event", async (testContext) => {
   const client=new InterfaceCompilerWorthClient({process:liveHostProcess(),credential:"interface-compiler-demo"});testContext.after(()=>client.close());const execution=executionId("execution.demonstration-started")
   const settled=await client.completeExecution(execution,{kind:"success",output:{ok:true}},"2026-09-01T12:00:00.000Z",1,context("operation.live-settlement"));assert.equal(settled.kind,"settled");if(settled.kind==="settled"){assert.equal(settled.projection.revision,2);assert.equal(settled.projection.lifecycle,"success");assert.equal(settled.evidence.queryName,"interface_compiler_execution_read")}
   const stale=await client.completeExecution(execution,{kind:"success"},"2026-09-01T12:00:01.000Z",0,context("operation.live-stale"));assert.equal(stale.kind,"stale")
   const event={eventId:"event.live.1" as EventId,occurredAt:"2026-09-01T12:00:00.000Z",protocol:"interface-compiler.events",schemaVersion:1,idempotencyKey:"compiled.started:execution.demonstration-001",recovery:"replay_safe",integrity:{algorithm:"sha256",digest:"abc"},type:"compiled.started",payload:{executionId:execution,mode:"compiled"}} satisfies InterfaceCompilerEvent
   assert.equal((await client.publish(event,context("operation.live-event"))).kind,"published");assert.equal((await client.publish(event,context("operation.live-event-retry"))).kind,"duplicate")
+})
+
+test("live recovery facade degrades a failed replay and activates a verified explored replacement", async (testContext) => {
+  const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
+  testContext.after(() => client.close())
+  const capability = capabilityId("capability.walmart.search-products")
+  const brokenReplay = "replay.walmart.search-products.v1" as ReplayVersionId
+  const replacement = "replay.walmart.search-products.v2" as ReplayVersionId
+  const execution = executionId("execution.typescript-replay-recovery")
+  const admitted = await client.admitExecution({
+    id: execution,
+    capabilityId: capability,
+    replayVersionId: brokenReplay,
+    mode: "compiled",
+    metrics: { startedAt: "2026-09-01T12:00:00.000Z" as IsoTimestamp, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 },
+  }, context("operation.recovery-admit"))
+  assert.equal(admitted.kind, "admitted")
+  if (admitted.kind !== "admitted") throw new Error("expected WORTH admission")
+  const replayFailure = { kind: "step_failed" as const, stepIndex: 1, message: "search target disappeared", evidenceIds: ["evidence.typescript.replay-failure" as never] }
+  const settled = await client.settleExecution(execution, { kind: "failure", reason: "replay_failed", message: "compiled replay failed", replayFailure }, "2026-09-01T12:00:04.000Z" as IsoTimestamp, admitted.projection.revision, context("operation.recovery-settle"))
+  assert.equal(settled.kind, "settled")
+  if (settled.kind !== "settled") throw new Error("expected WORTH settlement")
+
+  const degraded = await client.degradeReplay({ executionId: execution, capabilityId: capability, replayVersionId: brokenReplay, expectedExecutionRevision: settled.projection.revision, expectedCapabilityRevision: 3, expectedReplayRevision: 5 }, context("operation.recovery-degrade"))
+  assert.equal(degraded.kind, "applied")
+  if (degraded.kind !== "applied") throw new Error("expected WORTH degradation")
+  assert.equal(degraded.capability.status, "degraded")
+  assert.equal(degraded.replay.status, "broken")
+
+  const candidate: CandidateReplayInput = {
+    id: replacement,
+    capabilityId: capability,
+    version: 2,
+    steps: [
+      { type: "navigate", url: "https://interface-compiler.example/search" },
+      { type: "fill", target: { semanticDescription: "catalog query", role: "searchbox" }, value: "laundry detergent" },
+      { type: "click", target: { semanticDescription: "run catalog query", role: "button", name: "Search" } },
+    ],
+    confidence: 0.875,
+    discoveredFromExperimentId: "experiment.typescript.recovery" as never,
+    supersedes: brokenReplay,
+    createdAt: "2026-09-01T12:01:00.000Z" as IsoTimestamp,
+  }
+  const stale = await client.acceptReplacementCandidate({ capabilityId: capability, brokenReplayVersionId: brokenReplay, expectedCapabilityRevision: 3, expectedBrokenReplayRevision: degraded.replay.revision, candidate }, context("operation.recovery-stale"))
+  assert.equal(stale.kind, "stale")
+
+  const accepted = await client.acceptReplacementCandidate({ capabilityId: capability, brokenReplayVersionId: brokenReplay, expectedCapabilityRevision: degraded.capability.revision, expectedBrokenReplayRevision: degraded.replay.revision, candidate }, context("operation.recovery-candidate"))
+  assert.equal(accepted.kind, "applied")
+  if (accepted.kind !== "applied") throw new Error("expected WORTH candidate admission")
+  assert.equal(accepted.capability.status, "verifying")
+  assert.equal(accepted.replay.status, "verifying")
+  const premature = await client.activateReplacement({ capabilityId: capability, replayVersionId: replacement, expectedCapabilityRevision: accepted.capability.revision, expectedReplayRevision: accepted.replay.revision, verifiedAt: "2026-09-01T12:05:00.000Z" as IsoTimestamp }, context("operation.recovery-premature"))
+  assert.equal(premature.kind, "denied")
+
+  let current = accepted
+  for (const index of [1, 2, 3]) {
+    const recorded = await client.recordReplacementVerification({
+      capabilityId: capability,
+      replayVersionId: replacement,
+      expectedCapabilityRevision: current.capability.revision,
+      expectedReplayRevision: current.replay.revision,
+      receipt: { id: `verification.typescript.${index}` as never, sessionId: `solari.session.typescript.${index}` as never, capabilityId: capability, replayVersionId: replacement, sessionFreshness: "fresh", outcome: "success", evidenceIds: [`evidence.typescript.${index}` as never], completedAt: `2026-09-01T12:0${index + 1}:00.000Z` as IsoTimestamp },
+    }, context(`operation.recovery-verification-${index}`))
+    assert.equal(recorded.kind, "applied")
+    if (recorded.kind !== "applied") throw new Error("expected WORTH verification retention")
+    current = recorded
+  }
+  const activated = await client.activateReplacement({ capabilityId: capability, replayVersionId: replacement, expectedCapabilityRevision: current.capability.revision, expectedReplayRevision: current.replay.revision, verifiedAt: "2026-09-01T12:05:00.000Z" as IsoTimestamp }, context("operation.recovery-activate"))
+  assert.equal(activated.kind, "applied")
+  if (activated.kind !== "applied") throw new Error("expected WORTH replacement activation")
+  assert.equal(activated.capability.id, capability)
+  assert.equal(activated.capability.name, degraded.capability.name)
+  assert.equal(activated.capability.status, "healthy")
+  if (activated.capability.status === "healthy") assert.equal(activated.capability.activeReplayVersionId, replacement)
+  assert.equal(activated.replay.status, "active")
+  assert.equal(activated.replay.id, replacement)
+  assert.notDeepEqual(activated.replay.steps, degraded.replay.steps)
+  const active = await client.readActiveReplay(capability, context("operation.recovery-read-active"))
+  assert.equal(active.kind, "found")
+  if (active.kind === "found") assert.equal(active.value.id, replacement)
 })
 
 test("live narrow runtime port admits an arbitrary execution and returns WORTH-projected telemetry", async (testContext) => {

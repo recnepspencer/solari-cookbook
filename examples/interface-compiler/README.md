@@ -381,26 +381,32 @@ not ownership: while the demo runs, the orchestrator and adapters must still not
 keep a competing lifecycle, replay, evidence, execution, or projection state.
 
 This checkout now ships a deliberately narrow live WORTH process binding for
-the application read path and one execution transition. The Rust host's typed
-`start_execution` demonstration uses WORTH operation admission,
-authorization, invariant projection, effect programming, compare-and-commit,
-and a separate typed execution query. The same WORTH schema seeds one healthy
-demonstration capability and its active replay behind two admitted projection
-queries. This is an explicitly synthetic, unmeasured seed; it is not evidence
-of a compilation run against Walmart. The TypeScript client exposes narrow `readApplication`,
-`startExecution`, and compiled-plan read adapters; the latter does not claim
-the broad authority interface. The complete matching WORTH
-checkout is required at
-`C:\forge_workspace\worktree_2\workspaces\worth-query`.
+application and compiled-plan reads, execution admission/settlement, concrete
+event publication, and replay recovery. The Rust host installs typed WORTH
+queries and operations through `worth_query_host::facade`; transitions use
+authorization, invariant projection, effect programming, and
+compare-and-commit. The same WORTH schema seeds one healthy demonstration
+capability and its active replay. This is an explicitly synthetic, unmeasured
+seed; it is not evidence of a compilation run against Walmart.
 
-The binding does not open the broad `WorthRuntimePort`: its process protocol
-exposes only those four operations. Replay lineage, experiment, evidence,
-metrics, other mutation/lifecycle, and event operations remain explicit typed
-unavailable outcomes. There is no TypeScript
-fallback store, marker-only binding, local replay/evidence authority, or
-serialized recovery handle. See [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md)
-for the exact live/unavailable surface, old-versus-complete checkout evidence,
-and launch behavior.
+The recovery path is also authority-backed. `degrade_replay` accepts only a
+settled WORTH replay failure and atomically marks the active replay broken and
+its capability degraded. WORTH then accepts a concrete replacement candidate,
+validates and retains verifier-boundary receipts carrying fresh-session claims,
+and activates the replacement only after its verification threshold is
+satisfied. Activation preserves the capability identity and semantic name
+while changing its WORTH-owned active replay pointer. The TypeScript
+coordinator is stateless: it passes WORTH-issued revisions from one typed
+operation to the next and cannot infer or retain a parallel lifecycle.
+
+The binding does not open the broad `WorthRuntimePort`; operations outside its
+documented application-specific protocol remain explicit typed unavailable
+outcomes. There is no TypeScript fallback store, marker-only binding, local
+replay/evidence authority, or serialized recovery handle. The complete
+matching WORTH checkout is required at
+`C:\forge_workspace\worktree_2\workspaces\worth-query`. See
+[WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md) for the exact
+live/unavailable surface, checkout evidence, and launch behavior.
 
 The other components have deliberately narrower roles:
 
@@ -1046,6 +1052,21 @@ Worth records:
 ```text
 v5 supersedes v4
 ```
+
+## Implemented recovery slice
+
+The public facade in this worktree exercises that sequence without any Gemini,
+Solari, Walmart, paid, or other network call. A compiled replay failure is first
+settled in WORTH. The degradation operation derives its failure facts from that
+settled execution, returns the unchanged capability as `DEGRADED` in
+`EXPLORATORY` mode, and leaves the failed replay as `BROKEN`. Exploration then
+supplies a real replacement replay value with new steps and explicit lineage.
+Three distinct successful verifier-boundary receipts, each carrying a
+fresh-session claim, are recorded through WORTH before activation can replace
+the active replay. WORTH validates their shape, lineage, identity distinctness,
+and chronology; the host does not independently attest the external verifier's
+session. Stale revisions, foreign lineage, nonterminal executions, duplicate
+sessions, and insufficient evidence are denied rather than repaired locally.
 
 The published tool remains:
 

@@ -14,7 +14,7 @@ import {
   type SolariPort,
   type SolariSessionResult,
 } from "@interface-compiler/domain"
-import type { WorthExecutionAdmissionResult, WorthRuntimeSettlementResult } from "@interface-compiler/worth-adapter"
+import type { ReplayRecoveryResult, WorthExecutionAdmissionResult, WorthRuntimeSettlementResult } from "@interface-compiler/worth-adapter"
 import type { OrchestratorWorthPort } from "./worth-ports.js"
 import { admitPlan } from "./admission.js"
 import { eventIdempotencyKey, publishRuntimeEvent } from "./event-publishing.js"
@@ -63,17 +63,19 @@ export type ExperimentRunResult =
       readonly executionId: ExecutionId
       readonly terminal: ExperimentTerminal
       readonly settlement: WorthRuntimeSettlementResult
+      readonly recovery?: Extract<ReplayRecoveryResult, { readonly kind: "applied" }>
       readonly events: readonly EventPublicationResult[]
       readonly cleanup: RuntimeCleanup
     }
   | {
       readonly kind: "finalization_blocked"
       readonly executionId: ExecutionId
-      readonly reason: "invalid_clock" | "worth_submission_failed" | "authority_changed" | "event_publication_failed"
+      readonly reason: "invalid_clock" | "worth_submission_failed" | "authority_changed" | "event_publication_failed" | "replay_recovery_failed"
       readonly message?: string
       readonly authority?: WorthExecutionAdmissionResult | WorthRuntimeSettlementResult
       readonly terminal?: ExperimentTerminal
       readonly settlement?: WorthRuntimeSettlementResult
+      readonly recovery?: ReplayRecoveryResult
       readonly events: readonly EventPublicationResult[]
       readonly cleanup: RuntimeCleanup
     }
@@ -243,6 +245,24 @@ export class ExperimentRunner {
         cleanup,
       }
     }
+    let recovery: ReplayRecoveryResult | undefined
+    if (plan.kind === "compiled" && settledIntent.kind === "failure" && settledIntent.replayFailure !== undefined) {
+      try {
+        recovery = await this.ports.worth.degradeReplay({
+          executionId,
+          capabilityId: plan.request.capabilityId,
+          replayVersionId: plan.replay.id,
+          expectedExecutionRevision: settlement.projection.revision,
+          expectedCapabilityRevision: plan.capability.revision,
+          expectedReplayRevision: plan.replay.revision,
+        }, controller.context)
+      } catch {
+        return { kind: "finalization_blocked", executionId, reason: "replay_recovery_failed", message: "WORTH did not return a replay degradation result", authority: settlement, terminal: settledIntent, settlement, events, cleanup }
+      }
+      if (recovery.kind !== "applied" || recovery.capability.status !== "degraded" || recovery.capability.id !== plan.capability.id || recovery.capability.brokenReplayVersionId !== plan.replay.id || recovery.capability.mode !== "exploratory" || recovery.replay.status !== "broken" || recovery.replay.id !== plan.replay.id || recovery.replay.capabilityId !== plan.capability.id) {
+        return { kind: "finalization_blocked", executionId, reason: "replay_recovery_failed", message: "WORTH did not publish the degraded exploratory lineage", authority: settlement, terminal: settledIntent, settlement, recovery, events, cleanup }
+      }
+    }
     let finalPublication: RuntimeEventPublication | undefined
     if (plan.kind === "direct") finalPublication = await emit("direct.completed", { executionId, outcome: outcomeStatus(settledIntent) }, eventIdempotencyKey("direct.completed", executionId))
     else if (settledIntent.kind === "success") finalPublication = await emit("replay.succeeded", { executionId, replayVersionId: plan.replay.id }, eventIdempotencyKey("replay.succeeded", `${executionId}:${plan.replay.id}`))
@@ -256,6 +276,7 @@ export class ExperimentRunner {
         authority: settlement,
         terminal: settledIntent,
         settlement,
+        ...(recovery === undefined ? {} : { recovery }),
         events,
         cleanup,
       }
@@ -265,6 +286,7 @@ export class ExperimentRunner {
       executionId,
       terminal: settledIntent,
       settlement,
+      ...(recovery?.kind === "applied" ? { recovery } : {}),
       events,
       cleanup,
     }
