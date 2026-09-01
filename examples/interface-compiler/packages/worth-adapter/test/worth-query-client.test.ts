@@ -68,14 +68,14 @@ test("client crosses the process boundary and returns the WORTH application proj
   const adapter = createWorthApplicationReadAdapter(client)
 
   const found = applicationResult(
-    await adapter.readApplication(id("application.interface-compiler"), context("operation.client-found")),
+    await adapter.readApplication(id("application.walmart"), context("operation.client-found")),
   )
   assert.deepEqual(found.value, {
     projectionKind: "worth_application",
-    id: id("application.interface-compiler"),
+    id: id("application.walmart"),
     revision: 7,
-    name: "Interface Compiler Demo",
-    baseUrl: "https://interface-compiler.example",
+    name: "Walmart",
+    baseUrl: "https://www.walmart.com",
   })
   assert.equal(found.evidence.queryName, "interface_compiler_application_read")
   assert.ok(found.evidence.queryIdentity.length > 0)
@@ -95,7 +95,7 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
   const adapter = createCompiledPlanReadAdapter(client)
-  const id = capabilityId("capability.walmart.search-products")
+  const id = capabilityId("capability.walmart.tide-pods-to-checkout-boundary")
   const capability = await adapter.readCapability(id, context("operation.client-capability"))
   const replay = await adapter.readActiveReplay(id, context("operation.client-replay"))
   assert.equal(capability.kind, "found")
@@ -258,8 +258,8 @@ test("start execution preserves cancellation, timeout, and request correlation p
 })
 
 test("recovery mutations distinguish interruption before dispatch from an uncertain sent request", async () => {
-  const capability = capabilityId("capability.walmart.search-products")
-  const replay = "replay.walmart.search-products.v1" as ReplayVersionId
+  const capability = capabilityId("capability.walmart.tide-pods-to-checkout-boundary")
+  const replay = "replay.walmart.tide-pods-to-checkout-boundary.v1" as ReplayVersionId
   const execution = executionId("execution.recovery-interruption")
   const request = { executionId: execution, capabilityId: capability, replayVersionId: replay, expectedExecutionRevision: 2, expectedCapabilityRevision: 3, expectedReplayRevision: 5 }
   const cancelledContext = context("operation.recovery-cancelled")
@@ -278,8 +278,8 @@ test("recovery mutations distinguish interruption before dispatch from an uncert
 })
 
 test("adapter preserves typed unresolved and known-committed WORTH recovery outcomes", () => {
-  const capability = capabilityId("capability.walmart.search-products")
-  const replay = "replay.walmart.search-products.v1" as ReplayVersionId
+  const capability = capabilityId("capability.walmart.tide-pods-to-checkout-boundary")
+  const replay = "replay.walmart.tide-pods-to-checkout-boundary.v1" as ReplayVersionId
   const response = parseHostResponse(JSON.stringify({
     outcome: "replay_recovery_stopped",
     protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
@@ -319,9 +319,9 @@ test("client settles through the real host and publishes a retained concrete eve
 test("live recovery facade degrades a failed replay and activates a verified explored replacement", async (testContext) => {
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
-  const capability = capabilityId("capability.walmart.search-products")
-  const brokenReplay = "replay.walmart.search-products.v1" as ReplayVersionId
-  const replacement = "replay.walmart.search-products.v2" as ReplayVersionId
+  const capability = capabilityId("capability.walmart.tide-pods-to-checkout-boundary")
+  const brokenReplay = "replay.walmart.tide-pods-to-checkout-boundary.v1" as ReplayVersionId
+  const replacement = "replay.walmart.tide-pods-to-checkout-boundary.v2" as ReplayVersionId
   const execution = executionId("execution.typescript-replay-recovery")
   const admitted = await client.admitExecution({
     id: execution,
@@ -401,7 +401,7 @@ test("live narrow runtime port admits an arbitrary execution and returns WORTH-p
   testContext.after(() => client.close())
   const execution = executionId("execution.typescript-live-42")
   const startedAt = "2026-09-01T12:00:00.000Z" as IsoTimestamp
-  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.walmart.search-products"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
+  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.walmart.tide-pods-to-checkout-boundary"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
   assert.equal(admitted.kind, "admitted")
   if (admitted.kind !== "admitted") throw new Error("expected admission")
   assert.equal(admitted.projection.executionId, execution)

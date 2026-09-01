@@ -4,8 +4,8 @@ use interface_compiler_worth_runtime_host::host::*;
 use serde_json::json;
 
 const EXECUTION_ID: &str = "execution.replay-recovery-host";
-const REPLACEMENT_ID: &str = "replay.walmart.search-products.v2";
-const REPLACEMENT_EXPERIMENT_ID: &str = "experiment.recovery.search-products";
+const REPLACEMENT_ID: &str = "replay.walmart.tide-pods-to-checkout-boundary.v2";
+const REPLACEMENT_EXPERIMENT_ID: &str = "experiment.recovery.tide-pods-to-checkout-boundary";
 
 #[test]
 fn worth_owns_failure_degradation_exploration_verification_and_replacement_activation() {
@@ -25,7 +25,7 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
         });
         let (degraded_capability, broken_replay) = applied(degraded);
         assert_eq!(degraded_capability.id, DEMO_CAPABILITY_ID);
-        assert_eq!(degraded_capability.name, "SearchProducts");
+        assert_eq!(degraded_capability.name, "TidePodsToCheckoutBoundary");
         assert_eq!(degraded_capability.status, "degraded");
         assert_eq!(
             degraded_capability.active_replay_id.as_deref(),

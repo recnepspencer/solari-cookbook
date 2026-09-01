@@ -165,10 +165,13 @@ impl InterfaceCompilerWorthHost {
                     CapabilityApplicationIdentifier::reference(),
                     DEMO_APPLICATION_ID.to_string(),
                 )
-                .field(CapabilityName::reference(), "SearchProducts".to_string())
+                .field(
+                    CapabilityName::reference(),
+                    "TidePodsToCheckoutBoundary".to_string(),
+                )
                 .field(
                     CapabilityDescription::reference(),
-                    "Synthetic demo seed for a Walmart product search; not a measured compilation"
+                    "Synthetic demo seed for a bounded Walmart Tide Pods checkout-boundary task; not measured compilation evidence"
                         .to_string(),
                 )
                 .field(CapabilityStatus::reference(), "healthy".to_string())
