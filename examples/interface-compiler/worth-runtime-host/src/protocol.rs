@@ -15,12 +15,15 @@ use crate::host::{
 };
 
 mod compiled_plan_read;
+mod settlement;
 mod start_execution;
 pub use start_execution::{InterfaceCompilerHostCommitKind, InterfaceCompilerHostExecution};
 
 pub const INTERFACE_COMPILER_WORTH_PROTOCOL: &str = "interface-compiler.worth-host.v1";
 pub const READ_APPLICATION_OPERATION: &str = "read_application";
 pub const START_EXECUTION_OPERATION: &str = "start_execution";
+pub const COMPLETE_EXECUTION_OPERATION: &str = "complete_execution";
+pub const PUBLISH_DOMAIN_EVENT_OPERATION: &str = "publish_domain_event";
 pub const READ_CAPABILITY_OPERATION: &str = "read_capability";
 pub const READ_ACTIVE_REPLAY_OPERATION: &str = "read_active_replay";
 pub const MAX_PROCESS_LINE_BYTES: usize = 64 * 1024;
@@ -36,6 +39,9 @@ pub struct InterfaceCompilerHostRequest {
     pub capability_id: Option<String>,
     pub credential: Option<String>,
     pub deadline_ms: Option<u64>,
+    pub expected_revision: Option<u64>,
+    pub settlement: Option<serde_json::Value>,
+    pub event: Option<serde_json::Value>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -234,6 +240,38 @@ pub enum InterfaceCompilerHostResponse {
         kind: String,
         message: String,
     },
+    ExecutionSettled {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        commit: InterfaceCompilerHostCommitKind,
+        execution: InterfaceCompilerHostExecution,
+        evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    ExecutionStale {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        execution_id: String,
+        expected_revision: u64,
+        actual_revision: u64,
+    },
+    ExecutionLifecycleInvalid {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        execution_id: String,
+        current_lifecycle: String,
+    },
+    EventPublished {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        commit: InterfaceCompilerHostCommitKind,
+        event_id: String,
+        journal_revision: u64,
+        evidence: InterfaceCompilerHostQueryEvidence,
+    },
     CapabilityFound {
         protocol: &'static str,
         request_id: String,
@@ -311,6 +349,11 @@ pub fn handle_request(
     if request.operation == START_EXECUTION_OPERATION {
         return start_execution::handle_start_execution(request_id, request, host);
     }
+    if request.operation == COMPLETE_EXECUTION_OPERATION
+        || request.operation == PUBLISH_DOMAIN_EVENT_OPERATION
+    {
+        return settlement::handle_settlement(request_id, request, host);
+    }
     if request.operation == READ_CAPABILITY_OPERATION
         || request.operation == READ_ACTIVE_REPLAY_OPERATION
     {
@@ -322,7 +365,7 @@ pub fn handle_request(
             request_id,
             operation: request.operation,
             reason: InterfaceCompilerHostUnavailableReason::Unsupported,
-            message: "this host exposes only read_application, start_execution, read_capability, and read_active_replay".to_string(),
+            message: "this host exposes only read_application, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay".to_string(),
         };
     }
     let Some(application_id) = request.application_id else {

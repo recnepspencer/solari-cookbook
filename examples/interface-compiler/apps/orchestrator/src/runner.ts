@@ -15,7 +15,7 @@ import {
   type ExecutionProjection,
   type WorthSubmissionResult,
 } from "@interface-compiler/domain"
-import type { WorthAdapter } from "@interface-compiler/worth-adapter"
+import type { OrchestratorWorthPort } from "./worth-ports.js"
 import { admitPlan } from "./admission.js"
 import { eventIdempotencyKey, publishRuntimeEvent } from "./event-publishing.js"
 import { closeSolariSession } from "./session-cleanup.js"
@@ -33,7 +33,7 @@ import type { SemanticVerifier } from "./semantic-verifier.js"
 export interface OrchestratorPorts {
   readonly clock: Clock
   readonly ids: Pick<IdSource, "nextExecutionId" | "nextEventId">
-  readonly worth: WorthAdapter
+  readonly worth: OrchestratorWorthPort
   readonly solari: SolariPort
   readonly model?: ReasoningModel
   readonly verifier?: SemanticVerifier
@@ -272,7 +272,7 @@ export class ExperimentRunner {
 }
 
 async function settleDelegatedExecution(
-  worth: WorthAdapter,
+  worth: OrchestratorWorthPort,
   plan: ExperimentPlan,
   executionId: ExecutionId,
   executionRevision: number,

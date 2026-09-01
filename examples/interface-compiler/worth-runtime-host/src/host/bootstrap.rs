@@ -227,7 +227,9 @@ impl InterfaceCompilerWorthHost {
                 .field(
                     ExecutionLifecycle::reference(),
                     DEMO_EXECUTION_PENDING.to_string(),
-                ),
+                )
+                .field(ExecutionRevision::reference(), 0_u64)
+                .field(ExecutionSettlementJson::reference(), "null".to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind execution entity", error)
@@ -251,7 +253,9 @@ impl InterfaceCompilerWorthHost {
                 .field(
                     ExecutionLifecycle::reference(),
                     DEMO_EXECUTION_PENDING.to_string(),
-                ),
+                )
+                .field(ExecutionRevision::reference(), 0_u64)
+                .field(ExecutionSettlementJson::reference(), "null".to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind second execution entity", error)
@@ -277,13 +281,37 @@ impl InterfaceCompilerWorthHost {
                 .field(
                     ExecutionLifecycle::reference(),
                     DEMO_EXECUTION_STARTED.to_string(),
-                ),
+                )
+                .field(ExecutionRevision::reference(), 1_u64)
+                .field(ExecutionSettlementJson::reference(), "null".to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage(
                     "bind non-pending execution entity",
                     error,
                 )
+            })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
+                    EventJournal::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_EVENT_JOURNAL_ID)
+                        .map_err(|error| {
+                            InterfaceCompilerHostSetupError::from_stage(
+                                "create event journal key",
+                                error,
+                            )
+                        })?,
+                )
+                .field(
+                    EventJournalIdentifier::reference(),
+                    DEMO_EVENT_JOURNAL_ID.to_string(),
+                )
+                .field(EventJournalRevision::reference(), 0_u64)
+                .field(EventJournalEventsJson::reference(), "[]".to_string()),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage("bind event journal entity", error)
             })?;
         let invariant = Arc::new(graph.retain_invariant_projection_authority());
         let application = graph

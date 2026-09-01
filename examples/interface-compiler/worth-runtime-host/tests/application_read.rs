@@ -81,6 +81,9 @@ fn unsupported_operations_are_explicitly_unavailable() {
             capability_id: None,
             credential: None,
             deadline_ms: Some(Duration::from_secs(1).as_millis() as u64),
+            expected_revision: None,
+            settlement: None,
+            event: None,
         },
         &host,
     );

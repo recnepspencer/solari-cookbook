@@ -1,5 +1,5 @@
 import type { ApplicationProjection } from "@interface-compiler/domain"
-import type { WorthAdapter } from "@interface-compiler/worth-adapter"
+import type { OrchestratorWorthPort } from "./worth-ports.js"
 import type { OperationController, RuntimeStop } from "./operation.js"
 import { planCompiledExperiment, type ExperimentPlan } from "./planning.js"
 
@@ -16,7 +16,7 @@ type ApplicationAdmission =
   | Exclude<PlanAdmission, { readonly kind: "admitted" }>
 
 /** Rechecks Worth authority immediately before a worker can create effects. */
-export async function admitPlan(plan: ExperimentPlan, worth: WorthAdapter, controller: OperationController): Promise<PlanAdmission> {
+export async function admitPlan(plan: ExperimentPlan, worth: OrchestratorWorthPort, controller: OperationController): Promise<PlanAdmission> {
   const gate = controller.check()
   if (gate.kind === "stop") return { kind: "stopped", stop: gate.stop }
 
@@ -56,7 +56,7 @@ export async function admitPlan(plan: ExperimentPlan, worth: WorthAdapter, contr
   }
 }
 
-async function readAuthoritativeApplication(applicationId: ExperimentPlan["request"]["application"]["id"], worth: WorthAdapter, controller: OperationController): Promise<ApplicationAdmission> {
+async function readAuthoritativeApplication(applicationId: ExperimentPlan["request"]["application"]["id"], worth: OrchestratorWorthPort, controller: OperationController): Promise<ApplicationAdmission> {
   const application = await worth.readApplication(applicationId, controller.context)
   if (application.kind === "cancelled") return { kind: "stopped", stop: cancelledStop() }
   if (application.kind === "timed_out") return { kind: "stopped", stop: deadlineStop() }
