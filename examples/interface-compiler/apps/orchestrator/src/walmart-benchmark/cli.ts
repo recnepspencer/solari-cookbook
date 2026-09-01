@@ -73,14 +73,14 @@ export function summarizeRun(result: ExperimentRunResult): unknown {
       reason: result.reason,
       ...(result.message === undefined ? {} : { message: result.message }),
       cleanup: result.cleanup.kind,
-      ...(result.terminal === undefined ? {} : { terminal: result.terminal.kind }),
+      ...(result.terminal === undefined ? {} : { terminal: result.terminal }),
       ...(result.settlement === undefined ? {} : { settlement: summarizeSettlement(result.settlement) }),
     }
   }
   return {
     kind: result.kind,
     executionId: result.executionId,
-    terminal: result.terminal.kind,
+    terminal: result.terminal,
     cleanup: result.cleanup.kind,
     settlement: summarizeSettlement(result.settlement),
   }
