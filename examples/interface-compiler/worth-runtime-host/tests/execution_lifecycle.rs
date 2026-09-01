@@ -1,7 +1,8 @@
 use interface_compiler_worth_runtime_host::host::{
     InterfaceCompilerExecutionCommitKind, InterfaceCompilerStartExecutionOutcome,
     InterfaceCompilerStartExecutionRequest, InterfaceCompilerWorthHost, DEFAULT_REQUEST_TIMEOUT,
-    DEMO_CREDENTIAL, DEMO_EXECUTION_ID, DEMO_EXECUTION_STARTED,
+    DEMO_CREDENTIAL, DEMO_EXECUTION_COMPLETED, DEMO_EXECUTION_ID, DEMO_EXECUTION_ID_TWO,
+    DEMO_EXECUTION_NON_PENDING_ID, DEMO_EXECUTION_STARTED,
 };
 
 #[test]
@@ -39,7 +40,7 @@ fn start_execution_commits_through_worth_and_returns_the_typed_query_projection(
 }
 
 #[test]
-fn duplicate_start_recovers_the_original_worth_commit_idempotently() {
+fn distinct_executions_commit_independently_and_retry_recovers_its_worth_commit() {
     run_on_host_stack(|| {
         let host = InterfaceCompilerWorthHost::in_memory_demo().unwrap();
         let request = || {
@@ -57,6 +58,19 @@ fn duplicate_start_recovers_the_original_worth_commit_idempotently() {
                 ..
             }
         ));
+        assert!(matches!(
+            host.start_execution(InterfaceCompilerStartExecutionRequest::new(
+                DEMO_EXECUTION_ID_TWO,
+                DEMO_CREDENTIAL,
+                DEFAULT_REQUEST_TIMEOUT,
+            )),
+            InterfaceCompilerStartExecutionOutcome::Transitioned {
+                commit: InterfaceCompilerExecutionCommitKind::Committed,
+                projection,
+                ..
+            } if projection.execution_id == DEMO_EXECUTION_ID_TWO
+                && projection.lifecycle == DEMO_EXECUTION_STARTED
+        ));
         let retry = host.start_execution(request());
 
         assert!(matches!(
@@ -67,6 +81,34 @@ fn duplicate_start_recovers_the_original_worth_commit_idempotently() {
                 ..
             } if projection.lifecycle == DEMO_EXECUTION_STARTED
         ));
+    });
+}
+
+#[test]
+fn authoritative_non_pending_lifecycle_is_denied_without_changing_or_committing() {
+    run_on_host_stack(|| {
+        let host = InterfaceCompilerWorthHost::in_memory_demo().unwrap();
+        let request = || {
+            InterfaceCompilerStartExecutionRequest::new(
+                DEMO_EXECUTION_NON_PENDING_ID,
+                DEMO_CREDENTIAL,
+                DEFAULT_REQUEST_TIMEOUT,
+            )
+        };
+
+        for outcome in [
+            host.start_execution(request()),
+            host.start_execution(request()),
+        ] {
+            assert!(matches!(
+                outcome,
+                InterfaceCompilerStartExecutionOutcome::LifecycleNotPending {
+                    execution_id,
+                    current_lifecycle,
+                } if execution_id == DEMO_EXECUTION_NON_PENDING_ID
+                    && current_lifecycle == DEMO_EXECUTION_COMPLETED
+            ));
+        }
     });
 }
 

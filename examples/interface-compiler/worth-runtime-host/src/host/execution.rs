@@ -1,10 +1,16 @@
 //! One application-specific execution lifecycle transition owned by WORTH.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use worth_query_host::facade::{admission, declaration, primary_graph};
 
+use super::execution_idempotency::start_execution_idempotency_binding;
 use super::{block_on, InterfaceCompilerWorthHost, MAX_REQUEST_TIMEOUT};
+use super::{
+    InterfaceCompilerExecutionCommitKind, InterfaceCompilerExecutionQueryEvidence,
+    InterfaceCompilerStartExecutionDenialStage, InterfaceCompilerStartExecutionOutcome,
+    InterfaceCompilerStartExecutionRequest,
+};
 use crate::application::{
     execution_id_parameter, Execution, ExecutionIdentifier, ExecutionLifecycle, ExecutionReadQuery,
     InterfaceCompilerExecutionProjection, InterfaceCompilerSchema, Principal, StartExecution,
@@ -13,8 +19,6 @@ use crate::application::{
 
 const EXECUTION_QUERY_RESULT_LIMIT: usize = 1;
 const EXECUTION_QUERY_RESULT_BYTES: usize = 4 * 1024;
-const START_EXECUTION_IDEMPOTENCY_KEY: [u8; 32] = [0x51; 32];
-const START_EXECUTION_INTENT: [u8; 32] = [0xA7; 32];
 
 type ExecutionPrincipal =
     primary_graph::WorthQueryAuthenticatedPrincipal<InterfaceCompilerSchema, Principal, u64>;
@@ -32,69 +36,6 @@ type StartProgram = primary_graph::WorthQueryApplicationEffectProgram<
     StartExecutionInput,
     Execution,
 >;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InterfaceCompilerStartExecutionRequest {
-    pub execution_id: String,
-    pub credential: String,
-    pub timeout: Duration,
-}
-
-impl InterfaceCompilerStartExecutionRequest {
-    pub fn new(
-        execution_id: impl Into<String>,
-        credential: impl Into<String>,
-        timeout: Duration,
-    ) -> Self {
-        Self {
-            execution_id: execution_id.into(),
-            credential: credential.into(),
-            timeout,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InterfaceCompilerExecutionCommitKind {
-    Committed,
-    AlreadyCommitted,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InterfaceCompilerExecutionQueryEvidence {
-    pub query_name: String,
-    pub query_identity: String,
-    pub basis_version: u64,
-    pub projected_record_count: usize,
-    pub projected_field_count: usize,
-    pub basis_released: bool,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum InterfaceCompilerStartExecutionOutcome {
-    Transitioned {
-        commit: InterfaceCompilerExecutionCommitKind,
-        projection: InterfaceCompilerExecutionProjection,
-        evidence: InterfaceCompilerExecutionQueryEvidence,
-    },
-    Denied {
-        stage: InterfaceCompilerStartExecutionDenialStage,
-        detail: String,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum InterfaceCompilerStartExecutionDenialStage {
-    Request,
-    Authentication,
-    PrincipalResolution,
-    EntityResolution,
-    OperationAdmission,
-    DependencyProjection,
-    EffectProgram,
-    Commit,
-    Query,
-}
 
 impl InterfaceCompilerWorthHost {
     pub fn start_execution(
@@ -121,11 +62,12 @@ impl InterfaceCompilerWorthHost {
             Ok(admission) => admission,
             Err(outcome) => return outcome,
         };
-        let program = match self.build_start_effect_program(admission, &execution) {
-            Ok(program) => program,
-            Err(outcome) => return outcome,
-        };
-        let commit = match self.commit_start_program(program) {
+        let (program, canonical_execution_id) =
+            match self.build_start_effect_program(admission, &execution, &request.execution_id) {
+                Ok(program) => program,
+                Err(outcome) => return outcome,
+            };
+        let commit = match self.commit_start_program(program, &canonical_execution_id) {
             Ok(commit) => commit,
             Err(outcome) => return outcome,
         };
@@ -220,14 +162,17 @@ impl InterfaceCompilerWorthHost {
         &self,
         admission: StartAdmission,
         execution: &ExecutionIdentity,
-    ) -> Result<StartProgram, InterfaceCompilerStartExecutionOutcome> {
+        execution_id: &str,
+    ) -> Result<(StartProgram, String), InterfaceCompilerStartExecutionOutcome> {
+        let mut projected_execution_id = None;
+        let mut projected_lifecycle = None;
         let (_, projection, _) = self
             .invariant
             .project_admitted_operation(&admission, |reader, scope| {
-                reader
+                projected_execution_id = reader
                     .decision_field(scope, ExecutionIdentifier::reference())
                     .expect("the installed operation admits its execution identity read");
-                reader
+                projected_lifecycle = reader
                     .decision_field(scope, ExecutionLifecycle::reference())
                     .expect("the installed operation admits its execution lifecycle read");
             })
@@ -238,6 +183,21 @@ impl InterfaceCompilerWorthHost {
                 )
             })?
             .into_parts();
+        let current_lifecycle = projected_lifecycle
+            .expect("the resolved execution has an authoritative lifecycle fact");
+        let canonical_execution_id = projected_execution_id
+            .expect("the resolved execution has an authoritative identifier fact");
+        let pending = current_lifecycle == super::DEMO_EXECUTION_PENDING;
+        let recoverable_demo_retry = current_lifecycle == super::DEMO_EXECUTION_STARTED
+            && supports_demo_retry_recovery(&canonical_execution_id);
+        if !pending && !recoverable_demo_retry {
+            return Err(
+                InterfaceCompilerStartExecutionOutcome::LifecycleNotPending {
+                    execution_id: execution_id.to_string(),
+                    current_lifecycle,
+                },
+            );
+        }
         let dependencies = self
             .application
             .begin_projected_application_read_attempt(admission, projection)
@@ -267,22 +227,21 @@ impl InterfaceCompilerWorthHost {
                     format!("{error:?}"),
                 )
             })?;
-        effects.finish().map_err(|error| {
+        let program = effects.finish().map_err(|error| {
             denied(
                 InterfaceCompilerStartExecutionDenialStage::EffectProgram,
                 format!("{error:?}"),
             )
-        })
+        })?;
+        Ok((program, canonical_execution_id))
     }
 
     fn commit_start_program(
         &self,
         program: StartProgram,
+        execution_id: &str,
     ) -> Result<InterfaceCompilerExecutionCommitKind, InterfaceCompilerStartExecutionOutcome> {
-        let binding = primary_graph::WorthQueryApplicationIdempotencyBinding::new(
-            START_EXECUTION_IDEMPOTENCY_KEY,
-            START_EXECUTION_INTENT,
-        );
+        let binding = start_execution_idempotency_binding(execution_id);
         match self
             .application
             .compare_and_commit_application(program, binding)
@@ -368,7 +327,25 @@ fn validate_start_request(request: &InterfaceCompilerStartExecutionRequest) -> R
     if request.timeout > MAX_REQUEST_TIMEOUT {
         return Err("timeout exceeds the host maximum".to_string());
     }
+    if !matches!(
+        request.execution_id.as_str(),
+        super::DEMO_EXECUTION_ID
+            | super::DEMO_EXECUTION_ID_TWO
+            | super::DEMO_EXECUTION_NON_PENDING_ID
+    ) {
+        return Err(
+            "this demo facade only accepts its three published execution identities; retry recovery is only distinguishable for the two rows seeded pending"
+                .to_string(),
+        );
+    }
     Ok(())
+}
+
+fn supports_demo_retry_recovery(canonical_execution_id: &str) -> bool {
+    matches!(
+        canonical_execution_id,
+        super::DEMO_EXECUTION_ID | super::DEMO_EXECUTION_ID_TWO
+    )
 }
 
 fn denied(

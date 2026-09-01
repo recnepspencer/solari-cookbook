@@ -157,6 +157,59 @@ impl InterfaceCompilerWorthHost {
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind execution entity", error)
             })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
+                    Execution::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_EXECUTION_ID_TWO)
+                        .map_err(|error| {
+                            InterfaceCompilerHostSetupError::from_stage(
+                                "create second execution key",
+                                error,
+                            )
+                        })?,
+                )
+                .field(
+                    ExecutionIdentifier::reference(),
+                    DEMO_EXECUTION_ID_TWO.to_string(),
+                )
+                .field(
+                    ExecutionLifecycle::reference(),
+                    DEMO_EXECUTION_PENDING.to_string(),
+                ),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage("bind second execution entity", error)
+            })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
+                    Execution::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(
+                        DEMO_EXECUTION_NON_PENDING_ID,
+                    )
+                    .map_err(|error| {
+                        InterfaceCompilerHostSetupError::from_stage(
+                            "create non-pending execution key",
+                            error,
+                        )
+                    })?,
+                )
+                .field(
+                    ExecutionIdentifier::reference(),
+                    DEMO_EXECUTION_NON_PENDING_ID.to_string(),
+                )
+                .field(
+                    ExecutionLifecycle::reference(),
+                    DEMO_EXECUTION_COMPLETED.to_string(),
+                ),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage(
+                    "bind non-pending execution entity",
+                    error,
+                )
+            })?;
         let invariant = Arc::new(graph.retain_invariant_projection_authority());
         let application = graph
             .publish_application_runtime(runtime, authority, schema)

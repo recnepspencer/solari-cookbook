@@ -15,8 +15,7 @@ use worth_query_host::facade::{
 pub const APPLICATION_READ_QUERY_NAME: &str = "interface_compiler_application_read";
 pub const EXECUTION_READ_QUERY_NAME: &str = "interface_compiler_execution_read";
 
-mod execution_query;
-pub use execution_query::execution_read_query_definition;
+use super::execution_query::execution_read_query_definition;
 
 worth_query_application_schema! {
     pub schema InterfaceCompilerSchema {

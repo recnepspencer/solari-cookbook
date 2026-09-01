@@ -1,9 +1,6 @@
 //! Application-specific composition of the public WORTH Query host facade.
 
-use std::future::Future;
-use std::pin::pin;
 use std::sync::Arc;
-use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant, SystemTime};
 
 use worth_query_host::facade::{admission, declaration, domain, primary_graph};
@@ -17,7 +14,11 @@ use crate::application::{
 
 mod bootstrap;
 mod execution;
-pub use execution::*;
+mod execution_contract;
+mod execution_idempotency;
+mod synchronous_future;
+pub use execution_contract::*;
+use synchronous_future::block_on;
 
 pub const DEMO_APPLICATION_ID: &str = "application.interface-compiler";
 pub const DEMO_APPLICATION_REVISION: u64 = 7;
@@ -25,8 +26,11 @@ pub const DEMO_APPLICATION_NAME: &str = "Interface Compiler Demo";
 pub const DEMO_APPLICATION_BASE_URL: &str = "https://interface-compiler.example";
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
 pub const DEMO_EXECUTION_ID: &str = "execution.demonstration-001";
+pub const DEMO_EXECUTION_ID_TWO: &str = "execution.demonstration-002";
+pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-completed";
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
+pub const DEMO_EXECUTION_COMPLETED: &str = "completed";
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";
@@ -379,20 +383,5 @@ impl admission::authenticated_principal::WorthQueryAuthenticationAdapter
                 )
             })
         })
-    }
-}
-
-fn block_on<F: Future>(future: F) -> F::Output {
-    // The public authentication facade is async. This synchronous bridge only
-    // drives that future for the line-oriented demo; it owns no WORTH state,
-    // scheduling, lifecycle, or recovery authority.
-    let mut future = pin!(future);
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    loop {
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
     }
 }
