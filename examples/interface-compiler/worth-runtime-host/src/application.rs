@@ -15,6 +15,9 @@ use worth_query_host::facade::{
 pub const APPLICATION_READ_QUERY_NAME: &str = "interface_compiler_application_read";
 pub const EXECUTION_READ_QUERY_NAME: &str = "interface_compiler_execution_read";
 
+mod execution_query;
+pub use execution_query::execution_read_query_definition;
+
 worth_query_application_schema! {
     pub schema InterfaceCompilerSchema {
         owner: interface_compiler_host,
@@ -298,7 +301,7 @@ type ExecutionResultField<Slot, Field, Write> =
         declaration::application_schema::NoApplicationUnit,
     >;
 
-fn execution_id_result() -> ExecutionResultField<
+pub(super) fn execution_id_result() -> ExecutionResultField<
     ExecutionIdSlot,
     ExecutionIdentifier,
     declaration::application_schema::ReadOnly,
@@ -309,7 +312,7 @@ fn execution_id_result() -> ExecutionResultField<
     )
 }
 
-fn execution_lifecycle_result() -> ExecutionResultField<
+pub(super) fn execution_lifecycle_result() -> ExecutionResultField<
     ExecutionLifecycleSlot,
     ExecutionLifecycle,
     declaration::application_schema::ReadWrite,
@@ -390,41 +393,4 @@ pub fn application_read_query_definition(
     )
     .build()
     .expect("the Interface Compiler application read query is valid")
-}
-
-pub fn execution_read_query_definition(
-) -> declaration::application_query::ApplicationQueryDefinition<
-    InterfaceCompilerSchema,
-    ExecutionReadQuery,
-    ExecutionReadParameters,
-    InterfaceCompilerExecutionProjection,
-    Execution,
-> {
-    let shape = declaration::application_query::ApplicationQueryResultShapeBuilder::new(
-        Execution::reference(),
-    )
-    .field(execution_id_result())
-    .field(execution_lifecycle_result())
-    .build();
-
-    declaration::application_query::ApplicationQueryDefinitionBuilder::declare(
-        ExecutionReadQuery::reference(),
-    )
-    .root(Execution::reference())
-    .scope(Execution::reference())
-    .result_shape(shape)
-    .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
-    .dependency_ceiling(
-        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 2),
-    )
-    .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
-    .basis_support(
-        declaration::application_query::ApplicationQueryBasisSupport::current_and_pinned(),
-    )
-    .lanes(declaration::application_query::ApplicationQueryLaneEligibility::one_shot())
-    .public()
-    .parameter(execution_id_parameter())
-    .where_equal(ExecutionIdentifier::reference(), execution_id_parameter())
-    .build()
-    .expect("the Interface Compiler execution read query is valid")
 }
