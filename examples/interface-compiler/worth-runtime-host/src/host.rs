@@ -512,6 +512,9 @@ impl admission::authenticated_principal::WorthQueryAuthenticationAdapter
 }
 
 fn block_on<F: Future>(future: F) -> F::Output {
+    // The public authentication facade is async. This synchronous bridge only
+    // drives that future for the line-oriented demo; it owns no WORTH state,
+    // scheduling, lifecycle, or recovery authority.
     let mut future = pin!(future);
     let waker = Waker::noop();
     let mut context = Context::from_waker(waker);

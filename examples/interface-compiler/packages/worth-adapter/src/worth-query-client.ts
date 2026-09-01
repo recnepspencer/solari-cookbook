@@ -278,7 +278,12 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
       }
       this.pending.set(request.request_id, finish)
       unsubscribe = context.cancellation.onCancellationRequested(() => finish("cancelled"))
+      if (finished) return
       timer = setTimeout(() => finish("timed_out"), timeoutMs)
+      if (finished) {
+        clearTimeout(timer)
+        return
+      }
       try {
         child.stdin.write(`${JSON.stringify(request)}\n`, (error) => {
           if (error !== null && error !== undefined) finish(undefined)
