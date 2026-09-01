@@ -16,7 +16,12 @@ import type {
   WorthCommand,
   WorthSubmissionResult,
 } from "@interface-compiler/domain"
-import type { WorthMetricsQueries, WorthRuntimePort } from "./worth-runtime-port.js"
+import {
+  WORTH_QUERY_HOST_FACADE_BOUNDARY,
+  type WorthMetricsQueries,
+  type WorthQueryHostFacadeBinding,
+  type WorthRuntimePort,
+} from "./worth-runtime-port.js"
 
 type CommandOf<Kind extends WorthCommand["kind"]> = Extract<WorthCommand, { readonly kind: Kind }>
 
@@ -47,7 +52,12 @@ export interface WorthLifecycleCommands {
  */
 export interface WorthAdapter extends WorthAuthority, EventPublisher, WorthLifecycleCommands, WorthMetricsQueries {}
 
-export function createWorthAdapter(runtime: WorthRuntimePort): WorthAdapter {
+export function createWorthAdapter(binding: WorthQueryHostFacadeBinding): WorthAdapter {
+  assertWorthQueryHostFacadeBinding(binding)
+  return createWorthAdapterForRuntime(binding.runtime)
+}
+
+function createWorthAdapterForRuntime(runtime: WorthRuntimePort): WorthAdapter {
   assertWorthRuntimePort(runtime)
 
   const adapter: WorthAdapter = {
@@ -110,4 +120,17 @@ function assertWorthRuntimePort(runtime: WorthRuntimePort): void {
       throw new TypeError(`Worth runtime port is missing ${method}()`)
     }
   }
+}
+
+function assertWorthQueryHostFacadeBinding(binding: unknown): asserts binding is WorthQueryHostFacadeBinding {
+  if (binding === null || typeof binding !== "object") {
+    throw new TypeError("Worth Query host-facade binding is required")
+  }
+
+  const candidate = binding as Record<string, unknown>
+  if (candidate.boundary !== WORTH_QUERY_HOST_FACADE_BOUNDARY) {
+    throw new TypeError(`Worth Query binding must enter through ${WORTH_QUERY_HOST_FACADE_BOUNDARY}`)
+  }
+
+  assertWorthRuntimePort(candidate.runtime as WorthRuntimePort)
 }

@@ -40,5 +40,20 @@ export interface WorthRuntimePort extends WorthAuthority, WorthMetricsQueries {
   publishEvent(event: InterfaceCompilerEvent, context: OperationContext): Promise<EventPublicationResult>
 }
 
+/**
+ * Explicit bridge handshake for a binding backed by the public
+ * `worth-query-host::facade` boundary.
+ *
+ * The wrapper keeps transport and FFI details out of the adapter while making
+ * an absent Node binding fail closed. It is not a runtime implementation and
+ * it does not define an HTTP, RPC, or process protocol.
+ */
+export const WORTH_QUERY_HOST_FACADE_BOUNDARY = "worth-query-host::facade" as const
+
+export interface WorthQueryHostFacadeBinding {
+  readonly boundary: typeof WORTH_QUERY_HOST_FACADE_BOUNDARY
+  readonly runtime: WorthRuntimePort
+}
+
 /** The adapter's event surface is intentionally the domain publisher contract. */
 export type WorthEventPort = Pick<EventPublisher, "publish">
