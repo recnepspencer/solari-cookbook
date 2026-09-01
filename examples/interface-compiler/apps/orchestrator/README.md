@@ -39,6 +39,16 @@ position**. This is the visual failure trigger for replay v1: the public
 `enron.trades_stage_trade` tool remains unchanged while WORTH recovery can
 degrade v1, verify v2 three times, and activate the replacement.
 
+`createEnronOnlineWorkflowBenchmark` accepts exactly three WORTH-settled
+executions for direct mode and exactly three for compiled mode, in public-tool
+order. It aggregates only their terminal WORTH metrics. It rejects absent
+executions or costs rather than treating either as zero. Exercise that contract
+without spending provider tokens via:
+
+```text
+npm run benchmark:enron:validate
+```
+
 ## Checks
 
 ```text

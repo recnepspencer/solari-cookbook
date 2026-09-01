@@ -1,63 +1,21 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Enron Online — Gas Desk</title>
-    <link rel="stylesheet" href="/styles.css" />
-  </head>
-  <body>
-    <header>
-      <div class="brand">enron<span>online</span></div>
-      <div class="tagline">Wholesale Energy Marketplace <em>— Gas Desk</em></div>
-      <div class="operator">OPERATOR: <strong>DEMO_TRADER</strong></div>
-    </header>
-    <main>
-      <aside>
-        <h2>Desk functions</h2>
-        <a class="selected" href="#ticket">New deal ticket</a>
-        <a href="#blotter">Intraday blotter</a>
-        <a href="#limits">Counterparty limits</a>
-        <a href="#risk">Risk work queue</a>
-        <hr />
-        <small>System notice: This demonstration desk does not book trades.</small>
-      </aside>
-      <section id="ticket">
-        <div class="crumb">MARKETS &gt; NATURAL GAS &gt; DEAL ENTRY</div>
-        <h1>New physical gas deal ticket</h1>
-        <p class="legacy-note">All fields marked <b>*</b> are required by the settlement mainframe.</p>
-        <fieldset>
-          <legend>Commercial terms</legend>
-          <label>Counterparty *
-            <select id="counterparty"><option value="">-- select counterparty --</option><option value="midwest-utility-17">Midwest Utility 17</option><option value="prairie-light-08">Prairie Light Cooperative</option></select>
-          </label>
-          <label>Market *
-            <select id="market"><option value="henry-hub-gas">Henry Hub Natural Gas</option><option value="pjm-west-power">PJM West Power</option></select>
-          </label>
-          <label>Delivery period *
-            <select id="delivery"><option value="next-month">Next Month</option></select>
-          </label>
-          <label>Side *
-            <select id="side"><option value="purchase">Purchase</option><option value="sale">Sale</option></select>
-          </label>
-          <label>Volume (MMBtu) * <input id="volume" inputmode="numeric" value="50000" /></label>
-          <label>Legacy deal code * <input id="deal-code" value="NG-HH-2026-10" /></label>
-        </fieldset>
-        <div class="actions">
-          <button id="stage-v1" type="button">Add deal ticket to blotter</button>
-          <button id="stage-v2" type="button" hidden>Stage market position</button>
-          <button id="clear" type="button">Clear ticket</button>
-        </div>
-        <div id="stage-result" class="result" aria-live="polite">No deal ticket is staged.</div>
-      </section>
-      <section id="risk" class="risk-panel">
-        <h2>Risk work queue</h2>
-        <p>Staged tickets require independent limit review before they may be booked.</p>
-        <button id="risk-button" type="button" disabled>Send ticket to risk approval</button>
-        <div id="risk-result" class="result">Waiting for a staged ticket.</div>
-      </section>
-    </main>
-    <footer>ENRON ONLINE / INTERNAL DEMONSTRATION / RELEASE <span id="release">v1</span></footer>
-    <script src="/app.js"></script>
-  </body>
-</html>
+<html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Enron Online — Gas Desk</title><link rel="stylesheet" href="/styles.css" /></head>
+<body>
+  <header class="masthead"><div class="brand">enron<span>online</span></div><div class="tagline">Wholesale Energy Marketplace <em>— Natural Gas Desk</em></div><div class="operator">OPERATOR: <strong>DEMO_TRADER</strong><br />SYSTEM: ONLINE / <span id="clock">06:42:09</span></div></header>
+  <div class="utility">HOME | MARKET DATA | DEAL ENTRY | RISK | ADMINISTRATION <span>HELP &nbsp; | &nbsp; LOG OFF</span></div>
+  <main class="shell">
+    <aside class="nav-frame"><h2>Desk functions</h2><a data-nav="market" href="?page=market">Market board</a><a data-nav="ticket" href="?page=ticket">New deal ticket</a><a data-nav="blotter" href="?page=blotter">Intraday blotter</a><a data-nav="risk" href="?page=risk">Risk work queue</a><a data-nav="limits" href="?page=limits">Counterparty limits</a><a data-nav="benchmarks" href="?page=benchmarks">Compiler benchmarks</a><hr /><div class="notice"><b>DESK NOTICE 472-B</b><br />This system stages reviewable tickets only. Booking requires independent approval.</div><div class="mini-window"><b>Today's cutover</b><br />Gas scheduling: 15:00 CDT<br />Risk queue: 16:30 CDT</div></aside>
+
+    <section data-page="market" class="legacy-page"><div class="crumb">MARKETS &gt; NATURAL GAS &gt; MARKET BOARD</div><h1>Henry Hub market board</h1><div class="toolbar">[ REFRESH PRICES ] &nbsp; [ EXPORT TO LOTUS 1-2-3 ] &nbsp; <span class="green">MARKET FEED CONNECTED</span></div><table class="data-grid"><thead><tr><th>Contract</th><th>Delivery</th><th>Bid</th><th>Offer</th><th>Last</th><th>Volume</th><th>Desk note</th></tr></thead><tbody><tr class="selected-row"><td>NG-HH-2026-10</td><td>Next Month</td><td>$3.16</td><td>$3.18</td><td>$3.17</td><td>50,000 MMBtu</td><td>Approved desk instrument</td></tr><tr><td>NG-HH-2026-11</td><td>Nov 2026</td><td>$3.35</td><td>$3.39</td><td>$3.37</td><td>25,000 MMBtu</td><td>Scheduling window closed</td></tr><tr><td>PWR-PJM-2026-10</td><td>Next Month</td><td>$53.90</td><td>$54.25</td><td>$54.10</td><td>125 MW</td><td>Power desk only</td></tr></tbody></table><div class="two-column"><div class="panel"><h3>Trader's desk card</h3><p>Use market, delivery, and counterparty together. A deal ticket is only a staged blotter item until risk review returns.</p></div><div class="panel"><h3>Semantic contract</h3><code>enron.market_resolve_contract(...)</code><p>The caller receives a contract reference, not this grid.</p></div></div></section>
+
+    <section data-page="ticket" class="legacy-page" hidden><div class="crumb">MARKETS &gt; NATURAL GAS &gt; DEAL ENTRY</div><h1>New physical gas deal ticket</h1><p class="legacy-note">All fields marked <b>*</b> are required by the settlement mainframe.</p><fieldset><legend>Commercial terms</legend><div class="form-grid"><label>Counterparty *<select id="counterparty"><option value="">-- select counterparty --</option><option value="midwest-utility-17">Midwest Utility 17</option><option value="prairie-light-08">Prairie Light Cooperative</option></select></label><label>Market *<select id="market"><option value="henry-hub-gas">Henry Hub Natural Gas</option><option value="pjm-west-power">PJM West Power</option></select></label><label>Delivery period *<select id="delivery"><option value="next-month">Next Month</option></select></label><label>Side *<select id="side"><option value="purchase">Purchase</option><option value="sale">Sale</option></select></label><label>Volume (MMBtu) *<input id="volume" inputmode="numeric" value="50000" /></label><label>Legacy deal code *<input id="deal-code" value="NG-HH-2026-10" /></label></div></fieldset><div class="actions"><button id="stage-v1" type="button">Add deal ticket to blotter</button><button id="stage-v2" type="button" hidden>Stage market position</button><button id="clear" type="button">Clear ticket</button></div><div id="stage-result" class="result" aria-live="polite">No deal ticket is staged.</div><div class="panel tip"><b>Why this screen exists:</b> operations staff know which legacy fields correspond to a valid gas position. Consumers call <code>enron.trades_stage_trade</code> instead.</div></section>
+
+    <section data-page="blotter" class="legacy-page" hidden><div class="crumb">DEAL ENTRY &gt; INTRADAY BLOTTER</div><h1>Intraday deal blotter</h1><div class="toolbar">VIEW: <select><option>All staged tickets</option><option>My tickets</option><option>Pending risk review</option></select> &nbsp; LAST UPDATE: <span id="blotter-time">--</span></div><table class="data-grid"><thead><tr><th>Ticket</th><th>Counterparty</th><th>Instrument</th><th>Volume</th><th>State</th><th>Action</th></tr></thead><tbody id="blotter-body"><tr><td colspan="6" class="empty">No staged tickets in this browser session.</td></tr></tbody></table><div class="panel"><h3>Semantic capability</h3><code>enron.trades_stage_trade({ contractRef })</code><p>A replay may change from “Add deal ticket to blotter” to “Stage market position.” The semantic API does not.</p></div></section>
+
+    <section data-page="risk" class="legacy-page" hidden><div class="crumb">RISK &gt; INDEPENDENT REVIEW QUEUE</div><h1>Risk work queue</h1><p>Staged tickets require independent limit review before they may be booked.</p><table class="data-grid"><thead><tr><th>Ticket</th><th>Counterparty</th><th>Exposure</th><th>Limit check</th><th>Queue state</th></tr></thead><tbody id="risk-table"><tr><td colspan="5" class="empty">Waiting for a staged ticket.</td></tr></tbody></table><div class="actions"><button id="risk-button" type="button" disabled>Send ticket to risk approval</button><button id="return-ticket" type="button">Return to deal ticket</button></div><div id="risk-result" class="result">No approval has been requested.</div><div class="panel tip"><b>Outcome contract:</b> a successful capability call returns <code>{ status: "pending_risk_review" }</code>. It never books a trade.</div></section>
+
+    <section data-page="limits" class="legacy-page" hidden><div class="crumb">RISK &gt; COUNTERPARTY LIMITS</div><h1>Counterparty limits inquiry</h1><table class="data-grid"><thead><tr><th>Counterparty ref</th><th>Counterparty</th><th>Approved markets</th><th>Open limit</th><th>Desk status</th></tr></thead><tbody><tr><td>midwest-utility-17</td><td>Midwest Utility 17</td><td>Henry Hub Gas; PJM West Power</td><td>$500,000</td><td class="green">APPROVED</td></tr><tr><td>prairie-light-08</td><td>Prairie Light Cooperative</td><td>Henry Hub Gas</td><td>$175,000</td><td class="amber">LIMITED</td></tr></tbody></table><div class="panel"><h3>What the compiler learns</h3><p>CSV row + playbook rule + UI fields form a private implementation. The published resolver exposes only a validated commercial contract.</p></div></section>
+
+    <section data-page="benchmarks" class="legacy-page" hidden><div class="crumb">INTERFACE COMPILER &gt; WORKFLOW BENCHMARKS</div><h1>Semantic workflow benchmark control room</h1><div class="status-strip"><b>MEASUREMENT STATE:</b> <span class="amber">AWAITING LIVE WORTH RUNS</span> &nbsp; No provider cost is shown until WORTH returns terminal execution projections.</div><table class="data-grid benchmark"><thead><tr><th>Semantic call</th><th>Direct mode</th><th>Compiled mode</th><th>WORTH evidence</th></tr></thead><tbody><tr><td>enron.market_resolve_contract</td><td>Gemini reasons from CSV and desk card</td><td>Published semantic tool</td><td>Required</td></tr><tr><td>enron.trades_stage_trade</td><td>Gemini reasons through legacy page</td><td>Replay behind the tool</td><td>Required</td></tr><tr><td>enron.risk_request_approval</td><td>Gemini reasons through queue state</td><td>Replay behind the tool</td><td>Required</td></tr></tbody></table><div class="two-column"><div class="panel"><h3>Direct totals</h3><dl><dt>Model calls</dt><dd>Not measured</dd><dt>Tokens</dt><dd>Not measured</dd><dt>Model cost</dt><dd>Not measured</dd></dl></div><div class="panel"><h3>Compiled totals</h3><dl><dt>Model calls</dt><dd>Not measured</dd><dt>Browser actions</dt><dd>Not measured</dd><dt>Model cost</dt><dd>Not measured</dd></dl></div></div><div class="panel"><h3>Benchmark rule</h3><p>Exactly three WORTH-settled executions are required for each mode. The report aggregates WORTH terminal metrics only; missing costs remain <b>not measured</b>, never zero.</p></div></section>
+  </main><footer>ENRON ONLINE / INTERNAL DEMONSTRATION / RELEASE <span id="release">v1</span> <span>SCREEN <span id="screen-code">MB-01</span></span></footer><script src="/app.js"></script>
+</body></html>

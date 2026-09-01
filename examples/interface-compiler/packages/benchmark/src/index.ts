@@ -60,3 +60,11 @@ export {
   type UnavailableTerminalBenchmarkReport,
   type WorthSettledBenchmarkExecution,
 } from "./terminal-report.js"
+export {
+  createWorkflowBenchmarkReport,
+  workflowBenchmarkReportSchemaVersion,
+  type WorkflowBenchmarkInput,
+  type WorkflowBenchmarkMetrics,
+  type WorkflowBenchmarkReport,
+  type WorkflowBenchmarkStep,
+} from "./workflow-report.js"

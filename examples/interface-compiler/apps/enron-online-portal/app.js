@@ -1,22 +1,8 @@
 (() => {
-  const release = new URLSearchParams(location.search).get("release") === "v2" ? "v2" : "v1";
-  const staged = { current: null };
-  document.querySelector("#release").textContent = release;
-  document.querySelector("#stage-v1").hidden = release !== "v1";
-  document.querySelector("#stage-v2").hidden = release !== "v2";
-  const stage = () => {
-    const counterparty = document.querySelector("#counterparty").value;
-    const market = document.querySelector("#market").value;
-    const volume = Number(document.querySelector("#volume").value);
-    const code = document.querySelector("#deal-code").value.trim();
-    if (!counterparty || !Number.isFinite(volume) || volume <= 0 || !code) { document.querySelector("#stage-result").textContent = "E-104: complete counterparty, volume, and legacy deal code."; return; }
-    staged.current = `ET-${market === "henry-hub-gas" ? "NG" : "PW"}-1042`;
-    document.querySelector("#stage-result").textContent = `STAGED ${staged.current} / ${volume.toLocaleString()} MMBtu / ${code}`;
-    document.querySelector("#risk-button").disabled = false;
-    document.querySelector("#risk-result").textContent = `Ticket ${staged.current} is eligible for risk submission.`;
-  };
-  document.querySelector("#stage-v1").addEventListener("click", stage);
-  document.querySelector("#stage-v2").addEventListener("click", stage);
-  document.querySelector("#risk-button").addEventListener("click", () => { if (staged.current) document.querySelector("#risk-result").textContent = `RISK QUEUED / ${staged.current} / status: PENDING_LIMIT_REVIEW`; });
-  document.querySelector("#clear").addEventListener("click", () => { staged.current = null; document.querySelector("#stage-result").textContent = "No deal ticket is staged."; document.querySelector("#risk-button").disabled = true; document.querySelector("#risk-result").textContent = "Waiting for a staged ticket."; });
+  const pages={market:"MB-01",ticket:"DE-17",blotter:"BT-42",risk:"RQ-03",limits:"CL-09",benchmarks:"IC-01"};const params=new URLSearchParams(location.search);const release=params.get("release")==="v2"?"v2":"v1";const state={page:Object.hasOwn(pages,params.get("page"))?params.get("page"):"market",ticket:null};const byId=(id)=>document.querySelector(`#${id}`);
+  const show=(page)=>{state.page=page;document.querySelectorAll("[data-page]").forEach((el)=>el.hidden=el.dataset.page!==page);document.querySelectorAll("[data-nav]").forEach((el)=>el.classList.toggle("active",el.dataset.nav===page));byId("screen-code").textContent=pages[page];document.title=`Enron Online — ${page}`};
+  document.querySelectorAll("[data-nav]").forEach((link)=>link.addEventListener("click",(event)=>{event.preventDefault();const page=link.dataset.nav;history.pushState({},"",`?page=${page}${release==="v2"?"&release=v2":""}`);show(page)}));window.addEventListener("popstate",()=>show(new URLSearchParams(location.search).get("page")||"market"));byId("release").textContent=release;byId("stage-v1").hidden=release!=="v1";byId("stage-v2").hidden=release!=="v2";
+  const render=()=>{const blotter=byId("blotter-body"),risk=byId("risk-table"),button=byId("risk-button");if(!state.ticket){blotter.innerHTML='<tr><td colspan="6" class="empty">No staged tickets in this browser session.</td></tr>';risk.innerHTML='<tr><td colspan="5" class="empty">Waiting for a staged ticket.</td></tr>';button.disabled=true;return}blotter.innerHTML=`<tr><td>${state.ticket.ref}</td><td>${state.ticket.counterparty}</td><td>${state.ticket.code}</td><td>${state.ticket.volume.toLocaleString()} MMBtu</td><td class="amber">STAGED</td><td><button data-risk-action type="button">Review</button></td></tr>`;risk.innerHTML=`<tr><td>${state.ticket.ref}</td><td>${state.ticket.counterparty}</td><td>$159,000 indicative</td><td class="green">WITHIN OPEN LIMIT</td><td>${state.ticket.riskRequested?"PENDING_LIMIT_REVIEW":"READY FOR SUBMISSION"}</td></tr>`;button.disabled=state.ticket.riskRequested;document.querySelector("[data-risk-action]")?.addEventListener("click",()=>show("risk"))};
+  const stage=()=>{const counterparty=byId("counterparty").value,volume=Number(byId("volume").value),code=byId("deal-code").value.trim();if(!counterparty||!Number.isFinite(volume)||volume<=0||!code){byId("stage-result").textContent="E-104: complete counterparty, volume, and legacy deal code.";return}state.ticket={ref:"ET-NG-1042",counterparty:counterparty==="midwest-utility-17"?"Midwest Utility 17":"Prairie Light Cooperative",volume,code,riskRequested:false};byId("stage-result").innerHTML=`STAGED <b>${state.ticket.ref}</b> / ${volume.toLocaleString()} MMBtu / ${code} &nbsp; <a href="?page=blotter" data-open-blotter>Open intraday blotter</a>`;byId("stage-result").querySelector("[data-open-blotter]").addEventListener("click",(event)=>{event.preventDefault();show("blotter")});render()};
+  byId("stage-v1").addEventListener("click",stage);byId("stage-v2").addEventListener("click",stage);byId("clear").addEventListener("click",()=>{state.ticket=null;byId("stage-result").textContent="No deal ticket is staged.";byId("risk-result").textContent="No approval has been requested.";render()});byId("risk-button").addEventListener("click",()=>{if(!state.ticket)return;state.ticket.riskRequested=true;byId("risk-result").textContent=`RISK QUEUED / ${state.ticket.ref} / status: PENDING_LIMIT_REVIEW`;render()});byId("return-ticket").addEventListener("click",()=>show("ticket"));setInterval(()=>{byId("clock").textContent=new Date().toLocaleTimeString("en-US",{hour12:false});if(state.ticket)byId("blotter-time").textContent=new Date().toLocaleTimeString("en-US",{hour12:false})},1000);render();show(state.page);
 })();
