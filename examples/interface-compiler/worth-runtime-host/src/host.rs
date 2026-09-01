@@ -11,19 +11,22 @@ use crate::application::{
     CapabilityActiveReplayIdentifier, CapabilityApplicationIdentifier, CapabilityDescription,
     CapabilityIdentifier, CapabilityName, CapabilityRevision, CapabilityStatus, EventJournal,
     EventJournalEventsJson, EventJournalIdentifier, EventJournalRevision, Execution,
-    ExecutionIdentifier, ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson,
-    InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
-    InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier, ReplayConfidenceMillis,
-    ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus, ReplayStepsJson,
-    ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
+    ExecutionCapabilityIdentifier, ExecutionIdentifier, ExecutionLifecycle, ExecutionMode,
+    ExecutionReplayIdentifier, ExecutionRevision, ExecutionSettlementJson,
+    ExecutionStartMetricsJson, InterfaceCompilerApplicationProjection,
+    InterfaceCompilerPrincipalBinding, InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier,
+    ReplayConfidenceMillis, ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus,
+    ReplayStepsJson, ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
 };
 
 mod bootstrap;
 mod compiled_plan_read;
 pub use compiled_plan_read::*;
 mod execution;
+mod execution_admission;
 mod execution_contract;
 mod execution_idempotency;
+mod execution_metrics;
 mod settlement;
 mod settlement_query;
 mod settlement_support;

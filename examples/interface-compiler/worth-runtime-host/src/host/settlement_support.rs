@@ -67,6 +67,76 @@ pub(super) fn settlement_lifecycle(settlement: &serde_json::Value) -> &str {
         .and_then(|value| value.as_str())
         .unwrap_or("")
 }
+pub(super) fn valid_settlement(settlement: &serde_json::Value) -> bool {
+    let status = settlement_lifecycle(settlement);
+    let completion = settlement
+        .get("completion")
+        .and_then(|value| value.as_object());
+    let kind = completion
+        .and_then(|value| value.get("kind"))
+        .and_then(|value| value.as_str());
+    let ended_at = settlement.get("endedAt").and_then(|value| value.as_str());
+    let matching = matches!(
+        (status, kind),
+        ("success", Some("success"))
+            | ("failure", Some("failure"))
+            | ("stopped", Some("safety_stop"))
+    );
+    matching && ended_at.is_some_and(|value| chrono::DateTime::parse_from_rfc3339(value).is_ok())
+}
+pub(super) fn settlement_follows_start(
+    start_metrics_json: Option<&str>,
+    settlement: &serde_json::Value,
+) -> bool {
+    let started_at = start_metrics_json
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .and_then(|value| {
+            value
+                .get("startedAt")
+                .and_then(|entry| entry.as_str())
+                .map(str::to_owned)
+        });
+    let ended_at = settlement.get("endedAt").and_then(|value| value.as_str());
+    match (started_at, ended_at) {
+        (Some(started), Some(ended)) => chrono::DateTime::parse_from_rfc3339(&started)
+            .ok()
+            .zip(chrono::DateTime::parse_from_rfc3339(ended).ok())
+            .is_some_and(|(started, ended)| ended >= started),
+        _ => false,
+    }
+}
+pub(super) fn valid_measured_event(event: &serde_json::Value) -> bool {
+    let event_type = event
+        .get("type")
+        .and_then(|value| value.as_str())
+        .unwrap_or("");
+    let Some(payload) = event.get("payload").and_then(|value| value.as_object()) else {
+        return false;
+    };
+    let has_execution = payload
+        .get("executionId")
+        .and_then(|value| value.as_str())
+        .is_some();
+    match event_type {
+        "model.called" => {
+            has_execution
+                && payload
+                    .get("inputTokens")
+                    .and_then(|value| value.as_u64())
+                    .is_some()
+                && payload
+                    .get("outputTokens")
+                    .and_then(|value| value.as_u64())
+                    .is_some()
+                && payload
+                    .get("estimatedModelCostUsd")
+                    .and_then(|value| value.as_f64())
+                    .is_some_and(|value| value.is_finite() && value >= 0.0)
+        }
+        "browser.observed" | "browser.action" => has_execution,
+        _ => true,
+    }
+}
 pub(super) fn journal_contains_event(
     journal: &InterfaceCompilerEventJournalProjection,
     event_id: &str,

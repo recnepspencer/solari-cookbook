@@ -62,6 +62,7 @@ async function readAuthoritativeApplication(applicationId: ExperimentPlan["reque
   if (application.kind === "timed_out") return { kind: "stopped", stop: deadlineStop() }
   if (application.kind === "not_found") return { kind: "unavailable", reason: "authority_unavailable", message: "Worth could not authorize the application" }
   if (application.kind === "failed") return { kind: "unavailable", reason: "authority_unavailable", message: application.message }
+  if (application.kind === "denied" || application.kind === "unavailable") return { kind: "unavailable", reason: "authority_unavailable", message: application.message }
   if (application.value.id !== applicationId) return { kind: "unavailable", reason: "authority_changed", message: "Worth returned a different application projection" }
   return { kind: "ready", projection: application.value }
 }

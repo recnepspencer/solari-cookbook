@@ -25,11 +25,14 @@ The package also exposes the separate app-specific
 `createWorthStartExecutionAdapter`. That client crosses the checked-in demo's
 explicit process boundary and supports only the WORTH-backed `readApplication`
 and `startExecution` vertical slices, plus the narrow
-`WorthExecutionSettlementPort` for execution completion and concrete domain
-event publication. It returns typed
+`WorthExecutionSettlementPort` for seeded compatibility, and the
+orchestrator-specific `WorthExecutionRuntimePort` for arbitrary execution
+admission, settlement, and identity-bound telemetry publication. It returns typed
 unavailable/denied outcomes for the boundary without pretending to implement
 the complete port. The client owns only process transport and request
 correlation; it has no local authority or WORTH recovery-handle serialization.
+Replay degradation/recovery/publication, evidence recording, and standalone
+execution/benchmark reads remain explicitly unavailable.
 See [the bridge evidence](../../WORTH_BRIDGE_EVIDENCE.md) for the exact
 live/unavailable surface and remaining prerequisites.
 

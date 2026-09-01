@@ -190,6 +190,14 @@ fn execution(
         lifecycle: p.lifecycle,
         revision: p.revision,
         settlement: serde_json::from_str(&p.settlement_json).unwrap_or(serde_json::Value::Null),
+        capability_id: p.capability_id,
+        replay_version_id: if p.replay_version_id.is_empty() {
+            None
+        } else {
+            Some(p.replay_version_id)
+        },
+        mode: p.mode,
+        metrics: serde_json::from_str(&p.metrics_json).unwrap_or(serde_json::Value::Null),
     }
 }
 fn commit_kind(

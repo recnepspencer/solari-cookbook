@@ -55,6 +55,10 @@ worth_query_application_schema! {
                 .field(Execution::reference(), ExecutionLifecycle::reference())
                 .field(Execution::reference(), ExecutionRevision::reference())
                 .field(Execution::reference(), ExecutionSettlementJson::reference())
+                .field(Execution::reference(), ExecutionCapabilityIdentifier::reference())
+                .field(Execution::reference(), ExecutionReplayIdentifier::reference())
+                .field(Execution::reference(), ExecutionMode::reference())
+                .field(Execution::reference(), ExecutionStartMetricsJson::reference())
                 .field(EventJournal::reference(), EventJournalIdentifier::reference())
                 .field(EventJournal::reference(), EventJournalRevision::reference())
                 .field(EventJournal::reference(), EventJournalEventsJson::reference())
@@ -76,15 +80,35 @@ worth_query_application_schema! {
                 .operation_decision_fact_budget(StartExecution::reference(), 2)
                 .operation_projection_work_budget(StartExecution::reference(), 8)
                 .operation_read_field(StartExecution::reference(), ExecutionIdentifier::reference())
-                .operation_read_field(StartExecution::reference(), ExecutionLifecycle::reference())
                 .operation_write(StartExecution::reference(), ExecutionLifecycle::reference())
+                .operation_read_field(StartExecution::reference(), ExecutionLifecycle::reference())
+                .operation(AdmitExecution::reference().definition().no_external_effect().no_aftermath().finish())
+                .operation_decision_fact_budget(AdmitExecution::reference(), 3)
+                .operation_projection_work_budget(AdmitExecution::reference(), 12)
+                .operation_read_field(AdmitExecution::reference(), CapabilityIdentifier::reference())
+                .operation_read_field(AdmitExecution::reference(), CapabilityStatus::reference())
+                .operation_read_field(AdmitExecution::reference(), CapabilityActiveReplayIdentifier::reference())
+                .operation_create(AdmitExecution::reference(), Execution::reference())
+                .operation_create(AdmitExecution::reference(), EventJournal::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionIdentifier::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionLifecycle::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionRevision::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionSettlementJson::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionCapabilityIdentifier::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionReplayIdentifier::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionMode::reference())
+                .operation_write(AdmitExecution::reference(), ExecutionStartMetricsJson::reference())
+                .operation_write(AdmitExecution::reference(), EventJournalIdentifier::reference())
+                .operation_write(AdmitExecution::reference(), EventJournalRevision::reference())
+                .operation_write(AdmitExecution::reference(), EventJournalEventsJson::reference())
                 .operation(CompleteExecution::reference().definition().no_external_effect().no_aftermath().finish())
-                .operation_decision_fact_budget(CompleteExecution::reference(), 4)
-                .operation_projection_work_budget(CompleteExecution::reference(), 12)
+                .operation_decision_fact_budget(CompleteExecution::reference(), 5)
+                .operation_projection_work_budget(CompleteExecution::reference(), 14)
                 .operation_read_field(CompleteExecution::reference(), ExecutionIdentifier::reference())
                 .operation_read_field(CompleteExecution::reference(), ExecutionLifecycle::reference())
                 .operation_read_field(CompleteExecution::reference(), ExecutionRevision::reference())
                 .operation_read_field(CompleteExecution::reference(), ExecutionSettlementJson::reference())
+                .operation_read_field(CompleteExecution::reference(), ExecutionStartMetricsJson::reference())
                 .operation_write(CompleteExecution::reference(), ExecutionLifecycle::reference())
                 .operation_write(CompleteExecution::reference(), ExecutionRevision::reference())
                 .operation_write(CompleteExecution::reference(), ExecutionSettlementJson::reference())
@@ -147,6 +171,10 @@ worth_query_field!(
 );
 worth_query_field!(pub ExecutionRevision in InterfaceCompilerSchema, Execution, ExecutionFacts: u64, read_write, equality);
 worth_query_field!(pub ExecutionSettlementJson in InterfaceCompilerSchema, Execution, ExecutionFacts: String, read_write, equality);
+worth_query_field!(pub ExecutionCapabilityIdentifier in InterfaceCompilerSchema, Execution, ExecutionFacts: String, read_write, equality);
+worth_query_field!(pub ExecutionReplayIdentifier in InterfaceCompilerSchema, Execution, ExecutionFacts: String, read_write, equality);
+worth_query_field!(pub ExecutionMode in InterfaceCompilerSchema, Execution, ExecutionFacts: String, read_write, equality);
+worth_query_field!(pub ExecutionStartMetricsJson in InterfaceCompilerSchema, Execution, ExecutionFacts: String, read_write, equality);
 worth_query_field!(pub EventJournalIdentifier in InterfaceCompilerSchema, EventJournal, EventJournalFacts: String, read_only, equality);
 worth_query_field!(pub EventJournalRevision in InterfaceCompilerSchema, EventJournal, EventJournalFacts: u64, read_write, equality);
 worth_query_field!(pub EventJournalEventsJson in InterfaceCompilerSchema, EventJournal, EventJournalFacts: String, read_write, equality);
@@ -162,6 +190,16 @@ worth_query_operation!(pub StartExecution(StartExecutionInput) in InterfaceCompi
 worth_query_operation_reads!(StartExecution => [ExecutionIdentifier, ExecutionLifecycle]);
 worth_query_operation_writes!(StartExecution => [ExecutionLifecycle]);
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdmitExecutionInput {
+    pub execution_id: String,
+}
+worth_query_portable_type!(AdmitExecutionInput => "interface-compiler.worth.admit-execution.input.v1");
+worth_query_operation!(pub AdmitExecution(AdmitExecutionInput) in InterfaceCompilerSchema);
+worth_query_operation_reads!(AdmitExecution => [CapabilityIdentifier, CapabilityStatus, CapabilityActiveReplayIdentifier]);
+impl declaration::application_schema::OperationCreates<AdmitExecution> for Execution {}
+impl declaration::application_schema::OperationCreates<AdmitExecution> for EventJournal {}
+worth_query_operation_writes!(AdmitExecution => [ExecutionIdentifier, ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson, ExecutionCapabilityIdentifier, ExecutionReplayIdentifier, ExecutionMode, ExecutionStartMetricsJson, EventJournalIdentifier, EventJournalRevision, EventJournalEventsJson]);
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CompleteExecutionInput {
     pub execution_id: String,
     pub expected_revision: u64,
@@ -169,7 +207,7 @@ pub struct CompleteExecutionInput {
 }
 worth_query_portable_type!(CompleteExecutionInput => "interface-compiler.worth.complete-execution.input.v1");
 worth_query_operation!(pub CompleteExecution(CompleteExecutionInput) in InterfaceCompilerSchema);
-worth_query_operation_reads!(CompleteExecution => [ExecutionIdentifier, ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson]);
+worth_query_operation_reads!(CompleteExecution => [ExecutionIdentifier, ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson, ExecutionStartMetricsJson]);
 worth_query_operation_writes!(CompleteExecution => [ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson]);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublishDomainEventInput {
@@ -250,6 +288,10 @@ pub struct ExecutionIdSlot;
 pub struct ExecutionLifecycleSlot;
 pub struct ExecutionRevisionSlot;
 pub struct ExecutionSettlementSlot;
+pub struct ExecutionCapabilitySlot;
+pub struct ExecutionReplaySlot;
+pub struct ExecutionModeSlot;
+pub struct ExecutionStartMetricsSlot;
 pub struct EventJournalReadParameters;
 pub struct EventJournalIdParameter;
 pub struct EventJournalIdSlot;
@@ -267,6 +309,10 @@ worth_query_portable_type!(
 );
 worth_query_portable_type!(ExecutionRevisionSlot => "interface-compiler.worth.execution-read.revision.v1");
 worth_query_portable_type!(ExecutionSettlementSlot => "interface-compiler.worth.execution-read.settlement.v1");
+worth_query_portable_type!(ExecutionCapabilitySlot => "interface-compiler.worth.execution-read.capability.v1");
+worth_query_portable_type!(ExecutionReplaySlot => "interface-compiler.worth.execution-read.replay.v1");
+worth_query_portable_type!(ExecutionModeSlot => "interface-compiler.worth.execution-read.mode.v1");
+worth_query_portable_type!(ExecutionStartMetricsSlot => "interface-compiler.worth.execution-read.start-metrics.v1");
 worth_query_portable_type!(EventJournalIdSlot => "interface-compiler.worth.event-journal-read.id.v1");
 worth_query_portable_type!(EventJournalRevisionSlot => "interface-compiler.worth.event-journal-read.revision.v1");
 worth_query_portable_type!(EventJournalEventsSlot => "interface-compiler.worth.event-journal-read.events.v1");
@@ -307,6 +353,11 @@ pub struct InterfaceCompilerExecutionProjection {
     pub lifecycle: String,
     pub revision: u64,
     pub settlement_json: String,
+    pub capability_id: String,
+    pub replay_version_id: String,
+    pub mode: String,
+    pub start_metrics_json: String,
+    pub metrics_json: String,
 }
 worth_query_portable_type!(
     InterfaceCompilerExecutionProjection => "interface-compiler.worth.execution-read.result.v1"
@@ -362,6 +413,11 @@ impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, Exe
             lifecycle: row.field(execution_lifecycle_result())?,
             revision: row.field(execution_revision_result())?,
             settlement_json: row.field(execution_settlement_result())?,
+            capability_id: row.field(execution_capability_result())?,
+            replay_version_id: row.field(execution_replay_result())?,
+            mode: row.field(execution_mode_result())?,
+            start_metrics_json: row.field(execution_start_metrics_result())?,
+            metrics_json: row.field(execution_start_metrics_result())?,
         })
     }
 }
@@ -457,6 +513,50 @@ pub(super) fn execution_settlement_result() -> ExecutionResultField<
     declaration::application_query::ApplicationQueryResultFieldRef::new(
         "settlement_json",
         ExecutionSettlementJson::reference(),
+    )
+}
+pub(super) fn execution_capability_result() -> ExecutionResultField<
+    ExecutionCapabilitySlot,
+    ExecutionCapabilityIdentifier,
+    String,
+    declaration::application_schema::ReadWrite,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "capability_id",
+        ExecutionCapabilityIdentifier::reference(),
+    )
+}
+pub(super) fn execution_replay_result() -> ExecutionResultField<
+    ExecutionReplaySlot,
+    ExecutionReplayIdentifier,
+    String,
+    declaration::application_schema::ReadWrite,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "replay_version_id",
+        ExecutionReplayIdentifier::reference(),
+    )
+}
+pub(super) fn execution_mode_result() -> ExecutionResultField<
+    ExecutionModeSlot,
+    ExecutionMode,
+    String,
+    declaration::application_schema::ReadWrite,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "mode",
+        ExecutionMode::reference(),
+    )
+}
+pub(super) fn execution_start_metrics_result() -> ExecutionResultField<
+    ExecutionStartMetricsSlot,
+    ExecutionStartMetricsJson,
+    String,
+    declaration::application_schema::ReadWrite,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "start_metrics_json",
+        ExecutionStartMetricsJson::reference(),
     )
 }
 

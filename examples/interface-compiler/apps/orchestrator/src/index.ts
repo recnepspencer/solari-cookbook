@@ -19,5 +19,6 @@ export type {
 } from "./planning.js"
 export { ExperimentRunner } from "./runner.js"
 export type { ExperimentRunResult, ExperimentTerminal, OrchestratorPorts, RuntimeCleanup } from "./runner.js"
+export type { OrchestratorWorthPort } from "./worth-ports.js"
 export { assessObservationSafety, assessReplayStepSafety, detectSafetySignal } from "./safety.js"
 export type { SemanticVerificationRequest, SemanticVerificationResult, SemanticVerifier } from "./semantic-verifier.js"

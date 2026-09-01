@@ -1,5 +1,6 @@
 use super::settlement_support::{
     allowed_event, binding, denied, journal_contains_event, scope, settlement_lifecycle,
+    valid_measured_event, valid_settlement,
 };
 use super::*;
 use crate::application::*;
@@ -61,7 +62,7 @@ impl InterfaceCompilerWorthHost {
             || request.credential.trim().is_empty()
             || request.timeout.is_zero()
             || request.timeout > MAX_REQUEST_TIMEOUT
-            || !request.settlement.is_object()
+            || !valid_settlement(&request.settlement)
         {
             return denied("invalid completion request");
         }
@@ -105,6 +106,7 @@ impl InterfaceCompilerWorthHost {
         let mut lifecycle = None;
         let mut revision = None;
         let mut retained_settlement = None;
+        let mut start_metrics = None;
         let (_, projection, _) =
             match self
                 .invariant
@@ -123,6 +125,10 @@ impl InterfaceCompilerWorthHost {
                         .flatten();
                     retained_settlement = reader
                         .decision_field(s, ExecutionSettlementJson::reference())
+                        .ok()
+                        .flatten();
+                    start_metrics = reader
+                        .decision_field(s, ExecutionStartMetricsJson::reference())
                         .ok()
                         .flatten();
                 }) {
@@ -155,6 +161,12 @@ impl InterfaceCompilerWorthHost {
         };
         if id.as_deref() != Some(request.execution_id.as_str()) {
             return denied("resolved execution identity changed");
+        }
+        if !super::settlement_support::settlement_follows_start(
+            start_metrics.as_deref(),
+            &request.settlement,
+        ) {
+            return denied("settlement endedAt precedes or cannot be compared with startedAt");
         }
         let deps = match self
             .application
@@ -253,6 +265,7 @@ impl InterfaceCompilerWorthHost {
         if event_id.is_empty()
             || key.is_empty()
             || !allowed_event(event_type)
+            || !valid_measured_event(&request.event)
             || request.credential.trim().is_empty()
             || request.timeout.is_zero()
             || request.timeout > MAX_REQUEST_TIMEOUT
@@ -267,14 +280,23 @@ impl InterfaceCompilerWorthHost {
             Ok(v) => v,
             Err(_) => return denied("authentication denied"),
         };
-        let entity = match self.application.resolve_entity(
+        let execution_id = request
+            .event
+            .get("payload")
+            .and_then(|value| value.get("executionId"))
+            .and_then(|value| value.as_str());
+        let requested_journal_id = execution_id
+            .map(super::execution_admission::execution_journal_id)
+            .unwrap_or_else(|| DEMO_EVENT_JOURNAL_ID.to_string());
+        let resolved = self.application.resolve_entity(
             EventJournalIdentifier::reference(),
-            DEMO_EVENT_JOURNAL_ID.to_string(),
+            requested_journal_id.clone(),
             &scope,
             primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
-        ) {
-            Ok(v) => v,
-            Err(e) => return denied(format!("event journal resolution denied: {e:?}")),
+        );
+        let (journal_id, entity) = match resolved {
+            Ok(value) => (requested_journal_id, value),
+            Err(error) => return denied(format!("event journal resolution denied: {error:?}")),
         };
         let event_json = serde_json::to_string(&request.event).unwrap();
         let _input = PublishDomainEventInput {
@@ -323,7 +345,7 @@ impl InterfaceCompilerWorthHost {
                 Ok(v) => v.into_parts(),
                 Err(e) => return denied(format!("publication projection denied: {e:?}")),
             };
-        if journal.as_deref() != Some(DEMO_EVENT_JOURNAL_ID) {
+        if journal.as_deref() != Some(journal_id.as_str()) {
             return denied("event journal identity changed");
         }
         let mut retained: Vec<serde_json::Value> =
@@ -335,7 +357,7 @@ impl InterfaceCompilerWorthHost {
             if existing != &request.event {
                 return denied("event identity was already used for a different event");
             };
-            return match self.query_event_journal(&principal, &entity, &scope) {
+            return match self.query_event_journal(&principal, &entity, &journal_id, &scope) {
                 Ok((projection, evidence)) => SettlementOutcome::Applied {
                     commit: InterfaceCompilerExecutionCommitKind::AlreadyCommitted,
                     projection,
@@ -385,7 +407,7 @@ impl InterfaceCompilerWorthHost {
             }
             o => return denied(format!("publication commit denied: {o:?}")),
         };
-        match self.query_event_journal(&principal, &entity, &scope) {
+        match self.query_event_journal(&principal, &entity, &journal_id, &scope) {
             Ok((p, e)) if journal_contains_event(&p, event_id, &request.event) => {
                 SettlementOutcome::Applied {
                     commit,

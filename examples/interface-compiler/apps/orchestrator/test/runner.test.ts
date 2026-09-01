@@ -49,9 +49,10 @@ import {
 import {
   createWorthAdapter,
   WORTH_QUERY_HOST_FACADE_BOUNDARY,
-  type WorthAdapter,
   type WorthCompilationMetricsProjection,
   type WorthRuntimePort,
+  type WorthExecutionAdmissionResult,
+  type WorthRuntimeSettlementResult,
 } from "@interface-compiler/worth-adapter"
 import {
   createCancellationSource,
@@ -61,6 +62,7 @@ import {
   planDirectExperiment,
   type ExperimentPlan,
   type OrchestratorPorts,
+  type OrchestratorWorthPort,
   type SemanticVerificationResult,
   type SemanticVerifier,
 } from "../src/index.js"
@@ -425,7 +427,7 @@ function completedProjection(command: Extract<WorthCommand, { readonly kind: "co
   return { ...runningProjection(execution), revision: command.expectedExecutionRevision + 1, status: "failure", outcome: command.completion, metrics }
 }
 
-function ports(worth: WorthAdapter, solari: SolariPort, model?: ReasoningModel, verifier?: SemanticVerifier, ids = operationIds()): OrchestratorPorts {
+function ports(worth: OrchestratorWorthPort, solari: SolariPort, model?: ReasoningModel, verifier?: SemanticVerifier, ids = operationIds()): OrchestratorPorts {
   return { clock, ids, worth, solari, ...(model === undefined ? {} : { model }), ...(verifier === undefined ? {} : { verifier }) }
 }
 
@@ -437,8 +439,39 @@ function operationIds(): Pick<IdSource, "nextExecutionId" | "nextEventId"> {
   }
 }
 
-function bind(runtime: FakeWorthRuntime): WorthAdapter {
-  return createWorthAdapter({ boundary: WORTH_QUERY_HOST_FACADE_BOUNDARY, runtime })
+function bind(runtime: FakeWorthRuntime): OrchestratorWorthPort {
+  const adapter = createWorthAdapter({ boundary: WORTH_QUERY_HOST_FACADE_BOUNDARY, runtime })
+  const evidence = { queryName: "test", queryIdentity: "test", basisVersion: 1, projectedRecordCount: 1, projectedFieldCount: 8, basisReleased: true } as const
+  return {
+    readApplication: async (id, context) => {
+      const result = await adapter.readApplication(id, context)
+      return result.kind === "found" ? { ...result, evidence } : result
+    },
+    readCapability: async (id, context) => {
+      const result = await adapter.readCapability(id, context)
+      return result.kind === "found" ? { ...result, evidence } : result
+    },
+    readActiveReplay: async (id, context) => {
+      const result = await adapter.readActiveReplay(id, context)
+      return result.kind === "found" ? { ...result, evidence } : result
+    },
+    readEvidence: adapter.readEvidence,
+    publish: adapter.publish,
+    admitExecution: async (execution, context): Promise<WorthExecutionAdmissionResult> => {
+      const result = await adapter.startExecution(execution, context)
+      if (result.kind !== "accepted" || result.projection.kind !== "execution") return result.kind === "cancelled" || result.kind === "timed_out" ? result : { kind: "denied", executionId: execution.id, message: "test WORTH admission rejected" }
+      const projection = result.projection.projection
+      return { kind: "admitted", commit: "committed", projection: { projectionKind: "worth_running_execution", executionId: projection.id, capabilityId: projection.capabilityId, ...(projection.replayVersionId === undefined ? {} : { replayVersionId: projection.replayVersionId }), mode: projection.mode, lifecycle: "started", revision: projection.revision, metrics: projection.metrics }, evidence }
+    },
+    settleExecution: async (executionId, completion, endedAt, revision, context): Promise<WorthRuntimeSettlementResult> => {
+      const result = await adapter.completeExecution(executionId, completion, endedAt, revision, context)
+      if (result.kind !== "accepted" || result.projection.kind !== "execution") return result.kind === "cancelled" || result.kind === "timed_out" ? result : { kind: "denied", executionId, message: "test WORTH settlement rejected" }
+      const projection = result.projection.projection
+      if (projection.status === "running") return { kind: "denied", executionId, message: "test settlement remained running" }
+      if (projection.metrics.endedAt === undefined || projection.metrics.wallClockMs === undefined) return { kind: "denied", executionId, message: "test settlement omitted terminal metrics" }
+      return { kind: "settled", commit: "committed", projection: { projectionKind: "worth_terminal_execution", executionId: projection.id, capabilityId: projection.capabilityId, ...(projection.replayVersionId === undefined ? {} : { replayVersionId: projection.replayVersionId }), mode: projection.mode, lifecycle: projection.status, revision: projection.revision, metrics: projection.metrics, outcome: completion }, evidence }
+    },
+  }
 }
 
 function directPlan(expectedOutcome?: readonly Condition[]): ExperimentPlan {
@@ -538,7 +571,7 @@ test("compiled start publishes its replay boundary before Solari session creatio
   assert.deepEqual(runtime.events.map((event) => event.type), ["compiled.started", "replay.failed"])
 })
 
-test("compiled replay failure sends revisioned degradation commands through Worth", async () => {
+test("compiled replay failure settles without unavailable replay degradation commands", async () => {
   const runtime = new FakeWorthRuntime()
   const planResult = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "done" }]), bind(runtime), operationContext())
   if (planResult.kind !== "planned") throw new Error("expected compiled plan")
@@ -552,13 +585,7 @@ test("compiled replay failure sends revisioned degradation commands through Wort
   assert.equal(result.kind, "attempted")
   if (result.kind !== "attempted") throw new Error("expected attempted run")
   assert.equal(result.terminal.kind, "failure")
-  assert.deepEqual(runtime.commands.map((command) => command.kind), ["start_execution", "record_replay_failure", "resume_capability_exploration", "complete_execution"])
-  const replayFailureCommand = runtime.commands.find((command) => command.kind === "record_replay_failure")
-  if (replayFailureCommand?.kind !== "record_replay_failure") throw new Error("expected replay failure command")
-  assert.equal(replayFailureCommand.expectedReplayRevision, 7)
-  const resumeCommand = runtime.commands.find((command) => command.kind === "resume_capability_exploration")
-  if (resumeCommand?.kind !== "resume_capability_exploration") throw new Error("expected exploration resume command")
-  assert.equal(resumeCommand.expectedCapabilityRevision, 4)
+  assert.deepEqual(runtime.commands.map((command) => command.kind), ["start_execution", "complete_execution"])
   const completion = runtime.commands.at(-1)
   if (completion?.kind !== "complete_execution") throw new Error("expected completion command")
   assert.equal(completion.expectedExecutionRevision, 1)
@@ -587,7 +614,7 @@ test("Worth can reject execution start before Solari is called", async () => {
   assert.equal(result.kind, "not_started")
   if (result.kind !== "not_started") throw new Error("expected rejected start")
   assert.equal(result.reason, "execution_start_rejected")
-  assert.equal(result.authority?.kind, "stale")
+  assert.equal(result.authority?.kind, "denied")
 })
 
 test("Worth event publication failure prevents the next external effect", async () => {
@@ -658,7 +685,7 @@ test("an admitted start projection mismatch blocks all delegated effects", async
   assert.equal(result.executionId, "execution.1")
   assert.equal(result.reason, "authority_changed")
   assert.equal(result.message, "Worth accepted execution start without a matching running execution projection")
-  assert.equal(result.authority?.kind, "accepted")
+  assert.equal(result.authority?.kind, "admitted")
   assert.deepEqual(result.events, [])
   assert.deepEqual(result.cleanup, { kind: "not_created" })
   assert.equal(solari.sessions.length, 0)
@@ -742,7 +769,7 @@ test("a direct browser failure remains an execution failure and does not degrade
   assert.equal(completion.completion.reason, "execution_failed")
 })
 
-test("a false compiled postcondition is submitted as a replay failure", async () => {
+test("a false compiled postcondition is settled while replay degradation remains unavailable", async () => {
   const runtime = new FakeWorthRuntime()
   runtime.replay = verifiedReplayProjection([clickStep()])
   const planned = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "must be present" }]), bind(runtime), operationContext())
@@ -755,7 +782,7 @@ test("a false compiled postcondition is submitted as a replay failure", async ()
   assert.equal(result.terminal.kind, "failure")
   if (result.terminal.kind !== "failure") throw new Error("expected postcondition failure")
   assert.equal(result.terminal.replayFailure?.kind, "postcondition_failed")
-  assert.deepEqual(runtime.commands.map((command) => command.kind), ["start_execution", "record_replay_failure", "resume_capability_exploration", "complete_execution"])
+  assert.deepEqual(runtime.commands.map((command) => command.kind), ["start_execution", "complete_execution"])
 })
 
 test("compiled postcondition matching is semantic and evidence is re-authorized by Worth", async () => {
@@ -770,7 +797,7 @@ test("compiled postcondition matching is semantic and evidence is re-authorized 
   const result = await new ExperimentRunner(ports(bind(runtime), solari, undefined, verifier)).run(planned.plan, operationController().controller)
 
   assert.equal(result.kind, "attempted")
-  assert.equal(runtime.commands.some((command) => command.kind === "record_replay_failure"), true)
+  assert.equal(runtime.commands.some((command) => command.kind === "record_replay_failure"), false)
 })
 
 test("compiled postcondition with malformed evidence cannot degrade the active replay", async () => {

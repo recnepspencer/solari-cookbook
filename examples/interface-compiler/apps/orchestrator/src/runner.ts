@@ -5,6 +5,7 @@ import {
   type ExecutionCompletion,
   type ExecutionId,
   type ExecutionStart,
+  type IsoTimestamp,
   type IdSource,
   type OperationContext,
   type PartialEffectPosture,
@@ -12,9 +13,8 @@ import {
   type SolariCloseResult,
   type SolariPort,
   type SolariSessionResult,
-  type ExecutionProjection,
-  type WorthSubmissionResult,
 } from "@interface-compiler/domain"
+import type { WorthExecutionAdmissionResult, WorthRuntimeSettlementResult } from "@interface-compiler/worth-adapter"
 import type { OrchestratorWorthPort } from "./worth-ports.js"
 import { admitPlan } from "./admission.js"
 import { eventIdempotencyKey, publishRuntimeEvent } from "./event-publishing.js"
@@ -54,7 +54,7 @@ export type ExperimentRunResult =
         | "session_creation_failed"
       readonly executionId?: ExecutionId
       readonly stop?: RuntimeStop
-      readonly authority?: WorthSubmissionResult
+      readonly authority?: WorthExecutionAdmissionResult
       readonly message?: string
       readonly events: readonly EventPublicationResult[]
     }
@@ -62,7 +62,7 @@ export type ExperimentRunResult =
       readonly kind: "attempted"
       readonly executionId: ExecutionId
       readonly terminal: ExperimentTerminal
-      readonly settlement: WorthSubmissionResult
+      readonly settlement: WorthRuntimeSettlementResult
       readonly events: readonly EventPublicationResult[]
       readonly cleanup: RuntimeCleanup
     }
@@ -71,9 +71,9 @@ export type ExperimentRunResult =
       readonly executionId: ExecutionId
       readonly reason: "invalid_clock" | "worth_submission_failed" | "authority_changed" | "event_publication_failed"
       readonly message?: string
-      readonly authority?: WorthSubmissionResult
+      readonly authority?: WorthExecutionAdmissionResult | WorthRuntimeSettlementResult
       readonly terminal?: ExperimentTerminal
-      readonly settlement?: WorthSubmissionResult
+      readonly settlement?: WorthRuntimeSettlementResult
       readonly events: readonly EventPublicationResult[]
       readonly cleanup: RuntimeCleanup
     }
@@ -119,15 +119,15 @@ export class ExperimentRunner {
     }
     const startGate = controller.check()
     if (startGate.kind === "stop") return { kind: "not_started", reason: "operation_stopped", stop: startGate.stop, events }
-    let startResult: WorthSubmissionResult
+    let startResult: WorthExecutionAdmissionResult
     try {
-      startResult = await this.ports.worth.startExecution(execution, controller.context)
+      startResult = await this.ports.worth.admitExecution(execution, controller.context)
     } catch {
       return { kind: "not_started", reason: "execution_start_failed", executionId, message: "Worth did not return a start result", events }
     }
     const startStop = worthStartStop(startResult)
     if (startStop !== undefined) {
-      if (startResult.kind === "cancelled" && startResult.safePoint === "after_commit") {
+      if (startResult.kind === "cancelled" && startResult.posture.kind !== "not_started") {
         return { kind: "finalization_blocked", executionId, reason: "worth_submission_failed", message: "Worth cancelled execution start after commit", authority: startResult, terminal: { kind: "control_stop", stop: startStop }, events, cleanup: { kind: "not_created" } }
       }
       if (startResult.kind === "timed_out") {
@@ -135,13 +135,13 @@ export class ExperimentRunner {
       }
       return { kind: "not_started", reason: "operation_stopped", executionId, stop: startStop, authority: startResult, events }
     }
-    if (startResult.kind !== "accepted") {
+    if (startResult.kind !== "admitted") {
       return { kind: "not_started", reason: "execution_start_rejected", executionId, authority: startResult, events }
     }
     // The accepted running projection is the Worth-issued work admission for
     // this contract. No local execution/lifecycle token is retained.
-    const executionRevision = runningExecutionRevision(startResult, execution)
-    if (executionRevision === undefined) {
+    const executionRevision = startResult.projection.revision
+    if (startResult.projection.executionId !== execution.id || startResult.projection.lifecycle !== "started" || startResult.projection.capabilityId !== execution.capabilityId || startResult.projection.mode !== execution.mode || startResult.projection.replayVersionId !== execution.replayVersionId) {
       return { kind: "finalization_blocked", executionId, reason: "authority_changed", message: "Worth accepted execution start without a matching running execution projection", authority: startResult, events, cleanup: { kind: "not_created" } }
     }
     const startedType = plan.kind === "direct" ? "direct.started" : "compiled.started"
@@ -224,13 +224,13 @@ export class ExperimentRunner {
 
     const settledIntent = cleanup.kind === "close_failed" ? cleanupFailureIntent(intent) : intent
     const completion = completionFor(settledIntent, plan.kind === "compiled")
-    let settlement: WorthSubmissionResult
+    let settlement: WorthRuntimeSettlementResult
     try {
-      settlement = await settleDelegatedExecution(this.ports.worth, plan, executionId, executionRevision, completion, endedAt, controller.context)
+      settlement = await settleDelegatedExecution(this.ports.worth, executionId, executionRevision, completion, endedAt, controller.context)
     } catch {
       return { kind: "finalization_blocked", executionId, reason: "worth_submission_failed", message: "Worth did not return a completion result", terminal: settledIntent, events, cleanup }
     }
-    if (settlement.kind !== "accepted") {
+    if (settlement.kind !== "settled") {
       return {
         kind: "finalization_blocked",
         executionId,
@@ -273,34 +273,18 @@ export class ExperimentRunner {
 
 async function settleDelegatedExecution(
   worth: OrchestratorWorthPort,
-  plan: ExperimentPlan,
   executionId: ExecutionId,
   executionRevision: number,
   completion: ExecutionCompletion,
   endedAt: string,
   context: OperationContext,
-): Promise<WorthSubmissionResult> {
-  if (plan.kind === "compiled" && completion.kind === "failure" && completion.reason === "replay_failed") {
-    const replayFailure = await worth.recordReplayFailure(plan.replay.id, completion.replayFailure, endedAt, plan.replay.revision, context)
-    if (replayFailure.kind !== "accepted") return replayFailure
-    const exploration = await worth.resumeCapabilityExploration(plan.capability.id, plan.capability.revision, context)
-    if (exploration.kind !== "accepted") return exploration
-  }
-  return worth.completeExecution(executionId, completion, endedAt, executionRevision, context)
+): Promise<WorthRuntimeSettlementResult> {
+  return worth.settleExecution(executionId, completion, endedAt as IsoTimestamp, executionRevision, context)
 }
 
-function runningExecutionRevision(result: WorthSubmissionResult, execution: ExecutionStart): number | undefined {
-  if (result.kind !== "accepted" || result.projection.kind !== "execution") return undefined
-  const projection: ExecutionProjection = result.projection.projection
-  if (projection.id !== execution.id || projection.status !== "running") return undefined
-  if (projection.capabilityId !== execution.capabilityId || projection.mode !== execution.mode || projection.replayVersionId !== execution.replayVersionId) return undefined
-  if (!Number.isSafeInteger(projection.revision) || projection.revision < 0) return undefined
-  return projection.revision
-}
-
-function worthStartStop(result: WorthSubmissionResult): RuntimeStop | undefined {
+function worthStartStop(result: WorthExecutionAdmissionResult): RuntimeStop | undefined {
   switch (result.kind) {
-    case "cancelled": return cancelledStop(result.safePoint === "after_commit" ? "after_effect" : "before_effect", result.posture)
+    case "cancelled": return cancelledStop(result.posture.kind === "not_started" ? "before_effect" : "after_effect", result.posture)
     case "timed_out": return deadlineStop(result.posture)
     default: return undefined
   }

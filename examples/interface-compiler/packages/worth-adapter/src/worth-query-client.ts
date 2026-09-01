@@ -7,6 +7,7 @@ import type {
   CapabilityProjection,
   ExecutionId,
   ExecutionCompletion,
+  ExecutionStart,
   EventPublicationResult,
   InterfaceCompilerEvent,
   IsoTimestamp,
@@ -17,6 +18,7 @@ import {
   INTERFACE_COMPILER_WORTH_PROTOCOL,
   INTERFACE_COMPILER_WORTH_READ_OPERATION,
   INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION,
+  INTERFACE_COMPILER_WORTH_ADMIT_EXECUTION_OPERATION,
   INTERFACE_COMPILER_WORTH_COMPLETE_EXECUTION_OPERATION,
   INTERFACE_COMPILER_WORTH_PUBLISH_DOMAIN_EVENT_OPERATION,
   INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION,
@@ -31,6 +33,8 @@ import {
 } from "./worth-query-wire.js"
 import type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
 import type { WorthExecutionSettlementPort, WorthExecutionSettlementResult } from "./execution-settlement.js"
+import type { WorthExecutionAdmissionResult, WorthExecutionRuntimePort, WorthRuntimeSettlementResult } from "./execution-runtime.js"
+import { mapAdmissionResponse, mapRuntimeSettlementResponse } from "./execution-runtime-response.js"
 import type { WorthApplicationReadAdapter, WorthApplicationReadResult } from "./worth-application-read.js"
 import { mapCompiledCapability, mapCompiledReplay, type CompiledPlanReadPort, type CompiledPlanReadResult } from "./compiled-plan-read.js"
 export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION } from "./worth-query-wire.js"
@@ -50,7 +54,7 @@ type PendingResult = HostResponse | "cancelled" | "timed_out" | undefined
 type PendingCompletion = (result: PendingResult) => void
 
 /** App-specific process transport; WORTH retains all runtime authority. */
-export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter, CompiledPlanReadPort, WorthExecutionSettlementPort {
+export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter, CompiledPlanReadPort, WorthExecutionSettlementPort, WorthExecutionRuntimePort {
   private readonly processCommand: WorthQueryProcessCommand
   private readonly credential: string
   private readonly pending = new Map<string, PendingCompletion>()
@@ -117,6 +121,27 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     if (response === "cancelled" || response === "timed_out") return this.executionInterrupted(response, context, unknownMutationPosture())
     if (response === undefined) return this.executionUnavailable(executionId, "transport_unavailable", this.processFailure ?? "the WORTH host process is unavailable")
     return this.mapStartExecutionResponse(executionId, response)
+  }
+
+  public async admitExecution(execution: ExecutionStart, context: OperationContext): Promise<WorthExecutionAdmissionResult> {
+    const budget = this.remainingRequestBudget(context)
+    if (budget.kind === "cancelled" || budget.kind === "timed_out") return { kind: budget.kind, operationId: context.operationId, posture: { kind: "not_started" } }
+    if (budget.kind === "invalid") return { kind: "denied", executionId: execution.id, message: budget.message }
+    const response = await this.send({ protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: this.nextRequestId(), operation: INTERFACE_COMPILER_WORTH_ADMIT_EXECUTION_OPERATION, execution_id: execution.id, capability_id: execution.capabilityId, settlement: { mode: execution.mode, ...(execution.replayVersionId === undefined ? {} : { replayVersionId: execution.replayVersionId }), metrics: execution.metrics }, credential: this.credential, deadline_ms: budget.milliseconds }, context, budget.milliseconds)
+    if (response === "cancelled" || response === "timed_out") return { kind: response, operationId: context.operationId, posture: unknownMutationPosture() }
+    if (response === undefined) return { kind: "unavailable", executionId: execution.id, message: this.processFailure ?? "the WORTH host process is unavailable" }
+    return mapAdmissionResponse(execution, response)
+  }
+
+  public async settleExecution(executionId: ExecutionId, completion: ExecutionCompletion, endedAt: IsoTimestamp, expectedRevision: number, context: OperationContext): Promise<WorthRuntimeSettlementResult> {
+    const budget = this.remainingRequestBudget(context)
+    if (budget.kind === "cancelled" || budget.kind === "timed_out") return { kind: budget.kind, operationId: context.operationId, posture: { kind: "not_started" } }
+    if (budget.kind === "invalid") return { kind: "denied", executionId, message: budget.message }
+    const status = completion.kind === "success" ? "success" : completion.kind === "safety_stop" ? "stopped" : "failure"
+    const response = await this.send({ protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: this.nextRequestId(), operation: INTERFACE_COMPILER_WORTH_COMPLETE_EXECUTION_OPERATION, execution_id: executionId, expected_revision: expectedRevision, settlement: { status, completion, endedAt }, credential: this.credential, deadline_ms: budget.milliseconds }, context, budget.milliseconds)
+    if (response === "cancelled" || response === "timed_out") return { kind: response, operationId: context.operationId, posture: unknownMutationPosture() }
+    if (response === undefined) return { kind: "unavailable", executionId, message: this.processFailure ?? "the WORTH host process is unavailable" }
+    return mapRuntimeSettlementResponse(executionId, response)
   }
 
   public async completeExecution(executionId: ExecutionId, completion: ExecutionCompletion, endedAt: IsoTimestamp, expectedExecutionRevision: number, context: OperationContext): Promise<WorthExecutionSettlementResult> {
@@ -401,8 +426,6 @@ function mapEvidence(evidence: HostEvidence): WorthExecutionQueryEvidence {
 }
 
 function isTerminalLifecycle(value: string): value is "success" | "failure" | "stopped" { return value === "success" || value === "failure" || value === "stopped" }
-
-
 function closeChildProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (child.exitCode !== null) return Promise.resolve()
   return new Promise((resolve) => {

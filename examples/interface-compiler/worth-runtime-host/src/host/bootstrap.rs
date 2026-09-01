@@ -229,7 +229,11 @@ impl InterfaceCompilerWorthHost {
                     DEMO_EXECUTION_PENDING.to_string(),
                 )
                 .field(ExecutionRevision::reference(), 0_u64)
-                .field(ExecutionSettlementJson::reference(), "null".to_string()),
+                .field(ExecutionSettlementJson::reference(), "null".to_string())
+                .field(ExecutionCapabilityIdentifier::reference(), DEMO_CAPABILITY_ID.to_string())
+                .field(ExecutionReplayIdentifier::reference(), "".to_string())
+                .field(ExecutionMode::reference(), "direct".to_string())
+                .field(ExecutionStartMetricsJson::reference(), r#"{"startedAt":"2026-09-01T00:00:00.000Z","modelCalls":0,"inputTokens":0,"outputTokens":0,"browserObservations":0,"browserActions":0,"estimatedModelCostUsd":0.0}"#.to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind execution entity", error)
@@ -255,7 +259,11 @@ impl InterfaceCompilerWorthHost {
                     DEMO_EXECUTION_PENDING.to_string(),
                 )
                 .field(ExecutionRevision::reference(), 0_u64)
-                .field(ExecutionSettlementJson::reference(), "null".to_string()),
+                .field(ExecutionSettlementJson::reference(), "null".to_string())
+                .field(ExecutionCapabilityIdentifier::reference(), DEMO_CAPABILITY_ID.to_string())
+                .field(ExecutionReplayIdentifier::reference(), "".to_string())
+                .field(ExecutionMode::reference(), "direct".to_string())
+                .field(ExecutionStartMetricsJson::reference(), r#"{"startedAt":"2026-09-01T00:00:00.000Z","modelCalls":0,"inputTokens":0,"outputTokens":0,"browserObservations":0,"browserActions":0,"estimatedModelCostUsd":0.0}"#.to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind second execution entity", error)
@@ -283,7 +291,11 @@ impl InterfaceCompilerWorthHost {
                     DEMO_EXECUTION_STARTED.to_string(),
                 )
                 .field(ExecutionRevision::reference(), 1_u64)
-                .field(ExecutionSettlementJson::reference(), "null".to_string()),
+                .field(ExecutionSettlementJson::reference(), "null".to_string())
+                .field(ExecutionCapabilityIdentifier::reference(), DEMO_CAPABILITY_ID.to_string())
+                .field(ExecutionReplayIdentifier::reference(), "".to_string())
+                .field(ExecutionMode::reference(), "direct".to_string())
+                .field(ExecutionStartMetricsJson::reference(), r#"{"startedAt":"2026-09-01T00:00:00.000Z","modelCalls":0,"inputTokens":0,"outputTokens":0,"browserObservations":0,"browserActions":0,"estimatedModelCostUsd":0.0}"#.to_string()),
             )
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage(
@@ -313,6 +325,37 @@ impl InterfaceCompilerWorthHost {
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind event journal entity", error)
             })?;
+        for execution_id in [
+            DEMO_EXECUTION_ID,
+            DEMO_EXECUTION_ID_TWO,
+            DEMO_EXECUTION_NON_PENDING_ID,
+        ] {
+            let execution_journal = super::execution_admission::execution_journal_id(execution_id);
+            graph
+                .bind_entity(
+                    primary_graph::WorthQueryApplicationEntitySeed::new(
+                        EventJournal::reference(),
+                        primary_graph::WorthQueryApplicationEntityKey::new(
+                            execution_journal.clone(),
+                        )
+                        .map_err(|error| {
+                            InterfaceCompilerHostSetupError::from_stage(
+                                "create started execution journal key",
+                                error,
+                            )
+                        })?,
+                    )
+                    .field(EventJournalIdentifier::reference(), execution_journal)
+                    .field(EventJournalRevision::reference(), 0_u64)
+                    .field(EventJournalEventsJson::reference(), "[]".to_string()),
+                )
+                .map_err(|error| {
+                    InterfaceCompilerHostSetupError::from_stage(
+                        "bind started execution journal entity",
+                        error,
+                    )
+                })?;
+        }
         let invariant = Arc::new(graph.retain_invariant_projection_authority());
         let application = graph
             .publish_application_runtime(runtime, authority, schema)
