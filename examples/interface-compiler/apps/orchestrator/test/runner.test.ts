@@ -67,6 +67,7 @@ import {
   type SemanticVerificationResult,
   type SemanticVerifier,
 } from "../src/index.js"
+import { createWalmartBenchmarkStepPolicy } from "../src/walmart-benchmark/step-policy.js"
 
 const timestamp = "2026-08-31T12:00:00.000Z" as IsoTimestamp
 const application = validValue(createApplication({ id: id<ApplicationId>("application.shop"), name: "Shop", baseUrl: "https://shop.test" }))
@@ -452,11 +453,11 @@ function bind(runtime: FakeWorthRuntime): OrchestratorWorthPort {
     },
     readCapability: async (id, context) => {
       const result = await adapter.readCapability(id, context)
-      return result.kind === "found" ? { ...result, evidence } : result
+      return result.kind === "found" ? { ...result, evidence, compilationProvenance: { kind: "synthetic_seed" } } : result
     },
     readActiveReplay: async (id, context) => {
       const result = await adapter.readActiveReplay(id, context)
-      return result.kind === "found" ? { ...result, evidence } : result
+      return result.kind === "found" ? { ...result, evidence, compilationProvenance: { kind: "synthetic_seed" } } : result
     },
     readEvidence: adapter.readEvidence,
     publish: adapter.publish,
@@ -523,6 +524,23 @@ test("direct runs stop at an authentication observation before model or browser 
   assert.equal(runtime.events.some((event) => event.type === "browser.observed"), true)
 })
 
+test("an off-origin observation is recorded but never reaches Gemini or another browser effect", async () => {
+  const runtime = new FakeWorthRuntime()
+  const outside = { ...safeObservation("observation.outside"), url: "https://outside.example/product/1" }
+  const solari = new ScriptedSolari([{ kind: "observed", observation: outside, effect: { kind: "completed" } }], [])
+  const model = new FakeModel([])
+  const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
+
+  assert.equal(result.kind, "attempted")
+  if (result.kind !== "attempted") throw new Error("expected attempted run")
+  assert.equal(result.terminal.kind, "failure")
+  assert.equal(model.calls, 0)
+  assert.equal(solari.sessions[0]?.executedSteps.length, 0)
+  assert.equal(runtime.events.filter((event) => event.type === "browser.observed").length, 1)
+  assert.equal(runtime.completed?.metrics.browserObservations, 1)
+  assert.equal(result.cleanup.kind, "closed")
+})
+
 test("direct planning and execution publish only actual model/browser telemetry to Worth", async () => {
   const runtime = new FakeWorthRuntime()
   const solari = new ScriptedSolari(
@@ -554,6 +572,28 @@ test("direct planning and execution publish only actual model/browser telemetry 
   assert.equal(runtime.completed?.metrics.modelCalls, 2)
   assert.equal(runtime.completed?.metrics.browserActions, 1)
   assert.equal(runtime.completed?.metrics.estimatedModelCostUsd, 0.012)
+})
+
+test("the Walmart step policy denies an arbitrary search value before the Solari effect", async () => {
+  const runtime = new FakeWorthRuntime()
+  const solari = new ScriptedSolari(
+    [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
+    [{ kind: "completed", effect: { kind: "completed" } }],
+  )
+  const model = new FakeModel([{
+    kind: "completed",
+    completion: { output: { kind: "act", step: { type: "fill", target: { semanticDescription: "product search", role: "searchbox" }, value: "person@example.com" } }, usage: { inputTokens: 2, outputTokens: 1, estimatedModelCostUsd: 0.001 } },
+    effect: { kind: "completed" },
+  }])
+  const result = await new ExperimentRunner({ ...ports(bind(runtime), solari, model), stepPolicy: createWalmartBenchmarkStepPolicy() })
+    .run(directPlan(), operationController().controller)
+
+  assert.equal(result.kind, "attempted")
+  if (result.kind !== "attempted") throw new Error("expected attempted run")
+  assert.equal(result.terminal.kind, "failure")
+  assert.equal(solari.sessions[0]?.executedSteps.length, 0)
+  assert.equal(runtime.completed?.metrics.browserActions, 0)
+  assert.equal(runtime.completed?.metrics.modelCalls, 1)
 })
 
 test("compiled planning resolves Worth projections and executes without Gemini reasoning", async () => {

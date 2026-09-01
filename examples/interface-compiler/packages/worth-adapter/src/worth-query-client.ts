@@ -53,6 +53,8 @@ import {
 } from "./replay-recovery.js"
 export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_ACCEPT_REPLACEMENT_CANDIDATE_OPERATION, INTERFACE_COMPILER_WORTH_RECORD_REPLACEMENT_VERIFICATION_OPERATION, INTERFACE_COMPILER_WORTH_ACTIVATE_REPLACEMENT_OPERATION } from "./worth-query-wire.js"
 
+const MAX_WORTH_REQUEST_MS = 60_000
+
 export interface WorthQueryProcessCommand {
   readonly command: string
   readonly args?: readonly string[]
@@ -315,7 +317,7 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     }
     const remaining = deadline - Date.now()
     if (remaining <= 0) return { kind: "timed_out" }
-    const milliseconds = Math.min(Math.floor(remaining), Math.floor(context.budget.maxWallClockMs))
+    const milliseconds = Math.min(Math.floor(remaining), Math.floor(context.budget.maxWallClockMs), MAX_WORTH_REQUEST_MS)
     if (milliseconds <= 0) return { kind: "timed_out" }
     return { kind: "ready", milliseconds }
   }

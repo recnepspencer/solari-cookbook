@@ -1,10 +1,18 @@
-import { validateReplayStep, type ActiveReplayProjection, type CapabilityId, type CapabilityProjection, type OperationContext, type WorthReadResult } from "@interface-compiler/domain"
+import { validateReplayStep, type ActiveReplayProjection, type CapabilityId, type CapabilityProjection, type ExecutionId, type OperationContext, type WorthReadResult } from "@interface-compiler/domain"
 import { INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, type HostDenialStage, type HostEvidence, type HostResponse } from "./worth-query-wire.js"
 
 export interface WorthQueryEvidence { readonly queryName: string; readonly queryIdentity: string; readonly basisVersion: number; readonly projectedRecordCount: number; readonly projectedFieldCount: number; readonly basisReleased: boolean }
+/**
+ * Economics may only be attributed to measured WORTH execution identities.
+ * The current replay-recovery host has no such lineage field, so its reads
+ * are explicitly classified as synthetic rather than inferred from a proxy.
+ */
+export type CompiledPlanMeasurementProvenance =
+  | { readonly kind: "synthetic_seed" }
+  | { readonly kind: "measured"; readonly discoveryExecutionIds: readonly ExecutionId[]; readonly verificationExecutionIds: readonly ExecutionId[] }
 export type CompiledPlanEntity = "capability" | "replay"
 export type CompiledPlanReadResult<T> =
-  | { readonly kind: "found"; readonly value: T; readonly evidence: WorthQueryEvidence }
+  | { readonly kind: "found"; readonly value: T; readonly evidence: WorthQueryEvidence; readonly compilationProvenance: CompiledPlanMeasurementProvenance }
   | Exclude<WorthReadResult<T>, { readonly kind: "found" }>
   | { readonly kind: "denied"; readonly entity: CompiledPlanEntity; readonly entityId: CapabilityId; readonly stage: HostDenialStage; readonly denialKind: string; readonly message: string }
   | { readonly kind: "unavailable"; readonly entity: CompiledPlanEntity; readonly entityId: CapabilityId; readonly operation: "read_capability" | "read_active_replay"; readonly reason: "unsupported" | "not_configured" | "protocol_mismatch" | "transport_unavailable" | "malformed_response"; readonly message: string }
@@ -18,14 +26,14 @@ export interface CompiledPlanReadPort {
 export function mapCompiledCapability(capabilityId: CapabilityId, response: Extract<HostResponse, { readonly outcome: "capability_found" }>): CompiledPlanReadResult<CapabilityProjection> {
   const value = response.capability
   if (value.id !== capabilityId || value.status !== "healthy" || value.active_replay_version_id === undefined) return malformed("capability", capabilityId, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, "the WORTH capability identity or healthy status is invalid")
-  return { kind: "found", value: { projectionKind: "worth_capability", id: capabilityId, revision: value.revision, applicationId: value.application_id as CapabilityProjection["applicationId"], name: value.name, description: value.description, status: "healthy", activeReplayVersionId: value.active_replay_version_id as Extract<CapabilityProjection, { status: "healthy" }>["activeReplayVersionId"] }, evidence: evidence(valueEvidence(response.evidence)) }
+  return { kind: "found", value: { projectionKind: "worth_capability", id: capabilityId, revision: value.revision, applicationId: value.application_id as CapabilityProjection["applicationId"], name: value.name, description: value.description, status: "healthy", activeReplayVersionId: value.active_replay_version_id as Extract<CapabilityProjection, { status: "healthy" }>["activeReplayVersionId"] }, evidence: evidence(valueEvidence(response.evidence)), compilationProvenance: { kind: "synthetic_seed" } }
 }
 
 export function mapCompiledReplay(capabilityId: CapabilityId, response: Extract<HostResponse, { readonly outcome: "active_replay_found" }>): CompiledPlanReadResult<ActiveReplayProjection> {
   const value = response.replay
   const verification = projectVerification(value.verification, capabilityId, value.id)
   if (value.capability_id !== capabilityId || value.status !== "active" || value.steps.length === 0 || value.steps.some((step, index) => validateReplayStep(step, index).length > 0) || verification === undefined || !timestamp(value.created_at) || !timestamp(value.verified_at) || value.confidence < 0 || value.confidence > 1) return malformed("replay", capabilityId, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, "the WORTH active replay projection is invalid")
-  return { kind: "found", value: { projectionKind: "worth_replay", id: value.id as ActiveReplayProjection["id"], revision: value.revision, capabilityId, version: value.version, steps: value.steps as ActiveReplayProjection["steps"], confidence: value.confidence, status: "active", createdAt: value.created_at as ActiveReplayProjection["createdAt"], verifiedAt: value.verified_at as ActiveReplayProjection["verifiedAt"], verification }, evidence: evidence(valueEvidence(response.evidence)) }
+  return { kind: "found", value: { projectionKind: "worth_replay", id: value.id as ActiveReplayProjection["id"], revision: value.revision, capabilityId, version: value.version, steps: value.steps as ActiveReplayProjection["steps"], confidence: value.confidence, status: "active", createdAt: value.created_at as ActiveReplayProjection["createdAt"], verifiedAt: value.verified_at as ActiveReplayProjection["verifiedAt"], verification }, evidence: evidence(valueEvidence(response.evidence)), compilationProvenance: { kind: "synthetic_seed" } }
 }
 
 function projectVerification(value: unknown, capabilityId: CapabilityId, replayId: string): ActiveReplayProjection["verification"] | undefined {

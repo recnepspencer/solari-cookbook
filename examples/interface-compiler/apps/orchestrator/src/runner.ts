@@ -29,6 +29,7 @@ import {
 } from "./session-runner.js"
 import type { ExperimentPlan } from "./planning.js"
 import type { SemanticVerifier } from "./semantic-verifier.js"
+import type { ExperimentStepGuard, ExperimentStepPolicy } from "./step-policy.js"
 
 export interface OrchestratorPorts {
   readonly clock: Clock
@@ -37,6 +38,7 @@ export interface OrchestratorPorts {
   readonly solari: SolariPort
   readonly model?: ReasoningModel
   readonly verifier?: SemanticVerifier
+  readonly stepPolicy?: ExperimentStepPolicy
 }
 
 export type { ExperimentTerminal } from "./session-runner.js"
@@ -49,6 +51,7 @@ export type ExperimentRunResult =
         | "operation_stopped"
         | "authority_unavailable"
         | "authority_changed"
+        | "step_policy_denied"
         | "execution_start_rejected"
         | "execution_start_failed"
         | "session_creation_failed"
@@ -95,6 +98,18 @@ export class ExperimentRunner {
     if (admission.kind === "stopped") return { kind: "not_started", reason: "operation_stopped", stop: admission.stop, events: [] }
     if (admission.kind === "unavailable") return { kind: "not_started", reason: admission.reason, message: admission.message, events: [] }
     plan = admission.plan
+
+    let stepGuard: ExperimentStepGuard | undefined
+    if (this.ports.stepPolicy !== undefined) {
+      let stepAdmission: ReturnType<ExperimentStepPolicy["admit"]>
+      try {
+        stepAdmission = this.ports.stepPolicy.admit(plan)
+      } catch {
+        return { kind: "not_started", reason: "step_policy_denied", message: "the task-specific step policy failed closed", events: [] }
+      }
+      if (stepAdmission.kind === "denied") return { kind: "not_started", reason: "step_policy_denied", message: stepAdmission.message, events: [] }
+      stepGuard = stepAdmission.guard
+    }
 
     if (plan.kind === "direct" && this.ports.model === undefined) {
       return { kind: "not_started", reason: "reasoning_model_unavailable", events: [] }
@@ -181,8 +196,8 @@ export class ExperimentRunner {
     let cleanup: SolariCloseResult
     try {
       intent = plan.kind === "direct"
-        ? await runExperimentSession(plan, sessionResult.lease.session, controller, this.ports.model, this.ports.verifier, this.ports.worth, emit, executionId)
-        : await runExperimentSession(plan, sessionResult.lease.session, controller, undefined, this.ports.verifier, this.ports.worth, emit, executionId)
+        ? await runExperimentSession(plan, sessionResult.lease.session, controller, this.ports.model, this.ports.verifier, this.ports.worth, emit, executionId, stepGuard)
+        : await runExperimentSession(plan, sessionResult.lease.session, controller, undefined, this.ports.verifier, this.ports.worth, emit, executionId, stepGuard)
     } catch {
       intent = { kind: "failure", message: "orchestrator stopped after an unexpected boundary error", posture: { kind: "unknown", recovery: "owner_reconciliation_required" } }
     } finally {

@@ -3,15 +3,18 @@
 This is a real, deliberately narrow WORTH Query host. It installs and
 publishes a typed Interface Compiler application runtime through the public
 `worth-query-host::facade`, admits the demo credential and principal mapping,
-and executes one bounded application query against WORTH's in-memory
-relational graph. Its Rust API additionally demonstrates exactly one typed
+and executes bounded application queries against WORTH's in-memory relational
+graph. The installed application is Walmart, with one bounded Tide Pods
+capability and active replay. Its Rust API additionally demonstrates a typed
 `start_execution` transition through WORTH's admitted operation, projected
 dependencies, effect program, compare-and-commit, and typed execution query.
 The same application facade now admits `complete_execution` for the seeded
 started execution and `publish_domain_event` for the concrete Interface
 Compiler v1 event set. Both commit WORTH-owned facts and return a WORTH query
-projection/receipt. That lifecycle-only projection deliberately contains no measured telemetry,
-tokens, costs, results, or fabricated metrics.
+projection/receipt. Arbitrary direct and compiled execution admission creates
+a WORTH-owned identity-bound event journal. Settlement re-projects actual
+published model and browser telemetry into terminal metrics; the host does not
+accept a caller-supplied terminal metric total.
 
 The host requires the complete matching checkout at:
 
@@ -31,18 +34,24 @@ From the repository root:
 cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml -- --serve
 ```
 
-The process remains read-only: it accepts newline-delimited JSON and emits one
-response per line.
+The process accepts newline-delimited JSON and emits one response per line.
+Reads and admitted lifecycle/event commands all execute through WORTH.
 For example:
 
 ```json
-{"protocol":"interface-compiler.worth-host.v1","request_id":"demo-1","operation":"read_application","application_id":"application.interface-compiler","credential":"interface-compiler-demo","deadline_ms":5000}
+{"protocol":"interface-compiler.worth-host.v2","request_id":"demo-1","operation":"read_application","application_id":"application.walmart","credential":"interface-compiler-demo","deadline_ms":5000}
 ```
 
 The live response contains the WORTH-derived `worth_application` projection and
 query receipt evidence. Unsupported operations return a typed
 `unavailable/unsupported` response. Invalid credentials return a typed
 authentication denial.
+
+The seeded capability and replay carry
+`{"kind":"synthetic_seed"}` compilation provenance. That marker is a
+fail-closed economics contract: the replay is runnable for this demo, but no
+compile-cost or break-even value may be attributed to it. Future measured
+provenance must name exact WORTH discovery and verification execution IDs.
 
 ## TypeScript client
 

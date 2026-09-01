@@ -78,7 +78,16 @@ function sameCompiledAuthority(original: Extract<ExperimentPlan, { readonly kind
     original.replay.id === fresh.replay.id &&
     original.replay.revision === fresh.replay.revision &&
     original.replay.version === fresh.replay.version &&
-    JSON.stringify(original.replay.steps) === JSON.stringify(fresh.replay.steps)
+    JSON.stringify(original.replay.steps) === JSON.stringify(fresh.replay.steps) &&
+    sameCompilationAuthority(original, fresh)
+}
+
+function sameCompilationAuthority(
+  original: Extract<ExperimentPlan, { readonly kind: "compiled" }>,
+  fresh: Extract<ExperimentPlan, { readonly kind: "compiled" }>,
+): boolean {
+  if (original.authority.kind !== fresh.authority.kind) return false
+  return JSON.stringify(original.authority.compilationProvenance) === JSON.stringify(fresh.authority.compilationProvenance)
 }
 
 function cancelledStop(): RuntimeStop {

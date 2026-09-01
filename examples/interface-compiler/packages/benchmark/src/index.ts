@@ -43,3 +43,20 @@ export {
 } from "./contract.js"
 export { createBenchmarkReport, isMeasuredBenchmarkReport } from "./report.js"
 export { validateBenchmarkComparison } from "./input-validation.js"
+export {
+  createTerminalBenchmarkReport,
+  terminalBenchmarkReportSchemaVersion,
+  type MeasuredTerminalBenchmarkReport,
+  type TerminalBenchmarkIssue,
+  type TerminalBenchmarkMetrics,
+  type TerminalBenchmarkReport,
+  type TerminalBenchmarkReportInput,
+  type TerminalBenchmarkRunReport,
+  type TerminalBenchmarkSavings,
+  type TerminalBreakEven,
+  type TerminalCompilationEconomics,
+  type TerminalCompilationExecutions,
+  type TerminalCompiledPlanAuthority,
+  type UnavailableTerminalBenchmarkReport,
+  type WorthSettledBenchmarkExecution,
+} from "./terminal-report.js"
