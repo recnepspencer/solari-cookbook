@@ -78,6 +78,7 @@ fn unsupported_operations_are_explicitly_unavailable() {
             operation: "submit_lifecycle_command".to_string(),
             application_id: None,
             execution_id: None,
+            capability_id: None,
             credential: None,
             deadline_ms: Some(Duration::from_secs(1).as_millis() as u64),
         },

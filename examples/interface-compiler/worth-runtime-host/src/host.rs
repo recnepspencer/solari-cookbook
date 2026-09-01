@@ -7,12 +7,18 @@ use worth_query_host::facade::{admission, declaration, domain, primary_graph};
 
 use crate::application::{
     application_id_parameter, Application, ApplicationBaseUrl, ApplicationIdentifier,
-    ApplicationName, ApplicationReadQuery, ApplicationRevision, Execution, ExecutionIdentifier,
-    ExecutionLifecycle, InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
-    InterfaceCompilerSchema,
+    ApplicationName, ApplicationReadQuery, ApplicationRevision, Capability,
+    CapabilityActiveReplayIdentifier, CapabilityApplicationIdentifier, CapabilityDescription,
+    CapabilityIdentifier, CapabilityName, CapabilityRevision, CapabilityStatus, Execution,
+    ExecutionIdentifier, ExecutionLifecycle, InterfaceCompilerApplicationProjection,
+    InterfaceCompilerPrincipalBinding, InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier,
+    ReplayConfidenceMillis, ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus,
+    ReplayStepsJson, ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
 };
 
 mod bootstrap;
+mod compiled_plan_read;
+pub use compiled_plan_read::*;
 mod execution;
 mod execution_contract;
 mod execution_idempotency;
@@ -24,12 +30,18 @@ pub const DEMO_APPLICATION_ID: &str = "application.interface-compiler";
 pub const DEMO_APPLICATION_REVISION: u64 = 7;
 pub const DEMO_APPLICATION_NAME: &str = "Interface Compiler Demo";
 pub const DEMO_APPLICATION_BASE_URL: &str = "https://interface-compiler.example";
+pub const DEMO_CAPABILITY_ID: &str = "capability.walmart.search-products";
+pub const DEMO_REPLAY_ID: &str = "replay.walmart.search-products.v1";
+pub const DEMO_CAPABILITY_REVISION: u64 = 3;
+pub const DEMO_REPLAY_REVISION: u64 = 5;
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
 pub const DEMO_EXECUTION_ID: &str = "execution.demonstration-001";
 pub const DEMO_EXECUTION_ID_TWO: &str = "execution.demonstration-002";
 pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started";
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
+pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"https://www.walmart.com/"},{"type":"fill","target":{"semanticDescription":"product search","role":"searchbox"},"value":"Tide Pods"},{"type":"click","target":{"semanticDescription":"submit product search","role":"button","name":"Search"}}]"#;
+pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":1,"runs":[{"id":"verification.search-products.1","capabilityId":"capability.walmart.search-products","replayVersionId":"replay.walmart.search-products.v1","sessionId":"solari.demo.fresh.1","outcome":"success","evidenceIds":["evidence.search-products.1"],"completedAt":"2026-08-31T18:00:00.000Z"}]}"#;
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";

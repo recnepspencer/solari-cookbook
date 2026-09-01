@@ -14,8 +14,13 @@ use worth_query_host::facade::{
 
 pub const APPLICATION_READ_QUERY_NAME: &str = "interface_compiler_application_read";
 pub const EXECUTION_READ_QUERY_NAME: &str = "interface_compiler_execution_read";
+pub const CAPABILITY_READ_QUERY_NAME: &str = "interface_compiler_capability_read";
+pub const ACTIVE_REPLAY_READ_QUERY_NAME: &str = "interface_compiler_active_replay_read";
 
-use super::execution_query::execution_read_query_definition;
+use super::{
+    active_replay_read_query_definition, application_read_query_definition,
+    capability_read_query_definition, execution_query::execution_read_query_definition,
+};
 
 worth_query_application_schema! {
     pub schema InterfaceCompilerSchema {
@@ -27,10 +32,14 @@ worth_query_application_schema! {
                 .entity(Principal::reference())
                 .entity(Application::reference())
                 .entity(Execution::reference())
+                .entity(Capability::reference())
+                .entity(Replay::reference())
                 .aspect(ExternalMapping::reference(), ExternalIdentity::reference())
                 .aspect(Principal::reference(), PrincipalIdentity::reference())
                 .aspect(Application::reference(), ApplicationFacts::reference())
                 .aspect(Execution::reference(), ExecutionFacts::reference())
+                .aspect(Capability::reference(), CapabilityFacts::reference())
+                .aspect(Replay::reference(), ReplayFacts::reference())
                 .field(ExternalMapping::reference(), ExternalIdentityField::reference())
                 .field(ExternalMapping::reference(), MappingStatusField::reference())
                 .field(Principal::reference(), PrincipalIdentityField::reference())
@@ -40,6 +49,8 @@ worth_query_application_schema! {
                 .field(Application::reference(), ApplicationBaseUrl::reference())
                 .field(Execution::reference(), ExecutionIdentifier::reference())
                 .field(Execution::reference(), ExecutionLifecycle::reference())
+                .field(Capability::reference(), CapabilityIdentifier::reference()).field(Capability::reference(), CapabilityRevision::reference()).field(Capability::reference(), CapabilityApplicationIdentifier::reference()).field(Capability::reference(), CapabilityName::reference()).field(Capability::reference(), CapabilityDescription::reference()).field(Capability::reference(), CapabilityStatus::reference()).field(Capability::reference(), CapabilityActiveReplayIdentifier::reference())
+                .field(Replay::reference(), ReplayIdentifier::reference()).field(Replay::reference(), ReplayRevision::reference()).field(Replay::reference(), ReplayCapabilityIdentifier::reference()).field(Replay::reference(), ReplayVersion::reference()).field(Replay::reference(), ReplayStepsJson::reference()).field(Replay::reference(), ReplayConfidenceMillis::reference()).field(Replay::reference(), ReplayStatus::reference()).field(Replay::reference(), ReplayCreatedAt::reference()).field(Replay::reference(), ReplayVerifiedAt::reference()).field(Replay::reference(), ReplayVerificationJson::reference())
                 .relation(
                     MappingTarget::reference(),
                     ExternalMapping::reference(),
@@ -60,6 +71,8 @@ worth_query_application_schema! {
                 .operation_write(StartExecution::reference(), ExecutionLifecycle::reference())
                 .application_query(application_read_query_definition())
                 .application_query(execution_read_query_definition())
+                .application_query(capability_read_query_definition())
+                .application_query(active_replay_read_query_definition())
         }
     }
 }
@@ -68,6 +81,8 @@ worth_query_entity!(pub ExternalMapping in InterfaceCompilerSchema);
 worth_query_entity!(pub Principal in InterfaceCompilerSchema);
 worth_query_entity!(pub Application in InterfaceCompilerSchema);
 worth_query_entity!(pub Execution in InterfaceCompilerSchema);
+worth_query_entity!(pub Capability in InterfaceCompilerSchema);
+worth_query_entity!(pub Replay in InterfaceCompilerSchema);
 
 worth_query_aspect!(
     pub ExternalIdentity in InterfaceCompilerSchema, ExternalMapping;
@@ -85,6 +100,8 @@ worth_query_aspect!(
     pub ApplicationFacts in InterfaceCompilerSchema, Application;
     identity = AspectIdentity(0x9a1c0043), revision = AspectContractRevision(1),
 );
+worth_query_aspect!(pub CapabilityFacts in InterfaceCompilerSchema, Capability; identity = AspectIdentity(0x9a1c0045), revision = AspectContractRevision(1),);
+worth_query_aspect!(pub ReplayFacts in InterfaceCompilerSchema, Replay; identity = AspectIdentity(0x9a1c0046), revision = AspectContractRevision(1),);
 
 worth_query_field!(
     pub ExternalIdentityField in InterfaceCompilerSchema, ExternalMapping, ExternalIdentity:
@@ -133,6 +150,23 @@ worth_query_field!(
     pub ApplicationBaseUrl in InterfaceCompilerSchema, Application, ApplicationFacts:
     String, read_only, equality
 );
+worth_query_field!(pub CapabilityIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityRevision in InterfaceCompilerSchema, Capability, CapabilityFacts: u64, read_only, equality);
+worth_query_field!(pub CapabilityApplicationIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityName in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityDescription in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityStatus in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub CapabilityActiveReplayIdentifier in InterfaceCompilerSchema, Capability, CapabilityFacts: String, read_only, equality);
+worth_query_field!(pub ReplayIdentifier in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayRevision in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
+worth_query_field!(pub ReplayCapabilityIdentifier in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayVersion in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
+worth_query_field!(pub ReplayStepsJson in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayConfidenceMillis in InterfaceCompilerSchema, Replay, ReplayFacts: u64, read_only, equality);
+worth_query_field!(pub ReplayStatus in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayCreatedAt in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayVerifiedAt in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
+worth_query_field!(pub ReplayVerificationJson in InterfaceCompilerSchema, Replay, ReplayFacts: String, read_only, equality);
 
 worth_query_relation!(
     pub MappingTarget in InterfaceCompilerSchema,
@@ -350,46 +384,4 @@ pub fn application_base_url_result(
         "base_url",
         ApplicationBaseUrl::reference(),
     )
-}
-
-pub fn application_read_query_definition(
-) -> declaration::application_query::ApplicationQueryDefinition<
-    InterfaceCompilerSchema,
-    ApplicationReadQuery,
-    ApplicationReadParameters,
-    InterfaceCompilerApplicationProjection,
-    Application,
-> {
-    let shape = declaration::application_query::ApplicationQueryResultShapeBuilder::new(
-        Application::reference(),
-    )
-    .field(application_id_result())
-    .field(application_revision_result())
-    .field(application_name_result())
-    .field(application_base_url_result())
-    .build();
-
-    declaration::application_query::ApplicationQueryDefinitionBuilder::declare(
-        ApplicationReadQuery::reference(),
-    )
-    .root(Application::reference())
-    .scope(Application::reference())
-    .result_shape(shape)
-    .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
-    .dependency_ceiling(
-        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 4),
-    )
-    .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
-    .basis_support(
-        declaration::application_query::ApplicationQueryBasisSupport::current_and_pinned(),
-    )
-    .lanes(declaration::application_query::ApplicationQueryLaneEligibility::one_shot())
-    .public()
-    .parameter(application_id_parameter())
-    .where_equal(
-        ApplicationIdentifier::reference(),
-        application_id_parameter(),
-    )
-    .build()
-    .expect("the Interface Compiler application read query is valid")
 }

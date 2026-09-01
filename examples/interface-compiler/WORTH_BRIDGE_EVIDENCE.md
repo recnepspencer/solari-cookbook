@@ -6,7 +6,7 @@ modified.
 
 ## Current decision
 
-The Interface Compiler demo now has two real application-specific host paths:
+The Interface Compiler demo now has four real application-specific host paths:
 
 1. `worth-runtime-host/src/application.rs` declares a typed WORTH application
    schema, principal binding, and `read_application` query.
@@ -17,12 +17,16 @@ The Interface Compiler demo now has two real application-specific host paths:
 3. The same host owns `start_execution` through WORTH typed operation admission,
    invariant projection, effect programming, compare-and-commit, and a separate
    typed execution query.
-4. `worth-runtime-host/src/protocol.rs` exposes only those products over
+4. The installed schema also owns one healthy demonstration capability and its
+   active replay. Separate typed WORTH queries project both, including replay
+   steps and verification fields.
+5. `worth-runtime-host/src/protocol.rs` exposes only those products over
    an app-specific newline-delimited process boundary. Runtime-local proof,
    graph handles, and recovery handles never cross it.
-5. `packages/worth-adapter/src/worth-query-client.ts` owns only process
+6. `packages/worth-adapter/src/worth-query-client.ts` owns only process
    transport and request correlation. `createWorthApplicationReadAdapter`
-   exposes the narrow read contract; it is not a `WorthRuntimePort`.
+   exposes the narrow application read, and `CompiledPlanReadPort` exposes only
+   capability and active-replay reads. Neither is a `WorthRuntimePort`.
 
 The demo's backing is WORTH's in-memory relational graph. It is not a
 TypeScript store, test runtime, marker-only binding, local reducer, replay
@@ -94,8 +98,8 @@ cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.t
 
 The process reads one JSON request per line and emits one JSON response per
 line. A live request has protocol
-`interface-compiler.worth-host.v1`, operation `read_application` or
-`start_execution`, the corresponding domain ID, a demo credential, and a
+`interface-compiler.worth-host.v1`, operation `read_application`,
+`start_execution`, `read_capability`, or `read_active_replay`, the corresponding domain ID, a demo credential, and a
 bounded `deadline_ms`. Responses preserve WORTH-derived projections, query
 evidence, lifecycle-not-pending, denial, and unavailable outcomes. The
 credential is a deterministic demo credential, not an environment secret.
@@ -115,8 +119,8 @@ recovery protocol has been invented.
 | --- | --- | --- |
 | `readApplication` through `WorthApplicationReadAdapter` | Live | WORTH-installed application schema, admitted principal, bounded query, typed projection and receipt |
 | `startExecution` through `WorthStartExecutionAdapter` | Live | WORTH-installed operation admission, invariant projection, effect program, compare-and-commit, execution query projection and receipt |
-| `readCapability` | Unavailable | No application-specific WORTH capability query has been installed |
-| `readActiveReplay` | Unavailable | No WORTH replay projection/query is exposed by this host |
+| `readCapability` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed capability entity, admitted bounded query, healthy projection and receipt |
+| `readActiveReplay` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed replay selected by the capability's projected active replay identity, admitted bounded query, active projection and receipt |
 | `readReplayLineage` | Unavailable | No WORTH replay-lineage projection/query is exposed by this host |
 | `readExperiment` | Unavailable | No WORTH experiment projection/query is exposed by this host |
 | `readEvidence` | Unavailable | No WORTH evidence projection/query is exposed by this host |
@@ -134,15 +138,15 @@ response; they do not fall back to local data.
 
 ## Evidence and remaining scope
 
-The Rust integration test exercises the real host path and asserts the WORTH
-query receipt's query identity, projected record/field counts, and released
-basis. The TypeScript integration test starts the process and reads through
-the narrow client/adapter, asserting the projection, receipt evidence,
-not-found, and authentication-denied outcomes.
+Rust integration tests exercise the real capability and replay queries and
+assert matching identities plus WORTH receipt field counts and released bases.
+The TypeScript integration test starts the real binary, reads both projections
+through the narrow adapter, and asserts identity matching, receipt evidence,
+not-found, mismatch fail-closed, and unsupported-operation boundaries.
 
-Remaining work before the broad adapter can open includes an approved typed
-WORTH contract for every capability/replay/experiment/evidence/execution/
-metrics projection, every lifecycle/effect command, and event publication;
+Remaining work before the broad adapter can open includes approved typed WORTH
+contracts for replay lineage, experiment/evidence/execution/metrics
+projections, every other lifecycle/effect command, and event publication;
 faithful process/client mappings for those contracts; and the corresponding
 currentness, idempotency, cancellation, effect-uncertainty, recovery, and
 evidence tests. Until each method is implemented through WORTH, it remains

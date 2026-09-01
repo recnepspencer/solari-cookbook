@@ -14,12 +14,15 @@ use crate::host::{
     InterfaceCompilerApplicationReadRequest, InterfaceCompilerWorthHost, DEFAULT_REQUEST_TIMEOUT,
 };
 
+mod compiled_plan_read;
 mod start_execution;
 pub use start_execution::{InterfaceCompilerHostCommitKind, InterfaceCompilerHostExecution};
 
 pub const INTERFACE_COMPILER_WORTH_PROTOCOL: &str = "interface-compiler.worth-host.v1";
 pub const READ_APPLICATION_OPERATION: &str = "read_application";
 pub const START_EXECUTION_OPERATION: &str = "start_execution";
+pub const READ_CAPABILITY_OPERATION: &str = "read_capability";
+pub const READ_ACTIVE_REPLAY_OPERATION: &str = "read_active_replay";
 pub const MAX_PROCESS_LINE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +33,7 @@ pub struct InterfaceCompilerHostRequest {
     pub operation: String,
     pub application_id: Option<String>,
     pub execution_id: Option<String>,
+    pub capability_id: Option<String>,
     pub credential: Option<String>,
     pub deadline_ms: Option<u64>,
 }
@@ -65,6 +69,7 @@ pub enum InterfaceCompilerHostInvalidRequestReason {
     EmptyOperation,
     MissingApplicationId,
     MissingExecutionId,
+    MissingCapabilityId,
     MissingCredential,
     MalformedJson,
     InvalidUtf8,
@@ -88,6 +93,95 @@ pub struct InterfaceCompilerHostQueryEvidence {
     pub projected_record_count: usize,
     pub projected_field_count: usize,
     pub basis_released: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct InterfaceCompilerHostCapability {
+    pub projection_kind: &'static str,
+    pub id: String,
+    pub revision: u64,
+    pub application_id: String,
+    pub name: String,
+    pub description: String,
+    pub status: String,
+    pub active_replay_version_id: String,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct InterfaceCompilerHostActiveReplay {
+    pub projection_kind: &'static str,
+    pub id: String,
+    pub revision: u64,
+    pub capability_id: String,
+    pub version: u64,
+    pub steps: Vec<InterfaceCompilerHostReplayStep>,
+    pub confidence: f64,
+    pub status: String,
+    pub created_at: String,
+    pub verified_at: String,
+    pub verification: InterfaceCompilerHostReplayVerification,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum InterfaceCompilerHostReplayStep {
+    Navigate {
+        url: String,
+    },
+    Click {
+        target: InterfaceCompilerHostLocator,
+    },
+    Fill {
+        target: InterfaceCompilerHostLocator,
+        value: String,
+    },
+    Select {
+        target: InterfaceCompilerHostLocator,
+        value: String,
+    },
+    Wait {
+        milliseconds: u64,
+    },
+    Read {
+        target: InterfaceCompilerHostLocator,
+        #[serde(rename = "outputKey")]
+        output_key: String,
+    },
+    Assert {
+        condition: serde_json::Value,
+    },
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InterfaceCompilerHostLocator {
+    pub semantic_description: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selector: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InterfaceCompilerHostReplayVerification {
+    pub required_successful_runs: u64,
+    pub runs: Vec<InterfaceCompilerHostVerificationRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InterfaceCompilerHostVerificationRun {
+    pub id: String,
+    pub capability_id: String,
+    pub replay_version_id: String,
+    pub session_id: String,
+    pub outcome: String,
+    pub evidence_ids: Vec<String>,
+    pub completed_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -135,6 +229,35 @@ pub enum InterfaceCompilerHostResponse {
         request_id: String,
         operation: &'static str,
         execution_id: String,
+        stage: InterfaceCompilerHostDenialStage,
+        kind: String,
+        message: String,
+    },
+    CapabilityFound {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        capability: InterfaceCompilerHostCapability,
+        evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    ActiveReplayFound {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        replay: InterfaceCompilerHostActiveReplay,
+        evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    CompiledReadNotFound {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        capability_id: String,
+    },
+    CompiledReadDenied {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        capability_id: String,
         stage: InterfaceCompilerHostDenialStage,
         kind: String,
         message: String,
@@ -187,13 +310,18 @@ pub fn handle_request(
     if request.operation == START_EXECUTION_OPERATION {
         return start_execution::handle_start_execution(request_id, request, host);
     }
+    if request.operation == READ_CAPABILITY_OPERATION
+        || request.operation == READ_ACTIVE_REPLAY_OPERATION
+    {
+        return compiled_plan_read::handle_compiled_plan_read(request_id, request, host);
+    }
     if request.operation != READ_APPLICATION_OPERATION {
         return InterfaceCompilerHostResponse::Unavailable {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
             operation: request.operation,
             reason: InterfaceCompilerHostUnavailableReason::Unsupported,
-            message: "this host exposes only read_application and start_execution".to_string(),
+            message: "this host exposes only read_application, start_execution, read_capability, and read_active_replay".to_string(),
         };
     }
     let Some(application_id) = request.application_id else {
