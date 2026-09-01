@@ -1,0 +1,17 @@
+{
+  "name": "@interface-compiler/orchestrator",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@interface-compiler/domain": "file:../../packages/domain",
+    "@interface-compiler/gemini-adapter": "file:../../packages/gemini-adapter",
+    "@interface-compiler/worth-adapter": "file:../../packages/worth-adapter"
+  }
+}
