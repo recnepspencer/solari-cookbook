@@ -2469,3 +2469,47 @@ The package is published locally as `@interface-compiler/domain` within the
 workspace. Its public surface is the explicit `packages/domain/src/index.ts`
 facade. Domain costs accept measured run inputs and caller-supplied pricing;
 the foundation contains no sample measurements, credentials, or `.env` values.
+
+# Safe runnable Walmart benchmark slice
+
+The current vertical slice adds a callable harness for one fixed Walmart task:
+find Tide Pods, add at most one suitable result, open the cart, and stop at the
+first checkout/account/authentication/personal-information/shipping/payment/
+order/credential/access boundary. A task-specific admission gate permits only
+the fixed public `Tide Pods` search input, HTTPS Walmart navigation, and at
+most one explicitly identified Tide Pods add-to-cart action. It never supplies
+personal/account/shipping/payment/credential data, authenticates, begins
+checkout, confirms an order, or purchases.
+
+From this directory, the default inspection is deterministic and no-network:
+
+```text
+npm run benchmark:walmart:dry-run
+```
+
+It validates configuration and reports safeguards without constructing a
+Gemini client, Solari client, or WORTH process. The paid/network-capable command
+is deliberately separate:
+
+```text
+npm run benchmark:walmart:run
+```
+
+That command refuses to compose live adapters unless `--execute` is present
+through the script and `INTERFACE_COMPILER_ALLOW_WALMART_NETWORK=true` is
+explicitly configured. See [the orchestrator README](apps/orchestrator/README.md)
+for the required credential and current-pricing environment variables.
+
+Both plans are resolved from the same immutable request before effects. Direct
+mode uses the configured Gemini reasoning adapter; compiled mode uses the
+WORTH-projected replay; both use the configured Solari adapter with fresh
+sessions. WORTH admits each execution, owns its telemetry journal, and returns
+the terminal projection used by the report. The report copies calls, tokens,
+browser observations/actions, wall clock, and estimated model cost from those
+terminal handoffs and derives only per-run savings.
+
+The checked-in replay is explicitly synthetic seed material. It can be run,
+but it cannot produce compilation economics: compile cost and break-even are
+reported as `not_measured`. Only exact WORTH-attributed discovery and
+verification terminal projections can open those fields; missing or seeded
+values never become zero or a demo figure.

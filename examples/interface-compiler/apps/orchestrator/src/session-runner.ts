@@ -31,6 +31,7 @@ import {
   validateDirectDecision,
 } from "./planning.js"
 import type { SemanticVerifier, SemanticVerificationResult } from "./semantic-verifier.js"
+import type { ExperimentStepGuard } from "./step-policy.js"
 import type { WorthAuthority } from "@interface-compiler/domain"
 type WorthEvidenceReader = { readonly readEvidence?: WorthAuthority["readEvidence"] }
 
@@ -64,15 +65,16 @@ export async function runExperimentSession(
   worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
+  stepGuard?: ExperimentStepGuard,
 ): Promise<ExperimentTerminal> {
-  const firstObservation = await observe(session, controller, emit, executionId)
+  const firstObservation = await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
   if (firstObservation.kind !== "observed") return firstObservation.intent
   let observation = firstObservation.observation
 
   if (plan.kind === "direct") {
-    return runDirect(plan, session, observation, controller, model, verifier, worth, emit, executionId)
+    return runDirect(plan, session, observation, controller, model, verifier, worth, emit, executionId, stepGuard)
   }
-  return runCompiled(plan, session, observation, controller, verifier, worth, emit, executionId)
+  return runCompiled(plan, session, observation, controller, verifier, worth, emit, executionId, stepGuard)
 }
 
 async function runDirect(
@@ -85,6 +87,7 @@ async function runDirect(
   worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
+  stepGuard?: ExperimentStepGuard,
 ): Promise<ExperimentTerminal> {
   if (model === undefined) return { kind: "failure", message: "reasoning model became unavailable before a call" }
   let currentObservation = observation
@@ -116,6 +119,8 @@ async function runDirect(
     if (decision.kind === "complete") return verifyOutcome(plan.request.expectedOutcome, verifier, worth, currentObservation, decision.output, controller, emit, executionId)
     if (decision.kind === "stop") return classifyDecisionSafety(decision, currentObservation.observedAt)
 
+    const stepAdmission = admitStep(stepGuard, decision.step)
+    if (stepAdmission !== undefined) return stepAdmission
     const stepSafety = assessReplayStepSafety(decision.step, currentObservation.observedAt)
     if (!stepSafety.ok) return { kind: "failure", message: "safety classification failed" }
     if (stepSafety.value.kind === "stop") return { kind: "safety_stop", stop: stepSafety.value.result }
@@ -124,8 +129,8 @@ async function runDirect(
     const action = await executeStep(session, decision.step, controller, emit, executionId, eventIdempotencyKey("browser.action", actionLogicalIdentity))
     if (action.kind !== "completed") return action.intent
     const nextObservation = action.observation === undefined
-      ? await observe(session, controller, emit, executionId)
-      : await assessObservation(action.observation, emit, executionId)
+      ? await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
+      : await assessObservation(action.observation, emit, executionId, plan.request.application.baseUrl)
     if (nextObservation.kind !== "observed") return nextObservation.intent
     currentObservation = nextObservation.observation
   }
@@ -140,21 +145,34 @@ async function runCompiled(
   worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
+  stepGuard?: ExperimentStepGuard,
 ): Promise<ExperimentTerminal> {
   let currentObservation = observation
   for (const [stepIndex, step] of plan.replay.steps.entries()) {
+    const stepAdmission = admitStep(stepGuard, step)
+    if (stepAdmission !== undefined) return stepAdmission
     const stepSafety = assessReplayStepSafety(step, currentObservation.observedAt)
     if (!stepSafety.ok) return { kind: "failure", message: "safety classification failed" }
     if (stepSafety.value.kind === "stop") return { kind: "safety_stop", stop: stepSafety.value.result }
     const action = await executeStep(session, step, controller, emit, executionId, eventIdempotencyKey("browser.action", `${plan.replay.id}:${stepIndex}`))
     if (action.kind !== "completed") return action.intent
     const nextObservation = action.observation === undefined
-      ? await observe(session, controller, emit, executionId)
-      : await assessObservation(action.observation, emit, executionId)
+      ? await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
+      : await assessObservation(action.observation, emit, executionId, plan.request.application.baseUrl)
     if (nextObservation.kind !== "observed") return nextObservation.intent
     currentObservation = nextObservation.observation
   }
   return verifyOutcome(plan.request.expectedOutcome, verifier, worth, currentObservation, undefined, controller, emit, executionId, plan.replay.id)
+}
+
+function admitStep(guard: ExperimentStepGuard | undefined, step: ReplayStep): ExperimentTerminal | undefined {
+  if (guard === undefined) return undefined
+  try {
+    const result = guard.admit(step)
+    return result.kind === "denied" ? { kind: "failure", message: result.message } : undefined
+  } catch {
+    return { kind: "failure", message: "the task-specific step policy failed closed" }
+  }
 }
 
 async function observe(
@@ -162,27 +180,42 @@ async function observe(
   controller: OperationController,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
+  applicationBaseUrl: string,
 ): Promise<ObservationOutcome> {
   const gate = controller.check()
   if (gate.kind === "stop") return { kind: "terminal", intent: { kind: "control_stop", stop: gate.stop } }
   const result = await session.observe(controller.context)
   if (result.kind !== "observed") return { kind: "terminal", intent: solariObservationIntent(result) }
-  return assessObservation(result.observation, emit, executionId)
+  return assessObservation(result.observation, emit, executionId, applicationBaseUrl)
 }
 
 async function assessObservation(
   observation: Observation,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
+  applicationBaseUrl: string,
 ): Promise<ObservationOutcome> {
   const publication = await emit("browser.observed", { executionId, sessionId: observation.sessionId, observationId: observation.id }, eventIdempotencyKey("browser.observed", `${observation.sessionId}:${observation.id}`))
   const publicationIntent = eventPublicationIntent(publication, { kind: "completed" })
   if (publicationIntent !== undefined) return { kind: "terminal", intent: publicationIntent }
+  if (!sameApplicationOrigin(observation.url, applicationBaseUrl)) {
+    return { kind: "terminal", intent: { kind: "failure", message: "Solari observation left the admitted application origin" } }
+  }
   const safety = assessObservationSafety(observation)
   if (!safety.ok) return { kind: "terminal", intent: { kind: "failure", message: "safety classification failed" } }
   return safety.value.kind === "stop"
     ? { kind: "terminal", intent: { kind: "safety_stop", stop: safety.value.result } }
     : { kind: "observed", observation }
+}
+
+function sameApplicationOrigin(observationUrl: string, applicationBaseUrl: string): boolean {
+  try {
+    const observation = new URL(observationUrl)
+    const application = new URL(applicationBaseUrl)
+    return observation.origin === application.origin && observation.username === "" && observation.password === ""
+  } catch {
+    return false
+  }
 }
 
 async function executeStep(
@@ -285,7 +318,7 @@ async function verifyOutcome(
       : { kind: "success", ...(output === undefined ? {} : { output }) }
   }
   if (verifier === undefined) return { kind: "failure", message: "semantic outcome verifier is required for this experiment" }
-  const gate = controller.check()
+  const gate = controller.reserveModelCall()
   if (gate.kind === "stop") return { kind: "control_stop", stop: gate.stop }
 
   let result: SemanticVerificationResult

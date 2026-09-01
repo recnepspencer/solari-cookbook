@@ -10,8 +10,10 @@
     "test": "tsx --test \"test/**/*.test.ts\""
   },
   "dependencies": {
+    "@interface-compiler/benchmark": "file:../../packages/benchmark",
     "@interface-compiler/domain": "file:../../packages/domain",
     "@interface-compiler/gemini-adapter": "file:../../packages/gemini-adapter",
+    "@interface-compiler/solari-adapter": "file:../../packages/solari-adapter",
     "@interface-compiler/worth-adapter": "file:../../packages/worth-adapter"
   }
 }

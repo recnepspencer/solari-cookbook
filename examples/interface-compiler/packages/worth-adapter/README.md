@@ -33,6 +33,21 @@ the complete port. The client owns only process transport and request
 correlation; it has no local authority or WORTH recovery-handle serialization.
 Replay degradation/recovery/publication, evidence recording, and standalone
 execution/benchmark reads remain explicitly unavailable.
+
+The app-specific protocol is `interface-compiler.worth-host.v2`. Capability
+and active-replay reads include typed compilation provenance. `synthetic_seed`
+means the replay may be executed but cannot support compilation economics;
+`measured` carries the exact WORTH discovery and verification execution IDs
+that a reporting caller must re-authorize as terminal projections. The client
+does not infer provenance from descriptions and rejects malformed, empty,
+duplicate, or overlapping measured identity sets.
+
+Runtime settlement returns the authoritative
+`WorthTerminalExecutionProjection`, including WORTH-journal-derived model
+calls, tokens, browser observations/actions, estimated model cost, timestamps,
+wall clock, and terminal outcome. The response mapper validates the metric
+window and reconstructs safety stops through the domain safety classifier; it
+does not retain an event ledger or calculate counters locally.
 See [the bridge evidence](../../WORTH_BRIDGE_EVIDENCE.md) for the exact
 live/unavailable surface and remaining prerequisites.
 

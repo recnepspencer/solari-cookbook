@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { assessReplayStepSafety, detectSafetySignal } from "../src/index.js"
+import type { Observation } from "@interface-compiler/domain"
+import { assessObservationSafety, assessReplayStepSafety, detectSafetySignal } from "../src/index.js"
 
 const observedAt = "2026-08-31T12:00:00.000Z"
 
@@ -10,13 +11,17 @@ test("classifies every human-required credential, personal, checkout, and access
     [["Two-factor code"], "authentication_required"],
     [["Credentials are required"], "authentication_required"],
     [["Authentication required"], "authentication_required"],
+    [["Account"], "authentication_required"],
     [["email address"], "personal_information_required"],
     [["Please enter your address"], "shipping_details_required"],
     [["shipping address"], "shipping_details_required"],
     [["credit card number"], "payment_details_required"],
     [["Enter your card information"], "payment_details_required"],
     [["Billing address"], "payment_details_required"],
-    [["Checkout"], "safe_to_continue"],
+    [["Checkout"], "order_placement"],
+    [["Continue as guest"], "order_placement"],
+    [["Continue to payment"], "order_placement"],
+    [["Review your order"], "order_placement"],
     [["Place order"], "order_placement"],
     [["Access denied"], "access_control_required"],
     [["Permission required"], "access_control_required"],
@@ -31,6 +36,64 @@ test("classifies every human-required credential, personal, checkout, and access
   ] as const
 
   for (const [descriptions, expected] of cases) assert.equal(detectSafetySignal(descriptions).kind, expected)
+})
+
+test("ignores passive global sign-in navigation but stops when checkout is actionable", () => {
+  const passive = {
+    id: "observation.passive",
+    sessionId: "session.passive",
+    url: "https://www.walmart.com/search?q=Tide%20Pods",
+    title: "Tide Pods - Walmart.com",
+    pageSummary: "Search results",
+    interactables: [{ kind: "link", role: "link", name: "Sign In Account" }, { kind: "button", role: "button", name: "Add to cart" }],
+    observedAt,
+  } as unknown as Observation
+  const passiveResult = assessObservationSafety(passive)
+  assert.equal(passiveResult.ok, true)
+  if (passiveResult.ok) assert.equal(passiveResult.value.kind, "continue")
+
+  const checkoutResult = assessObservationSafety({ ...passive, id: "observation.checkout" as Observation["id"], interactables: [...passive.interactables, { kind: "button", role: "button", name: "Checkout" }] })
+  assert.equal(checkoutResult.ok, true)
+  if (!checkoutResult.ok || checkoutResult.value.kind !== "stop") throw new Error("expected checkout stop")
+  assert.equal(checkoutResult.value.result.reason, "order_placement")
+})
+
+test("passive account chrome cannot mask another human-required boundary", () => {
+  const pageBoundary = {
+    id: "observation.shipping",
+    sessionId: "session.shipping",
+    url: "https://www.walmart.com/cart",
+    title: "Account | Cart",
+    pageSummary: "Shipping address required",
+    interactables: [],
+    observedAt,
+  } as unknown as Observation
+  const pageResult = assessObservationSafety(pageBoundary)
+  assert.equal(pageResult.ok, true)
+  if (!pageResult.ok || pageResult.value.kind !== "stop") throw new Error("expected shipping stop")
+  assert.equal(pageResult.value.result.reason, "shipping_details_required")
+
+  const interactableResult = assessObservationSafety({
+    ...pageBoundary,
+    id: "observation.checkout-account" as Observation["id"],
+    title: "Cart",
+    pageSummary: "Cart",
+    interactables: [{ kind: "button", role: "button", name: "Account / Checkout" }],
+  })
+  assert.equal(interactableResult.ok, true)
+  if (!interactableResult.ok || interactableResult.value.kind !== "stop") throw new Error("expected checkout stop")
+  assert.equal(interactableResult.value.result.reason, "order_placement")
+})
+
+test("allows only the bounded product-search fill and stops all other unknown fills before effects", () => {
+  const search = assessReplayStepSafety({ type: "fill", target: { semanticDescription: "Walmart product search", role: "searchbox" }, value: "Tide Pods" }, observedAt)
+  assert.equal(search.ok, true)
+  if (search.ok) assert.equal(search.value.kind, "continue")
+
+  const unknown = assessReplayStepSafety({ type: "fill", target: { semanticDescription: "optional field", role: "textbox" }, value: "never inspected" }, observedAt)
+  assert.equal(unknown.ok, true)
+  if (!unknown.ok || unknown.value.kind !== "stop") throw new Error("expected unknown fill stop")
+  assert.equal(unknown.value.result.reason, "personal_information_required")
 })
 
 test("checks a replay action before the Solari effect is invoked", () => {

@@ -36,6 +36,40 @@ top-level outcomes: `measured`, `not_measured`, or `not_comparable`.
 `validateBenchmarkComparison(input)` returns the typed rejection details that
 explain why a claimed comparison was denied. Neither entry point performs I/O.
 
+The safe Walmart harness uses the narrower one-run terminal handoff API:
+
+```ts
+import { createTerminalBenchmarkReport } from "@interface-compiler/benchmark"
+
+const report = createTerminalBenchmarkReport({
+  task,
+  direct: directWorthSettlement,
+  compiled: compiledWorthSettlement,
+  compiledPlan: {
+    capabilityId,
+    replayVersionId,
+    compilationProvenance,
+    capabilityEvidence,
+    replayEvidence,
+  },
+})
+```
+
+This API admits only committed terminal projections returned by the narrow
+live WORTH runtime port. It copies model calls, input/output tokens, browser
+observations/actions, wall clock, and estimated model cost from those
+projections, then derives per-run savings as disposable presentation data. It
+does not accept a Node-side measurement record, event counter, or pricing
+fallback for those fields.
+
+Compilation economics have an additional authority gate. A capability and
+replay marked `synthetic_seed` remain runnable, but compilation cost and
+break-even are returned as `not_measured` even if a caller supplies apparent
+compilation runs. A `measured` provenance must name exact, unique discovery and
+verification WORTH execution IDs, and the report requires the corresponding
+successful terminal projections before it derives compile cost and
+break-even. Missing values never become zero.
+
 ## Core Mental Model
 
 Worth Query remains the authority for execution, replay verification,
@@ -241,7 +275,8 @@ data. Every denial carries a code, path, and remediation-oriented message.
 - The package aggregates the records supplied in one call. It does not query,
   persist, deduplicate, or discover additional runs.
 - The live paid run, Worth transport binding, and dashboard wiring are outside
-  this package's boundary.
+  this package's boundary. The callable Walmart composition is in
+  `apps/orchestrator`; this package remains pure.
 
 ## Related Docs
 

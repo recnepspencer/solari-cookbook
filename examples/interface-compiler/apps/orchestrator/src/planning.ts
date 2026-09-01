@@ -20,6 +20,7 @@ import {
   type ValidationResult,
   type WorthReadResult,
 } from "@interface-compiler/domain"
+import type { CompiledPlanMeasurementProvenance, WorthQueryEvidence } from "@interface-compiler/worth-adapter"
 
 export type DirectDecision =
   | { readonly kind: "act"; readonly step: ReplayStep }
@@ -49,7 +50,19 @@ export interface CompiledPlanReadPort {
   readCapability(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledProjectionReadResult<CapabilityProjection>>
   readActiveReplay(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledProjectionReadResult<ActiveReplayProjection>>
 }
-type CompiledProjectionReadResult<T> = WorthReadResult<T> | { readonly kind: "denied" | "unavailable"; readonly message: string }
+type CompiledProjectionReadResult<T> =
+  | { readonly kind: "found"; readonly value: T; readonly evidence?: WorthQueryEvidence; readonly compilationProvenance?: CompiledPlanMeasurementProvenance }
+  | Exclude<WorthReadResult<T>, { readonly kind: "found" }>
+  | { readonly kind: "denied" | "unavailable"; readonly message: string }
+
+export type CompiledPlanAuthority =
+  | {
+      readonly kind: "worth_query"
+      readonly capabilityEvidence: WorthQueryEvidence
+      readonly replayEvidence: WorthQueryEvidence
+      readonly compilationProvenance: CompiledPlanMeasurementProvenance
+    }
+  | { readonly kind: "projection_only"; readonly compilationProvenance: { readonly kind: "unavailable" } }
 
 export interface CompiledExperimentPlan {
   readonly kind: "compiled"
@@ -57,6 +70,7 @@ export interface CompiledExperimentPlan {
   readonly request: ExperimentRequest
   readonly capability: HealthyCapabilityProjection
   readonly replay: ActiveReplayProjection
+  readonly authority: CompiledPlanAuthority
 }
 
 export type ExperimentPlan = DirectExperimentPlan | CompiledExperimentPlan
@@ -118,6 +132,8 @@ export async function planCompiledExperiment(
     return { kind: "unavailable", reason: "projection_mismatch" }
   }
   if (replayResult.value.steps.length === 0) return { kind: "unavailable", reason: "active_replay_invalid" }
+  const authority = compiledPlanAuthority(capabilityResult, replayResult)
+  if (authority === undefined) return { kind: "unavailable", reason: "projection_mismatch" }
 
   return {
     kind: "planned",
@@ -127,8 +143,33 @@ export async function planCompiledExperiment(
       request: cloneRequest(input),
       capability: cloneAndFreeze(capabilityResult.value),
       replay: cloneAndFreeze(replayResult.value),
+      authority: cloneAndFreeze(authority),
     }),
   }
+}
+
+function compiledPlanAuthority(
+  capability: Extract<CompiledProjectionReadResult<CapabilityProjection>, { readonly kind: "found" }>,
+  replay: Extract<CompiledProjectionReadResult<ActiveReplayProjection>, { readonly kind: "found" }>,
+): CompiledPlanAuthority | undefined {
+  const capabilityHasAuthority = capability.evidence !== undefined && capability.compilationProvenance !== undefined
+  const replayHasAuthority = replay.evidence !== undefined && replay.compilationProvenance !== undefined
+  if (!capabilityHasAuthority && !replayHasAuthority) return { kind: "projection_only", compilationProvenance: { kind: "unavailable" } }
+  if (!capabilityHasAuthority || !replayHasAuthority || !sameCompilationProvenance(capability.compilationProvenance, replay.compilationProvenance)) return undefined
+  return {
+    kind: "worth_query",
+    capabilityEvidence: capability.evidence,
+    replayEvidence: replay.evidence,
+    compilationProvenance: capability.compilationProvenance,
+  }
+}
+
+function sameCompilationProvenance(left: CompiledPlanMeasurementProvenance | undefined, right: CompiledPlanMeasurementProvenance | undefined): boolean {
+  if (left === undefined || right === undefined || left.kind !== right.kind) return false
+  if (left.kind === "synthetic_seed") return true
+  return right.kind === "measured" &&
+    JSON.stringify(left.discoveryExecutionIds) === JSON.stringify(right.discoveryExecutionIds) &&
+    JSON.stringify(left.verificationExecutionIds) === JSON.stringify(right.verificationExecutionIds)
 }
 
 export function createDirectDecisionSchema(): ValidationResult<Schema<DirectDecision>> {
