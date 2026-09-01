@@ -218,6 +218,7 @@ fn validate_replay_payload(
     for run in &verification.runs {
         if run.id.trim().is_empty()
             || run.session_id.trim().is_empty()
+            || !run.fresh_session
             || run.evidence_ids.is_empty()
             || run.completed_at.trim().is_empty()
             || run.capability_id != capability_id
@@ -313,6 +314,7 @@ mod tests {
                 capability_id: "capability.foreign".to_string(),
                 replay_version_id: "replay.expected".to_string(),
                 session_id: "session-1".to_string(),
+                fresh_session: true,
                 outcome: "success".to_string(),
                 evidence_ids: vec!["evidence-1".to_string()],
                 completed_at: "2026-08-31T18:00:00.000Z".to_string(),

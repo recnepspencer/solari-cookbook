@@ -33,9 +33,9 @@ function projectVerification(value: unknown, capabilityId: CapabilityId, replayI
   let successes = 0
   const runs: ActiveReplayProjection["verification"]["runs"][number][] = []
   for (const run of value.runs) {
-    if (!record(run) || !text(run.id) || run.capabilityId !== capabilityId || run.replayVersionId !== replayId || !text(run.sessionId) || run.outcome !== "success" || !Array.isArray(run.evidenceIds) || run.evidenceIds.length === 0 || !run.evidenceIds.every(text) || !timestamp(run.completedAt)) return undefined
+    if (!record(run) || !text(run.id) || run.capabilityId !== capabilityId || run.replayVersionId !== replayId || !text(run.sessionId) || run.freshSession !== true || run.outcome !== "success" || !Array.isArray(run.evidenceIds) || run.evidenceIds.length === 0 || !run.evidenceIds.every(text) || !timestamp(run.completedAt)) return undefined
     successes += 1
-    runs.push({ id: run.id as ActiveReplayProjection["verification"]["runs"][number]["id"], sessionId: run.sessionId as ActiveReplayProjection["verification"]["runs"][number]["sessionId"], capabilityId, replayVersionId: replayId as ActiveReplayProjection["id"], freshSession: true, outcome: "success", evidenceIds: run.evidenceIds as unknown as ActiveReplayProjection["verification"]["runs"][number]["evidenceIds"] })
+    runs.push({ id: run.id as ActiveReplayProjection["verification"]["runs"][number]["id"], sessionId: run.sessionId as ActiveReplayProjection["verification"]["runs"][number]["sessionId"], capabilityId, replayVersionId: replayId as ActiveReplayProjection["id"], freshSession: run.freshSession, outcome: "success", evidenceIds: run.evidenceIds as unknown as ActiveReplayProjection["verification"]["runs"][number]["evidenceIds"] })
   }
   return successes >= (value.requiredSuccessfulRuns as number) ? { requiredSuccessfulRuns: value.requiredSuccessfulRuns as number, runs } : undefined
 }

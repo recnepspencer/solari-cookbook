@@ -386,7 +386,8 @@ the application read path and one execution transition. The Rust host's typed
 authorization, invariant projection, effect programming, compare-and-commit,
 and a separate typed execution query. The same WORTH schema seeds one healthy
 demonstration capability and its active replay behind two admitted projection
-queries. The TypeScript client exposes narrow `readApplication`,
+queries. This is an explicitly synthetic, unmeasured seed; it is not evidence
+of a compilation run against Walmart. The TypeScript client exposes narrow `readApplication`,
 `startExecution`, and compiled-plan read adapters; the latter does not claim
 the broad authority interface. The complete matching WORTH
 checkout is required at

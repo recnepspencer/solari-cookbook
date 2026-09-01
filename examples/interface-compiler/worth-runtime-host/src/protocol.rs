@@ -179,6 +179,7 @@ pub struct InterfaceCompilerHostVerificationRun {
     pub capability_id: String,
     pub replay_version_id: String,
     pub session_id: String,
+    pub fresh_session: bool,
     pub outcome: String,
     pub evidence_ids: Vec<String>,
     pub completed_at: String,

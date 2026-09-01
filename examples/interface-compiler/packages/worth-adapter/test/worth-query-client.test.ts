@@ -124,12 +124,21 @@ test("compiled-plan reads fail closed on a mismatched projection identity", asyn
 })
 
 test("compiled-plan replay fails closed on foreign verification lineage", async () => {
-  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.foreign", replayVersionId: "replay.expected", sessionId: "session-1", outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.foreign", replayVersionId: "replay.expected", sessionId: "session-1", freshSession: true, outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
   const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
   const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-lineage"))
   await client.close()
   assert.equal(result.kind, "unavailable")
   if (result.kind === "unavailable") assert.equal(result.reason, "malformed_response")
+})
+
+test("compiled-plan replay does not mint missing fresh-session evidence", async () => {
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.expected", replayVersionId: "replay.expected", sessionId: "session-1", outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
+  const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-fresh-session"))
+  await client.close()
+  assert.equal(result.kind, "unavailable")
+  if (result.kind === "unavailable") assert.equal(result.reason, "transport_unavailable")
 })
 
 test("client preserves WORTH authentication denial as a typed denial", async (testContext) => {

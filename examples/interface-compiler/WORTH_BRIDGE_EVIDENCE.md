@@ -19,7 +19,8 @@ The Interface Compiler demo now has four real application-specific host paths:
    typed execution query.
 4. The installed schema also owns one healthy demonstration capability and its
    active replay. Separate typed WORTH queries project both, including replay
-   steps and verification fields.
+   steps and verification fields. The seed is synthetic and unmeasured; it does
+   not claim that a Walmart compilation or verification run occurred.
 5. `worth-runtime-host/src/protocol.rs` exposes only those products over
    an app-specific newline-delimited process boundary. Runtime-local proof,
    graph handles, and recovery handles never cross it.

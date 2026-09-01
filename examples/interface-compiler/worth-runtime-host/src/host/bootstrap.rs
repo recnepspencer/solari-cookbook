@@ -156,7 +156,8 @@ impl InterfaceCompilerWorthHost {
                 .field(CapabilityName::reference(), "SearchProducts".to_string())
                 .field(
                     CapabilityDescription::reference(),
-                    "Search Walmart products by semantic query".to_string(),
+                    "Synthetic demo seed for a Walmart product search; not a measured compilation"
+                        .to_string(),
                 )
                 .field(CapabilityStatus::reference(), "healthy".to_string())
                 .field(
