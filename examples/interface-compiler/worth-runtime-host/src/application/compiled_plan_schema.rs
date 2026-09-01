@@ -3,6 +3,11 @@
 use worth_query_host::facade::{declaration, primary_graph};
 use worth_query_host::facade::{worth_query_application_query, worth_query_portable_type};
 
+use super::replay_recovery_schema::{
+    CapabilityBrokenReplayIdentifier, CapabilityCandidateReplayIdentifier, CapabilityFailureJson,
+    ReplayBrokenAt, ReplayDiscoveredFromExperimentIdentifier, ReplayFailureJson,
+    ReplaySupersedesIdentifier,
+};
 use super::schema::*;
 
 pub struct CapabilityReadParameters;
@@ -14,6 +19,9 @@ pub struct CapabilityNameSlot;
 pub struct CapabilityDescriptionSlot;
 pub struct CapabilityStatusSlot;
 pub struct CapabilityActiveReplayIdSlot;
+pub struct CapabilityCandidateReplayIdSlot;
+pub struct CapabilityBrokenReplayIdSlot;
+pub struct CapabilityFailureJsonSlot;
 pub struct ActiveReplayReadParameters;
 pub struct ReplayIdParameter;
 pub struct ReplayIdSlot;
@@ -24,8 +32,12 @@ pub struct ReplayStepsJsonSlot;
 pub struct ReplayConfidenceMillisSlot;
 pub struct ReplayStatusSlot;
 pub struct ReplayCreatedAtSlot;
+pub struct ReplayDiscoveredFromExperimentIdSlot;
+pub struct ReplaySupersedesIdSlot;
 pub struct ReplayVerifiedAtSlot;
 pub struct ReplayVerificationJsonSlot;
+pub struct ReplayFailureJsonSlot;
+pub struct ReplayBrokenAtSlot;
 
 macro_rules! portable_slot { ($slot:ty, $name:literal) => { worth_query_portable_type!($slot => $name); }; }
 portable_slot!(
@@ -55,6 +67,18 @@ portable_slot!(
 portable_slot!(
     CapabilityActiveReplayIdSlot,
     "interface-compiler.worth.capability-read.active-replay-id.v1"
+);
+portable_slot!(
+    CapabilityCandidateReplayIdSlot,
+    "interface-compiler.worth.capability-read.candidate-replay-id.v1"
+);
+portable_slot!(
+    CapabilityBrokenReplayIdSlot,
+    "interface-compiler.worth.capability-read.broken-replay-id.v1"
+);
+portable_slot!(
+    CapabilityFailureJsonSlot,
+    "interface-compiler.worth.capability-read.failure-json.v1"
 );
 portable_slot!(
     ReplayIdSlot,
@@ -89,12 +113,28 @@ portable_slot!(
     "interface-compiler.worth.active-replay-read.created-at.v1"
 );
 portable_slot!(
+    ReplayDiscoveredFromExperimentIdSlot,
+    "interface-compiler.worth.replay-read.discovered-from-experiment-id.v1"
+);
+portable_slot!(
+    ReplaySupersedesIdSlot,
+    "interface-compiler.worth.replay-read.supersedes-id.v1"
+);
+portable_slot!(
     ReplayVerifiedAtSlot,
     "interface-compiler.worth.active-replay-read.verified-at.v1"
 );
 portable_slot!(
     ReplayVerificationJsonSlot,
     "interface-compiler.worth.active-replay-read.verification-json.v1"
+);
+portable_slot!(
+    ReplayFailureJsonSlot,
+    "interface-compiler.worth.replay-read.failure-json.v1"
+);
+portable_slot!(
+    ReplayBrokenAtSlot,
+    "interface-compiler.worth.replay-read.broken-at.v1"
 );
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -105,7 +145,10 @@ pub struct InterfaceCompilerCapabilityProjection {
     pub name: String,
     pub description: String,
     pub status: String,
-    pub active_replay_id: String,
+    pub active_replay_id: Option<String>,
+    pub candidate_replay_id: Option<String>,
+    pub broken_replay_id: Option<String>,
+    pub failure_json: Option<String>,
 }
 worth_query_portable_type!(InterfaceCompilerCapabilityProjection => "interface-compiler.worth.capability-read.result.v1");
 worth_query_application_query!(pub CapabilityReadQuery in InterfaceCompilerSchema, parameters CapabilityReadParameters, result InterfaceCompilerCapabilityProjection, scope Capability, name "interface_compiler_capability_read");
@@ -120,8 +163,12 @@ pub struct InterfaceCompilerActiveReplayProjection {
     pub confidence_millis: u64,
     pub status: String,
     pub created_at: String,
-    pub verified_at: String,
+    pub discovered_from_experiment_id: String,
+    pub supersedes_id: Option<String>,
+    pub verified_at: Option<String>,
     pub verification_json: String,
+    pub failure_json: Option<String>,
+    pub broken_at: Option<String>,
 }
 worth_query_portable_type!(InterfaceCompilerActiveReplayProjection => "interface-compiler.worth.active-replay-read.result.v1");
 worth_query_application_query!(pub ActiveReplayReadQuery in InterfaceCompilerSchema, parameters ActiveReplayReadParameters, result InterfaceCompilerActiveReplayProjection, scope Replay, name "interface_compiler_active_replay_read");
@@ -139,6 +186,19 @@ type CapabilityResultField<Slot, Field, Value> =
         declaration::application_schema::EqualityPredicate,
         declaration::application_schema::NoApplicationUnit,
     >;
+type CapabilityMutableResultField<Slot, Field, Value> =
+    declaration::application_query::ApplicationQueryResultFieldRef<
+        CapabilityReadQuery,
+        Slot,
+        InterfaceCompilerSchema,
+        Capability,
+        CapabilityFacts,
+        Field,
+        Value,
+        declaration::application_schema::ReadWrite,
+        declaration::application_schema::EqualityPredicate,
+        declaration::application_schema::NoApplicationUnit,
+    >;
 type ReplayResultField<Slot, Field, Value> =
     declaration::application_query::ApplicationQueryResultFieldRef<
         ActiveReplayReadQuery,
@@ -150,6 +210,45 @@ type ReplayResultField<Slot, Field, Value> =
         Value,
         declaration::application_schema::ReadOnly,
         declaration::application_schema::EqualityPredicate,
+        declaration::application_schema::NoApplicationUnit,
+    >;
+type ReplayMutableResultField<Slot, Field, Value> =
+    declaration::application_query::ApplicationQueryResultFieldRef<
+        ActiveReplayReadQuery,
+        Slot,
+        InterfaceCompilerSchema,
+        Replay,
+        ReplayFacts,
+        Field,
+        Value,
+        declaration::application_schema::ReadWrite,
+        declaration::application_schema::EqualityPredicate,
+        declaration::application_schema::NoApplicationUnit,
+    >;
+type CapabilityOptionalResultField<Slot, Field, Value> =
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef<
+        CapabilityReadQuery,
+        Slot,
+        InterfaceCompilerSchema,
+        Capability,
+        CapabilityFacts,
+        Field,
+        Value,
+        declaration::application_schema::ReadWrite,
+        declaration::application_schema::EqualityPredicate,
+        declaration::application_schema::NoApplicationUnit,
+    >;
+type ReplayOptionalResultField<Slot, Field, Value, Equality> =
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef<
+        ActiveReplayReadQuery,
+        Slot,
+        InterfaceCompilerSchema,
+        Replay,
+        ReplayFacts,
+        Field,
+        Value,
+        declaration::application_schema::ReadWrite,
+        Equality,
         declaration::application_schema::NoApplicationUnit,
     >;
 
@@ -173,7 +272,7 @@ result_field!(
 );
 result_field!(
     capability_revision_result,
-    CapabilityResultField,
+    CapabilityMutableResultField,
     CapabilityRevisionSlot,
     CapabilityRevision,
     u64,
@@ -205,20 +304,60 @@ result_field!(
 );
 result_field!(
     capability_status_result,
-    CapabilityResultField,
+    CapabilityMutableResultField,
     CapabilityStatusSlot,
     CapabilityStatus,
     String,
     "status"
 );
-result_field!(
-    capability_active_replay_id_result,
-    CapabilityResultField,
+pub fn capability_active_replay_id_result() -> CapabilityMutableResultField<
     CapabilityActiveReplayIdSlot,
     CapabilityActiveReplayIdentifier,
     String,
-    "active_replay_id"
-);
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "active_replay_id",
+        CapabilityActiveReplayIdentifier::reference(),
+    )
+}
+pub fn capability_candidate_replay_id_result() -> CapabilityOptionalResultField<
+    CapabilityCandidateReplayIdSlot,
+    CapabilityCandidateReplayIdentifier,
+    String,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "candidate_replay_id",
+        CapabilityCandidateReplayIdentifier::reference(),
+    )
+}
+pub fn capability_broken_replay_id_result() -> CapabilityOptionalResultField<
+    CapabilityBrokenReplayIdSlot,
+    CapabilityBrokenReplayIdentifier,
+    String,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "broken_replay_id",
+        CapabilityBrokenReplayIdentifier::reference(),
+    )
+}
+pub fn capability_failure_json_result(
+) -> declaration::application_query::ApplicationQueryOptionalResultFieldRef<
+    CapabilityReadQuery,
+    CapabilityFailureJsonSlot,
+    InterfaceCompilerSchema,
+    Capability,
+    CapabilityFacts,
+    CapabilityFailureJson,
+    String,
+    declaration::application_schema::ReadWrite,
+    declaration::application_schema::NoEqualityPredicate,
+    declaration::application_schema::NoApplicationUnit,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "failure_json",
+        CapabilityFailureJson::reference(),
+    )
+}
 result_field!(
     replay_id_result,
     ReplayResultField,
@@ -229,7 +368,7 @@ result_field!(
 );
 result_field!(
     replay_revision_result,
-    ReplayResultField,
+    ReplayMutableResultField,
     ReplayRevisionSlot,
     ReplayRevision,
     u64,
@@ -269,7 +408,7 @@ result_field!(
 );
 result_field!(
     replay_status_result,
-    ReplayResultField,
+    ReplayMutableResultField,
     ReplayStatusSlot,
     ReplayStatus,
     String,
@@ -284,21 +423,65 @@ result_field!(
     "created_at"
 );
 result_field!(
-    replay_verified_at_result,
+    replay_discovered_from_experiment_id_result,
     ReplayResultField,
+    ReplayDiscoveredFromExperimentIdSlot,
+    ReplayDiscoveredFromExperimentIdentifier,
+    String,
+    "discovered_from_experiment_id"
+);
+pub fn replay_supersedes_id_result() -> ReplayOptionalResultField<
+    ReplaySupersedesIdSlot,
+    ReplaySupersedesIdentifier,
+    String,
+    declaration::application_schema::EqualityPredicate,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "supersedes_id",
+        ReplaySupersedesIdentifier::reference(),
+    )
+}
+pub fn replay_verified_at_result() -> ReplayOptionalResultField<
     ReplayVerifiedAtSlot,
     ReplayVerifiedAt,
     String,
-    "verified_at"
-);
+    declaration::application_schema::EqualityPredicate,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "verified_at",
+        ReplayVerifiedAt::reference(),
+    )
+}
 result_field!(
     replay_verification_json_result,
-    ReplayResultField,
+    ReplayMutableResultField,
     ReplayVerificationJsonSlot,
     ReplayVerificationJson,
     String,
     "verification_json"
 );
+pub fn replay_failure_json_result() -> ReplayOptionalResultField<
+    ReplayFailureJsonSlot,
+    ReplayFailureJson,
+    String,
+    declaration::application_schema::NoEqualityPredicate,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "failure_json",
+        ReplayFailureJson::reference(),
+    )
+}
+pub fn replay_broken_at_result() -> ReplayOptionalResultField<
+    ReplayBrokenAtSlot,
+    ReplayBrokenAt,
+    String,
+    declaration::application_schema::EqualityPredicate,
+> {
+    declaration::application_query::ApplicationQueryOptionalResultFieldRef::new(
+        "broken_at",
+        ReplayBrokenAt::reference(),
+    )
+}
 
 pub fn capability_id_parameter() -> declaration::application_query::ApplicationQueryParameterRef<
     CapabilityReadQuery,
@@ -334,7 +517,10 @@ impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, Cap
             name: row.field(capability_name_result())?,
             description: row.field(capability_description_result())?,
             status: row.field(capability_status_result())?,
-            active_replay_id: row.field(capability_active_replay_id_result())?,
+            active_replay_id: Some(row.field(capability_active_replay_id_result())?),
+            candidate_replay_id: row.optional_field(capability_candidate_replay_id_result())?,
+            broken_replay_id: row.optional_field(capability_broken_replay_id_result())?,
+            failure_json: row.optional_field(capability_failure_json_result())?,
         })
     }
 }
@@ -357,8 +543,13 @@ impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, Act
             confidence_millis: row.field(replay_confidence_millis_result())?,
             status: row.field(replay_status_result())?,
             created_at: row.field(replay_created_at_result())?,
-            verified_at: row.field(replay_verified_at_result())?,
+            discovered_from_experiment_id: row
+                .field(replay_discovered_from_experiment_id_result())?,
+            supersedes_id: row.optional_field(replay_supersedes_id_result())?,
+            verified_at: row.optional_field(replay_verified_at_result())?,
             verification_json: row.field(replay_verification_json_result())?,
+            failure_json: row.optional_field(replay_failure_json_result())?,
+            broken_at: row.optional_field(replay_broken_at_result())?,
         })
     }
 }

@@ -30,7 +30,19 @@ impl InterfaceCompilerWorthHost {
         .map_err(|error| {
             InterfaceCompilerHostSetupError::from_stage("admit application package", error)
         })?;
+        let query_resources = runtime::WorthQueryApplicationQueryResourceProfile::bounded(
+            16 * 1024,
+            QUERY_RESULT_BYTES,
+            64 * 1024,
+        )
+        .map_err(|error| {
+            InterfaceCompilerHostSetupError::from_stage(
+                "configure bounded application query resources",
+                error,
+            )
+        })?;
         let installation = runtime::WorthQueryExecutionRuntimeInstaller::new()
+            .application_query_resources(query_resources)
             .install(
                 domain::WorthQueryInstallationGeneration::initial(),
                 [admitted],
@@ -194,6 +206,10 @@ impl InterfaceCompilerWorthHost {
                 .field(
                     ReplayCreatedAt::reference(),
                     "2026-08-31T17:00:00.000Z".to_string(),
+                )
+                .field(
+                    ReplayDiscoveredFromExperimentIdentifier::reference(),
+                    "experiment.synthetic.search-products".to_string(),
                 )
                 .field(
                     ReplayVerifiedAt::reference(),

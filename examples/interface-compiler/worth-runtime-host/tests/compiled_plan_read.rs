@@ -32,12 +32,15 @@ fn seeded_capability_and_active_replay_are_matching_worth_query_projections() {
         panic!("active replay should be projected: {replay:?}")
     };
     assert_eq!(capability.status, "healthy");
-    assert_eq!(capability.active_replay_id, DEMO_REPLAY_ID);
+    assert_eq!(capability.active_replay_id.as_deref(), Some(DEMO_REPLAY_ID));
     assert_eq!(replay.status, "active");
-    assert_eq!(replay.id, capability.active_replay_id);
+    assert_eq!(
+        Some(replay.id.as_str()),
+        capability.active_replay_id.as_deref()
+    );
     assert_eq!(replay.capability_id, capability.id);
-    assert_eq!(capability_evidence.projected_field_count, 7);
-    assert_eq!(replay_evidence.projected_field_count, 10);
+    assert_eq!(capability_evidence.projected_field_count, 10);
+    assert_eq!(replay_evidence.projected_field_count, 14);
     assert!(capability_evidence.basis_released && replay_evidence.basis_released);
 }
 

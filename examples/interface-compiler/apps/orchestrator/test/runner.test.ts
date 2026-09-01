@@ -53,6 +53,7 @@ import {
   type WorthRuntimePort,
   type WorthExecutionAdmissionResult,
   type WorthRuntimeSettlementResult,
+  type ReplayDegradationRequest,
 } from "@interface-compiler/worth-adapter"
 import {
   createCancellationSource,
@@ -269,6 +270,8 @@ class FakeWorthRuntime implements WorthRuntimePort {
   public cancelOnBrowserAction: (() => void) | undefined
   public eventAttempts = 0
   public completed: ExecutionProjection | undefined
+  public readonly degradationRequests: ReplayDegradationRequest[] = []
+  public denyDegradation = false
 
   private running: ExecutionStart | undefined
   private replayFailure: ReplayFailure | undefined
@@ -471,6 +474,26 @@ function bind(runtime: FakeWorthRuntime): OrchestratorWorthPort {
       if (projection.metrics.endedAt === undefined || projection.metrics.wallClockMs === undefined) return { kind: "denied", executionId, message: "test settlement omitted terminal metrics" }
       return { kind: "settled", commit: "committed", projection: { projectionKind: "worth_terminal_execution", executionId: projection.id, capabilityId: projection.capabilityId, ...(projection.replayVersionId === undefined ? {} : { replayVersionId: projection.replayVersionId }), mode: projection.mode, lifecycle: projection.status, revision: projection.revision, metrics: projection.metrics, outcome: completion }, evidence }
     },
+    degradeReplay: async (request) => {
+      runtime.degradationRequests.push(request)
+      if (runtime.denyDegradation) return { kind: "denied", stage: "operation_admission", message: "scripted WORTH denial" }
+      const completed = runtime.completed
+      if (request.expectedCapabilityRevision !== runtime.capability.revision) return { kind: "stale", entity: "capability", entityId: request.capabilityId, expectedRevision: request.expectedCapabilityRevision, actualRevision: runtime.capability.revision }
+      if (request.expectedReplayRevision !== runtime.replay.revision) return { kind: "stale", entity: "replay", entityId: request.replayVersionId, expectedRevision: request.expectedReplayRevision, actualRevision: runtime.replay.revision }
+      if (completed?.status !== "failure" || completed.outcome.kind !== "failure" || completed.outcome.reason !== "replay_failed" || completed.outcome.replayFailure === undefined || completed.revision !== request.expectedExecutionRevision) return { kind: "denied", stage: "operation_admission", message: "WORTH has no matching settled replay failure" }
+      if (completed.metrics.endedAt === undefined) return { kind: "denied", stage: "dependency_projection", message: "WORTH terminal time is absent" }
+      return {
+        kind: "applied",
+        commit: "committed",
+        capability: { projectionKind: "worth_capability", id: runtime.capability.id, revision: runtime.capability.revision + 1, applicationId: runtime.capability.applicationId, name: runtime.capability.name, description: runtime.capability.description, status: "degraded", brokenReplayVersionId: request.replayVersionId, failure: completed.outcome.replayFailure, mode: "exploratory" },
+        replay: { projectionKind: "worth_replay", id: runtime.replay.id, revision: runtime.replay.revision + 1, capabilityId: runtime.replay.capabilityId, version: runtime.replay.version, steps: runtime.replay.steps, confidence: runtime.replay.confidence, createdAt: runtime.replay.createdAt, status: "broken", brokenAt: completed.metrics.endedAt, failure: completed.outcome.replayFailure },
+        capabilityEvidence: evidence,
+        replayEvidence: evidence,
+      }
+    },
+    acceptReplacementCandidate: async () => ({ kind: "denied", stage: "request", message: "candidate flow is not scripted in runner tests" }),
+    recordReplacementVerification: async () => ({ kind: "denied", stage: "request", message: "verification flow is not scripted in runner tests" }),
+    activateReplacement: async () => ({ kind: "denied", stage: "request", message: "activation flow is not scripted in runner tests" }),
   }
 }
 
@@ -571,7 +594,7 @@ test("compiled start publishes its replay boundary before Solari session creatio
   assert.deepEqual(runtime.events.map((event) => event.type), ["compiled.started", "replay.failed"])
 })
 
-test("compiled replay failure settles without unavailable replay degradation commands", async () => {
+test("compiled replay failure settles and degrades through the WORTH recovery facade", async () => {
   const runtime = new FakeWorthRuntime()
   const planResult = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "done" }]), bind(runtime), operationContext())
   if (planResult.kind !== "planned") throw new Error("expected compiled plan")
@@ -592,6 +615,46 @@ test("compiled replay failure settles without unavailable replay degradation com
   assert.equal(completion.completion.kind, "failure")
   if (completion.completion.kind !== "failure") throw new Error("expected failure completion")
   assert.equal(completion.completion.reason, "replay_failed")
+  assert.equal(runtime.degradationRequests.length, 1)
+  assert.deepEqual(runtime.degradationRequests[0], { executionId: result.executionId, capabilityId, replayVersionId: replayId, expectedExecutionRevision: 2, expectedCapabilityRevision: 4, expectedReplayRevision: 7 })
+  assert.equal(result.recovery?.capability.status, "degraded")
+  assert.equal(result.recovery?.replay.status, "broken")
+})
+
+test("compiled replay failure blocks finalization when WORTH denies degradation", async () => {
+  const runtime = new FakeWorthRuntime()
+  runtime.denyDegradation = true
+  const planResult = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "done" }]), bind(runtime), operationContext())
+  if (planResult.kind !== "planned") throw new Error("expected compiled plan")
+  const failure: ReplayFailure = { kind: "step_failed", stepIndex: 0, message: "target disappeared", evidenceIds: [id<EvidenceId>("evidence.denied")] }
+  const solari = new ScriptedSolari([{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }], [{ kind: "failed", failure, effect: { kind: "completed" } }])
+  const result = await new ExperimentRunner(ports(bind(runtime), solari)).run(planResult.plan, operationController().controller)
+
+  assert.equal(result.kind, "finalization_blocked")
+  if (result.kind !== "finalization_blocked") throw new Error("expected blocked finalization")
+  assert.equal(result.reason, "replay_recovery_failed")
+  assert.equal(result.recovery?.kind, "denied")
+  assert.equal(runtime.events.some((event) => event.type === "replay.failed"), false)
+})
+
+test("terminal event failure still exposes the committed WORTH degradation", async () => {
+  const runtime = new FakeWorthRuntime()
+  runtime.failEventType = "replay.failed"
+  const planResult = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "done" }]), bind(runtime), operationContext())
+  if (planResult.kind !== "planned") throw new Error("expected compiled plan")
+  const failure: ReplayFailure = { kind: "step_failed", stepIndex: 0, message: "target disappeared", evidenceIds: [id<EvidenceId>("evidence.event-failure")] }
+  const solari = new ScriptedSolari([{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }], [{ kind: "failed", failure, effect: { kind: "completed" } }])
+
+  const result = await new ExperimentRunner(ports(bind(runtime), solari)).run(planResult.plan, operationController().controller)
+
+  assert.equal(result.kind, "finalization_blocked")
+  if (result.kind !== "finalization_blocked") throw new Error("expected blocked finalization")
+  assert.equal(result.reason, "event_publication_failed")
+  assert.equal(result.recovery?.kind, "applied")
+  if (result.recovery?.kind === "applied") {
+    assert.equal(result.recovery.capability.status, "degraded")
+    assert.equal(result.recovery.replay.status, "broken")
+  }
 })
 
 test("compiled work rejects a changed active replay before start", async () => {
@@ -769,7 +832,7 @@ test("a direct browser failure remains an execution failure and does not degrade
   assert.equal(completion.completion.reason, "execution_failed")
 })
 
-test("a false compiled postcondition is settled while replay degradation remains unavailable", async () => {
+test("a false compiled postcondition is settled and returns the capability to exploration", async () => {
   const runtime = new FakeWorthRuntime()
   runtime.replay = verifiedReplayProjection([clickStep()])
   const planned = await planCompiledExperiment(baseRequest([{ kind: "text_present", text: "must be present" }]), bind(runtime), operationContext())
@@ -783,6 +846,8 @@ test("a false compiled postcondition is settled while replay degradation remains
   if (result.terminal.kind !== "failure") throw new Error("expected postcondition failure")
   assert.equal(result.terminal.replayFailure?.kind, "postcondition_failed")
   assert.deepEqual(runtime.commands.map((command) => command.kind), ["start_execution", "complete_execution"])
+  assert.equal(runtime.degradationRequests.length, 1)
+  assert.equal(result.recovery?.capability.status, "degraded")
 })
 
 test("compiled postcondition matching is semantic and evidence is re-authorized by Worth", async () => {

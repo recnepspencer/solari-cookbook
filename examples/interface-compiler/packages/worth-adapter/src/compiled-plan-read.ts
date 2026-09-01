@@ -17,7 +17,7 @@ export interface CompiledPlanReadPort {
 
 export function mapCompiledCapability(capabilityId: CapabilityId, response: Extract<HostResponse, { readonly outcome: "capability_found" }>): CompiledPlanReadResult<CapabilityProjection> {
   const value = response.capability
-  if (value.id !== capabilityId || value.status !== "healthy") return malformed("capability", capabilityId, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, "the WORTH capability identity or healthy status is invalid")
+  if (value.id !== capabilityId || value.status !== "healthy" || value.active_replay_version_id === undefined) return malformed("capability", capabilityId, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, "the WORTH capability identity or healthy status is invalid")
   return { kind: "found", value: { projectionKind: "worth_capability", id: capabilityId, revision: value.revision, applicationId: value.application_id as CapabilityProjection["applicationId"], name: value.name, description: value.description, status: "healthy", activeReplayVersionId: value.active_replay_version_id as Extract<CapabilityProjection, { status: "healthy" }>["activeReplayVersionId"] }, evidence: evidence(valueEvidence(response.evidence)) }
 }
 
@@ -33,9 +33,10 @@ function projectVerification(value: unknown, capabilityId: CapabilityId, replayI
   let successes = 0
   const runs: ActiveReplayProjection["verification"]["runs"][number][] = []
   for (const run of value.runs) {
-    if (!record(run) || !text(run.id) || run.capabilityId !== capabilityId || run.replayVersionId !== replayId || !text(run.sessionId) || run.freshSession !== true || run.outcome !== "success" || !Array.isArray(run.evidenceIds) || run.evidenceIds.length === 0 || !run.evidenceIds.every(text) || !timestamp(run.completedAt)) return undefined
-    successes += 1
-    runs.push({ id: run.id as ActiveReplayProjection["verification"]["runs"][number]["id"], sessionId: run.sessionId as ActiveReplayProjection["verification"]["runs"][number]["sessionId"], capabilityId, replayVersionId: replayId as ActiveReplayProjection["id"], freshSession: run.freshSession, outcome: "success", evidenceIds: run.evidenceIds as unknown as ActiveReplayProjection["verification"]["runs"][number]["evidenceIds"] })
+    if (!record(run) || !text(run.id) || run.capabilityId !== capabilityId || run.replayVersionId !== replayId || !text(run.sessionId) || run.freshSession !== true || (run.outcome !== "success" && run.outcome !== "failure") || (run.outcome === "failure" && !text(run.failureMessage)) || !Array.isArray(run.evidenceIds) || run.evidenceIds.length === 0 || !run.evidenceIds.every(text) || !timestamp(run.completedAt)) return undefined
+    if (run.outcome === "success") successes += 1
+    const core = { id: run.id as ActiveReplayProjection["verification"]["runs"][number]["id"], sessionId: run.sessionId as ActiveReplayProjection["verification"]["runs"][number]["sessionId"], capabilityId, replayVersionId: replayId as ActiveReplayProjection["id"], freshSession: true as const, evidenceIds: run.evidenceIds as unknown as ActiveReplayProjection["verification"]["runs"][number]["evidenceIds"] }
+    runs.push(run.outcome === "success" ? { ...core, outcome: "success" } : { ...core, outcome: "failure", failureMessage: run.failureMessage as string })
   }
   return successes >= (value.requiredSuccessfulRuns as number) ? { requiredSuccessfulRuns: value.requiredSuccessfulRuns as number, runs } : undefined
 }
