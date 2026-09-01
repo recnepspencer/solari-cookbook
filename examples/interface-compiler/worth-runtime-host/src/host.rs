@@ -2,6 +2,7 @@
 
 use std::future::Future;
 use std::pin::pin;
+use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 use std::time::{Duration, Instant, SystemTime};
 
@@ -9,16 +10,22 @@ use worth_query_host::facade::{admission, declaration, domain, primary_graph, ru
 
 use crate::application::{
     application_id_parameter, Application, ApplicationBaseUrl, ApplicationIdentifier,
-    ApplicationName, ApplicationReadQuery, ApplicationRevision,
-    InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
+    ApplicationName, ApplicationReadQuery, ApplicationRevision, Execution, ExecutionIdentifier,
+    ExecutionLifecycle, InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
     InterfaceCompilerSchema,
 };
+
+mod execution;
+pub use execution::*;
 
 pub const DEMO_APPLICATION_ID: &str = "application.interface-compiler";
 pub const DEMO_APPLICATION_REVISION: u64 = 7;
 pub const DEMO_APPLICATION_NAME: &str = "Interface Compiler Demo";
 pub const DEMO_APPLICATION_BASE_URL: &str = "https://interface-compiler.example";
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
+pub const DEMO_EXECUTION_ID: &str = "execution.demonstration-001";
+pub const DEMO_EXECUTION_PENDING: &str = "pending";
+pub const DEMO_EXECUTION_STARTED: &str = "started";
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";
@@ -136,6 +143,9 @@ type AdmittedDemoAuthentication =
 /// serialized or exposed to the client.
 pub struct InterfaceCompilerWorthHost {
     application: primary_graph::WorthQueryPrimaryGraphApplicationRuntime<InterfaceCompilerSchema>,
+    invariant: Arc<
+        primary_graph::WorthQueryApplicationInvariantProjectionAuthority<InterfaceCompilerSchema>,
+    >,
     principal_binding: InstalledPrincipalBinding,
     authentication: AdmittedDemoAuthentication,
 }
@@ -266,6 +276,32 @@ impl InterfaceCompilerWorthHost {
             .map_err(|error| {
                 InterfaceCompilerHostSetupError::from_stage("bind application entity", error)
             })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
+                    Execution::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_EXECUTION_ID).map_err(
+                        |error| {
+                            InterfaceCompilerHostSetupError::from_stage(
+                                "create execution key",
+                                error,
+                            )
+                        },
+                    )?,
+                )
+                .field(
+                    ExecutionIdentifier::reference(),
+                    DEMO_EXECUTION_ID.to_string(),
+                )
+                .field(
+                    ExecutionLifecycle::reference(),
+                    DEMO_EXECUTION_PENDING.to_string(),
+                ),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage("bind execution entity", error)
+            })?;
+        let invariant = Arc::new(graph.retain_invariant_projection_authority());
         let application = graph
             .publish_application_runtime(runtime, authority, schema)
             .map_err(|error| {
@@ -276,6 +312,7 @@ impl InterfaceCompilerWorthHost {
             })?;
         Ok(Self {
             application,
+            invariant,
             principal_binding,
             authentication,
         })

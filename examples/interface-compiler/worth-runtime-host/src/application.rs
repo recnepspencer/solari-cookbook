@@ -7,11 +7,13 @@
 use worth_query_host::facade::{declaration, primary_graph};
 use worth_query_host::facade::{
     worth_query_application_query, worth_query_application_schema, worth_query_aspect,
-    worth_query_entity, worth_query_field, worth_query_portable_type,
-    worth_query_principal_binding, worth_query_relation,
+    worth_query_entity, worth_query_field, worth_query_operation, worth_query_operation_reads,
+    worth_query_operation_writes, worth_query_portable_type, worth_query_principal_binding,
+    worth_query_relation,
 };
 
 pub const APPLICATION_READ_QUERY_NAME: &str = "interface_compiler_application_read";
+pub const EXECUTION_READ_QUERY_NAME: &str = "interface_compiler_execution_read";
 
 worth_query_application_schema! {
     pub schema InterfaceCompilerSchema {
@@ -22,9 +24,11 @@ worth_query_application_schema! {
                 .entity(ExternalMapping::reference())
                 .entity(Principal::reference())
                 .entity(Application::reference())
+                .entity(Execution::reference())
                 .aspect(ExternalMapping::reference(), ExternalIdentity::reference())
                 .aspect(Principal::reference(), PrincipalIdentity::reference())
                 .aspect(Application::reference(), ApplicationFacts::reference())
+                .aspect(Execution::reference(), ExecutionFacts::reference())
                 .field(ExternalMapping::reference(), ExternalIdentityField::reference())
                 .field(ExternalMapping::reference(), MappingStatusField::reference())
                 .field(Principal::reference(), PrincipalIdentityField::reference())
@@ -32,13 +36,28 @@ worth_query_application_schema! {
                 .field(Application::reference(), ApplicationRevision::reference())
                 .field(Application::reference(), ApplicationName::reference())
                 .field(Application::reference(), ApplicationBaseUrl::reference())
+                .field(Execution::reference(), ExecutionIdentifier::reference())
+                .field(Execution::reference(), ExecutionLifecycle::reference())
                 .relation(
                     MappingTarget::reference(),
                     ExternalMapping::reference(),
                     Principal::reference(),
                 )
                 .principal_binding(InterfaceCompilerPrincipalBinding::reference())
+                .operation(
+                    StartExecution::reference()
+                        .definition()
+                        .no_external_effect()
+                        .no_aftermath()
+                        .finish(),
+                )
+                .operation_decision_fact_budget(StartExecution::reference(), 2)
+                .operation_projection_work_budget(StartExecution::reference(), 8)
+                .operation_read_field(StartExecution::reference(), ExecutionIdentifier::reference())
+                .operation_read_field(StartExecution::reference(), ExecutionLifecycle::reference())
+                .operation_write(StartExecution::reference(), ExecutionLifecycle::reference())
                 .application_query(application_read_query_definition())
+                .application_query(execution_read_query_definition())
         }
     }
 }
@@ -46,10 +65,15 @@ worth_query_application_schema! {
 worth_query_entity!(pub ExternalMapping in InterfaceCompilerSchema);
 worth_query_entity!(pub Principal in InterfaceCompilerSchema);
 worth_query_entity!(pub Application in InterfaceCompilerSchema);
+worth_query_entity!(pub Execution in InterfaceCompilerSchema);
 
 worth_query_aspect!(
     pub ExternalIdentity in InterfaceCompilerSchema, ExternalMapping;
     identity = AspectIdentity(0x9a1c0041), revision = AspectContractRevision(1),
+);
+worth_query_aspect!(
+    pub ExecutionFacts in InterfaceCompilerSchema, Execution;
+    identity = AspectIdentity(0x9a1c0044), revision = AspectContractRevision(1),
 );
 worth_query_aspect!(
     pub PrincipalIdentity in InterfaceCompilerSchema, Principal;
@@ -64,6 +88,25 @@ worth_query_field!(
     pub ExternalIdentityField in InterfaceCompilerSchema, ExternalMapping, ExternalIdentity:
     declaration::authentication::WorthQueryExternalPrincipalIdentity, read_only, equality
 );
+worth_query_field!(
+    pub ExecutionIdentifier in InterfaceCompilerSchema, Execution, ExecutionFacts:
+    String, read_only, equality
+);
+worth_query_field!(
+    pub ExecutionLifecycle in InterfaceCompilerSchema, Execution, ExecutionFacts:
+    String, read_write, equality
+);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StartExecutionInput {
+    pub execution_id: String,
+}
+worth_query_portable_type!(
+    StartExecutionInput => "interface-compiler.worth.start-execution.input.v1"
+);
+worth_query_operation!(pub StartExecution(StartExecutionInput) in InterfaceCompilerSchema);
+worth_query_operation_reads!(StartExecution => [ExecutionIdentifier, ExecutionLifecycle]);
+worth_query_operation_writes!(StartExecution => [ExecutionLifecycle]);
 worth_query_field!(
     pub MappingStatusField in InterfaceCompilerSchema, ExternalMapping, ExternalIdentity:
     declaration::authentication::WorthQueryPrincipalMappingStatus, read_write, equality
@@ -110,9 +153,19 @@ pub struct ApplicationIdSlot;
 pub struct ApplicationRevisionSlot;
 pub struct ApplicationNameSlot;
 pub struct ApplicationBaseUrlSlot;
+pub struct ExecutionReadParameters;
+pub struct ExecutionIdParameter;
+pub struct ExecutionIdSlot;
+pub struct ExecutionLifecycleSlot;
 
 worth_query_portable_type!(
     ApplicationIdSlot => "interface-compiler.worth.application-read.application-id.v1"
+);
+worth_query_portable_type!(
+    ExecutionIdSlot => "interface-compiler.worth.execution-read.execution-id.v1"
+);
+worth_query_portable_type!(
+    ExecutionLifecycleSlot => "interface-compiler.worth.execution-read.lifecycle.v1"
 );
 worth_query_portable_type!(
     ApplicationRevisionSlot => "interface-compiler.worth.application-read.revision.v1"
@@ -145,6 +198,22 @@ worth_query_application_query!(
     name "interface_compiler_application_read"
 );
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InterfaceCompilerExecutionProjection {
+    pub execution_id: String,
+    pub lifecycle: String,
+}
+worth_query_portable_type!(
+    InterfaceCompilerExecutionProjection => "interface-compiler.worth.execution-read.result.v1"
+);
+worth_query_application_query!(
+    pub ExecutionReadQuery in InterfaceCompilerSchema,
+    parameters ExecutionReadParameters,
+    result InterfaceCompilerExecutionProjection,
+    scope Execution,
+    name "interface_compiler_execution_read"
+);
+
 impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, ApplicationReadQuery>
     for InterfaceCompilerApplicationProjection
 {
@@ -160,6 +229,23 @@ impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, App
             revision: row.field(application_revision_result())?,
             name: row.field(application_name_result())?,
             base_url: row.field(application_base_url_result())?,
+        })
+    }
+}
+
+impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, ExecutionReadQuery>
+    for InterfaceCompilerExecutionProjection
+{
+    fn project(
+        row: &primary_graph::WorthQueryApplicationProjectionRow<
+            '_,
+            InterfaceCompilerSchema,
+            ExecutionReadQuery,
+        >,
+    ) -> Result<Self, primary_graph::WorthQueryApplicationProjectionDenial> {
+        Ok(Self {
+            execution_id: row.field(execution_id_result())?,
+            lifecycle: row.field(execution_lifecycle_result())?,
         })
     }
 }
@@ -185,6 +271,52 @@ pub fn application_id_parameter() -> declaration::application_query::Application
 > {
     declaration::application_query::ApplicationQueryParameterRef::from_query_identifier(
         "application_id",
+    )
+}
+
+pub fn execution_id_parameter() -> declaration::application_query::ApplicationQueryParameterRef<
+    ExecutionReadQuery,
+    ExecutionIdParameter,
+    String,
+> {
+    declaration::application_query::ApplicationQueryParameterRef::from_query_identifier(
+        "execution_id",
+    )
+}
+
+type ExecutionResultField<Slot, Field, Write> =
+    declaration::application_query::ApplicationQueryResultFieldRef<
+        ExecutionReadQuery,
+        Slot,
+        InterfaceCompilerSchema,
+        Execution,
+        ExecutionFacts,
+        Field,
+        String,
+        Write,
+        declaration::application_schema::EqualityPredicate,
+        declaration::application_schema::NoApplicationUnit,
+    >;
+
+fn execution_id_result() -> ExecutionResultField<
+    ExecutionIdSlot,
+    ExecutionIdentifier,
+    declaration::application_schema::ReadOnly,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "execution_id",
+        ExecutionIdentifier::reference(),
+    )
+}
+
+fn execution_lifecycle_result() -> ExecutionResultField<
+    ExecutionLifecycleSlot,
+    ExecutionLifecycle,
+    declaration::application_schema::ReadWrite,
+> {
+    declaration::application_query::ApplicationQueryResultFieldRef::new(
+        "lifecycle",
+        ExecutionLifecycle::reference(),
     )
 }
 
@@ -258,4 +390,41 @@ pub fn application_read_query_definition(
     )
     .build()
     .expect("the Interface Compiler application read query is valid")
+}
+
+pub fn execution_read_query_definition(
+) -> declaration::application_query::ApplicationQueryDefinition<
+    InterfaceCompilerSchema,
+    ExecutionReadQuery,
+    ExecutionReadParameters,
+    InterfaceCompilerExecutionProjection,
+    Execution,
+> {
+    let shape = declaration::application_query::ApplicationQueryResultShapeBuilder::new(
+        Execution::reference(),
+    )
+    .field(execution_id_result())
+    .field(execution_lifecycle_result())
+    .build();
+
+    declaration::application_query::ApplicationQueryDefinitionBuilder::declare(
+        ExecutionReadQuery::reference(),
+    )
+    .root(Execution::reference())
+    .scope(Execution::reference())
+    .result_shape(shape)
+    .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
+    .dependency_ceiling(
+        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 2),
+    )
+    .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
+    .basis_support(
+        declaration::application_query::ApplicationQueryBasisSupport::current_and_pinned(),
+    )
+    .lanes(declaration::application_query::ApplicationQueryLaneEligibility::one_shot())
+    .public()
+    .parameter(execution_id_parameter())
+    .where_equal(ExecutionIdentifier::reference(), execution_id_parameter())
+    .build()
+    .expect("the Interface Compiler execution read query is valid")
 }
