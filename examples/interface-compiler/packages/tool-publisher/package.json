@@ -1,0 +1,16 @@
+{
+  "name": "@interface-compiler/tool-publisher",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@interface-compiler/domain": "file:../domain"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test \"test/**/*.test.ts\""
+  }
+}
