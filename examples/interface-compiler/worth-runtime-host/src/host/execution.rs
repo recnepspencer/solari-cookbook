@@ -187,10 +187,7 @@ impl InterfaceCompilerWorthHost {
             .expect("the resolved execution has an authoritative lifecycle fact");
         let canonical_execution_id = projected_execution_id
             .expect("the resolved execution has an authoritative identifier fact");
-        let pending = current_lifecycle == super::DEMO_EXECUTION_PENDING;
-        let recoverable_demo_retry = current_lifecycle == super::DEMO_EXECUTION_STARTED
-            && supports_demo_retry_recovery(&canonical_execution_id);
-        if !pending && !recoverable_demo_retry {
+        if current_lifecycle != super::DEMO_EXECUTION_PENDING {
             return Err(
                 InterfaceCompilerStartExecutionOutcome::LifecycleNotPending {
                     execution_id: execution_id.to_string(),
@@ -334,18 +331,10 @@ fn validate_start_request(request: &InterfaceCompilerStartExecutionRequest) -> R
             | super::DEMO_EXECUTION_NON_PENDING_ID
     ) {
         return Err(
-            "this demo facade only accepts its three published execution identities; retry recovery is only distinguishable for the two rows seeded pending"
-                .to_string(),
+            "this demo facade only accepts its three published execution identities".to_string(),
         );
     }
     Ok(())
-}
-
-fn supports_demo_retry_recovery(canonical_execution_id: &str) -> bool {
-    matches!(
-        canonical_execution_id,
-        super::DEMO_EXECUTION_ID | super::DEMO_EXECUTION_ID_TWO
-    )
 }
 
 fn denied(

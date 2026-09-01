@@ -1,8 +1,8 @@
 use interface_compiler_worth_runtime_host::host::{
     InterfaceCompilerExecutionCommitKind, InterfaceCompilerStartExecutionOutcome,
     InterfaceCompilerStartExecutionRequest, InterfaceCompilerWorthHost, DEFAULT_REQUEST_TIMEOUT,
-    DEMO_CREDENTIAL, DEMO_EXECUTION_COMPLETED, DEMO_EXECUTION_ID, DEMO_EXECUTION_ID_TWO,
-    DEMO_EXECUTION_NON_PENDING_ID, DEMO_EXECUTION_STARTED,
+    DEMO_CREDENTIAL, DEMO_EXECUTION_ID, DEMO_EXECUTION_ID_TWO, DEMO_EXECUTION_NON_PENDING_ID,
+    DEMO_EXECUTION_STARTED,
 };
 
 #[test]
@@ -40,7 +40,7 @@ fn start_execution_commits_through_worth_and_returns_the_typed_query_projection(
 }
 
 #[test]
-fn distinct_executions_commit_independently_and_retry_recovers_its_worth_commit() {
+fn started_execution_is_rejected_without_a_second_commit() {
     run_on_host_stack(|| {
         let host = InterfaceCompilerWorthHost::in_memory_demo().unwrap();
         let request = || {
@@ -51,41 +51,45 @@ fn distinct_executions_commit_independently_and_retry_recovers_its_worth_commit(
             )
         };
 
-        assert!(matches!(
-            host.start_execution(request()),
+        let first_basis = match host.start_execution(request()) {
             InterfaceCompilerStartExecutionOutcome::Transitioned {
                 commit: InterfaceCompilerExecutionCommitKind::Committed,
+                evidence,
                 ..
-            }
+            } => evidence.basis_version,
+            outcome => panic!("pending execution should commit once, got {outcome:?}"),
+        };
+
+        assert!(matches!(
+            host.start_execution(request()),
+            InterfaceCompilerStartExecutionOutcome::LifecycleNotPending {
+                execution_id,
+                current_lifecycle,
+            } if execution_id == DEMO_EXECUTION_ID
+                && current_lifecycle == DEMO_EXECUTION_STARTED
+        ));
+
+        let next = host.start_execution(InterfaceCompilerStartExecutionRequest::new(
+            DEMO_EXECUTION_ID_TWO,
+            DEMO_CREDENTIAL,
+            DEFAULT_REQUEST_TIMEOUT,
         ));
         assert!(matches!(
-            host.start_execution(InterfaceCompilerStartExecutionRequest::new(
-                DEMO_EXECUTION_ID_TWO,
-                DEMO_CREDENTIAL,
-                DEFAULT_REQUEST_TIMEOUT,
-            )),
+            next,
             InterfaceCompilerStartExecutionOutcome::Transitioned {
                 commit: InterfaceCompilerExecutionCommitKind::Committed,
                 projection,
+                evidence,
                 ..
             } if projection.execution_id == DEMO_EXECUTION_ID_TWO
                 && projection.lifecycle == DEMO_EXECUTION_STARTED
-        ));
-        let retry = host.start_execution(request());
-
-        assert!(matches!(
-            retry,
-            InterfaceCompilerStartExecutionOutcome::Transitioned {
-                commit: InterfaceCompilerExecutionCommitKind::AlreadyCommitted,
-                projection,
-                ..
-            } if projection.lifecycle == DEMO_EXECUTION_STARTED
+                && evidence.basis_version == first_basis + 1
         ));
     });
 }
 
 #[test]
-fn authoritative_non_pending_lifecycle_is_denied_without_changing_or_committing() {
+fn independently_seeded_started_execution_is_rejected_without_committing() {
     run_on_host_stack(|| {
         let host = InterfaceCompilerWorthHost::in_memory_demo().unwrap();
         let request = || {
@@ -106,7 +110,7 @@ fn authoritative_non_pending_lifecycle_is_denied_without_changing_or_committing(
                     execution_id,
                     current_lifecycle,
                 } if execution_id == DEMO_EXECUTION_NON_PENDING_ID
-                    && current_lifecycle == DEMO_EXECUTION_COMPLETED
+                    && current_lifecycle == DEMO_EXECUTION_STARTED
             ));
         }
     });

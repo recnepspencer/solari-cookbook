@@ -201,7 +201,7 @@ impl InterfaceCompilerWorthHost {
                 )
                 .field(
                     ExecutionLifecycle::reference(),
-                    DEMO_EXECUTION_COMPLETED.to_string(),
+                    DEMO_EXECUTION_STARTED.to_string(),
                 ),
             )
             .map_err(|error| {
