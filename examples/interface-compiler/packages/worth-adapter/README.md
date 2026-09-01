@@ -22,6 +22,9 @@ not specified. A future transport binding can implement the port without
 changing consumers of the adapter.
 
 The command helpers are convenience names for the shared `WorthCommand` union.
-They do not apply transitions locally. In particular, replay failure and
-verification outcomes remain Worth decisions, and consumers receive the
-resulting typed submission or read projection.
+They do not apply transitions locally. Helpers for existing replay,
+verification, capability, and execution records require the expected current
+entity revision; callers must obtain that revision from a Worth projection and
+provide an `OperationContext` with bounded admission. In particular, replay
+failure and verification outcomes remain Worth decisions, and consumers
+receive the resulting typed submission or read projection.

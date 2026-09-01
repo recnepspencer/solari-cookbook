@@ -9,7 +9,6 @@ import type {
   EvidenceId,
   EventId,
   ExecutionId,
-  ExecutionStart,
   InterfaceCompilerEvent,
   OperationContext,
   ReplayVersionId,
@@ -21,7 +20,7 @@ import type {
   WorthReadResult,
   WorthSubmissionResult,
 } from "@interface-compiler/domain"
-import { createCandidateReplay } from "@interface-compiler/domain"
+import { createApplication, createCandidateReplay, createCapability, createExecution } from "@interface-compiler/domain"
 import {
   createWorthAdapter,
   type WorthCompilationMetricsProjection,
@@ -47,6 +46,7 @@ function context(): OperationContext {
       onCancellationRequested: () => () => undefined,
     },
     budget: { maxWallClockMs: 5_000 },
+    admission: { maxInFlight: 2, maxQueued: 4, overflow: "reject" },
   }
 }
 
@@ -72,10 +72,12 @@ function runtimePort(overrides: Partial<WorthRuntimePort> = {}): WorthRuntimePor
     readCapability: async (capabilityId) => notFound("capability", capabilityId),
     readActiveReplay: async (capabilityId) => notFound("replay", capabilityId),
     readReplayLineage: async (capabilityId) => notFound("replay", capabilityId),
+    readExperiment: async (experimentId) => notFound("experiment", experimentId),
+    readEvidence: async (evidenceId) => notFound("evidence", evidenceId),
     readExecution: async (executionId) => notFound("execution", executionId),
     readCompilationMetrics: async (capabilityId) => notFound("capability", capabilityId),
     submit: async () => failedSubmission(),
-    publishEvent: async (event) => ({ kind: "published", eventId: event.eventId }),
+    publishEvent: async (event) => ({ kind: "published", eventId: event.eventId, effect: { kind: "completed" } }),
     ...overrides,
   }
 }
@@ -152,10 +154,12 @@ test("forwards Worth-owned compilation metrics projections without calculating o
 
 test("submits lifecycle helpers as Worth commands rather than applying transitions locally", async () => {
   const commands: WorthCommand[] = []
+  const submittedContexts: OperationContext[] = []
   const adapter = createAdapter(
     runtimePort({
-      submit: async (command) => {
+      submit: async (command, submittedContext) => {
         commands.push(command)
+        submittedContexts.push(submittedContext)
         return failedSubmission()
       },
     }),
@@ -166,8 +170,8 @@ test("submits lifecycle helpers as Worth commands rather than applying transitio
   const replayVersionId = id<ReplayVersionId>("replay.adapter-test.v1")
   const successorReplayVersionId = id<ReplayVersionId>("replay.adapter-test.v2")
   const executionId = id<ExecutionId>("execution.adapter-test")
-  const application = { id: applicationId, name: "Adapter test", baseUrl: "https://example.test" }
-  const capabilityDefinition: CapabilityDefinition = {
+  const application = unwrap(createApplication({ id: applicationId, name: "Adapter test", baseUrl: "https://example.test" }))
+  const capabilityDefinition: CapabilityDefinition = unwrap(createCapability({
     id: capabilityId,
     applicationId,
     name: "Adapter capability",
@@ -176,7 +180,7 @@ test("submits lifecycle helpers as Worth commands rather than applying transitio
     outputSchema: { type: "object", properties: {} },
     preconditions: [],
     postconditions: [],
-  }
+  }))
   const candidate: CandidateReplay = unwrap(
     createCandidateReplay({
       id: replayVersionId,
@@ -191,12 +195,14 @@ test("submits lifecycle helpers as Worth commands rather than applying transitio
   const verificationReceipt: VerificationRunReceipt = {
     id: id("verification-run.adapter-test"),
     sessionId: id("session.adapter-test"),
+    capabilityId,
+    replayVersionId,
     sessionFreshness: "fresh",
     outcome: "success",
     evidenceIds: [id("evidence.verification.adapter-test")],
   }
   const replayFailure = { kind: "step_failed" as const, stepIndex: 0, message: "target changed", evidenceIds: [id<EvidenceId>("evidence.failure")] }
-  const execution: ExecutionStart = {
+  const execution = unwrap(createExecution({
     id: executionId,
     capabilityId,
     replayVersionId,
@@ -210,40 +216,47 @@ test("submits lifecycle helpers as Worth commands rather than applying transitio
       browserActions: 0,
       estimatedModelCostUsd: 0,
     },
-  }
+  }))
+
+  const expectedCapabilityRevision = 4
+  const expectedReplayRevision = 7
+  const expectedExecutionRevision = 2
 
   await adapter.registerApplication(application, operationContext)
   await adapter.registerCapability(capabilityDefinition, operationContext)
-  await adapter.recordReplayCandidate(candidate, operationContext)
-  await adapter.beginReplayVerification(replayVersionId, 3, operationContext)
-  await adapter.recordVerificationRun(replayVersionId, verificationReceipt, operationContext)
-  await adapter.completeReplayVerification(replayVersionId, "2026-08-31T12:00:01.000Z", operationContext)
-  await adapter.beginCapabilityVerification(capabilityId, replayVersionId, operationContext)
-  await adapter.activateCapability(capabilityId, replayVersionId, operationContext)
-  await adapter.failCapabilityVerification(capabilityId, replayVersionId, operationContext)
-  await adapter.recordReplayFailure(replayVersionId, replayFailure, "2026-08-31T12:01:00.000Z", operationContext)
-  await adapter.supersedeReplay(replayVersionId, successorReplayVersionId, "2026-08-31T12:02:00.000Z", operationContext)
-  await adapter.resumeCapabilityExploration(capabilityId, operationContext)
+  await adapter.recordReplayCandidate(candidate, expectedCapabilityRevision, operationContext)
+  await adapter.beginReplayVerification(replayVersionId, 3, expectedReplayRevision, operationContext)
+  await adapter.recordVerificationRun(replayVersionId, verificationReceipt, expectedReplayRevision, operationContext)
+  await adapter.completeReplayVerification(replayVersionId, "2026-08-31T12:00:01.000Z", expectedReplayRevision, operationContext)
+  await adapter.beginCapabilityVerification(capabilityId, replayVersionId, expectedCapabilityRevision, operationContext)
+  await adapter.activateCapability(capabilityId, replayVersionId, expectedCapabilityRevision, operationContext)
+  await adapter.failCapabilityVerification(capabilityId, replayVersionId, expectedCapabilityRevision, operationContext)
+  await adapter.recordReplayFailure(replayVersionId, replayFailure, "2026-08-31T12:01:00.000Z", expectedReplayRevision, operationContext)
+  await adapter.supersedeReplay(replayVersionId, successorReplayVersionId, "2026-08-31T12:02:00.000Z", expectedReplayRevision, operationContext)
+  await adapter.resumeCapabilityExploration(capabilityId, expectedCapabilityRevision, operationContext)
   await adapter.startExecution(execution, operationContext)
   const completion = { kind: "failure" as const, reason: "execution_failed" as const, message: "runtime reported failure" }
-  await adapter.completeExecution(executionId, completion, "2026-08-31T12:03:00.000Z", operationContext)
+  await adapter.completeExecution(executionId, completion, "2026-08-31T12:03:00.000Z", expectedExecutionRevision, operationContext)
 
   assert.deepEqual(commands, [
     { kind: "register_application", application },
     { kind: "register_capability", definition: capabilityDefinition },
-    { kind: "record_replay_candidate", candidate },
-    { kind: "begin_replay_verification", replayVersionId, requiredSuccessfulRuns: 3 },
-    { kind: "record_verification_run", replayVersionId, receipt: verificationReceipt },
-    { kind: "complete_replay_verification", replayVersionId, verifiedAt: "2026-08-31T12:00:01.000Z" },
-    { kind: "begin_capability_verification", capabilityId, candidateReplayVersionId: replayVersionId },
-    { kind: "activate_capability", capabilityId, activeReplayVersionId: replayVersionId },
-    { kind: "fail_capability_verification", capabilityId, brokenReplayVersionId: replayVersionId },
-    { kind: "record_replay_failure", replayVersionId, failure: replayFailure, brokenAt: "2026-08-31T12:01:00.000Z" },
-    { kind: "supersede_replay", replayVersionId, successorReplayVersionId, supersededAt: "2026-08-31T12:02:00.000Z" },
-    { kind: "resume_capability_exploration", capabilityId },
+    { kind: "record_replay_candidate", candidate, expectedCapabilityRevision },
+    { kind: "begin_replay_verification", replayVersionId, requiredSuccessfulRuns: 3, expectedReplayRevision },
+    { kind: "record_verification_run", replayVersionId, receipt: verificationReceipt, expectedReplayRevision },
+    { kind: "complete_replay_verification", replayVersionId, verifiedAt: "2026-08-31T12:00:01.000Z", expectedReplayRevision },
+    { kind: "begin_capability_verification", capabilityId, candidateReplayVersionId: replayVersionId, expectedCapabilityRevision },
+    { kind: "activate_capability", capabilityId, activeReplayVersionId: replayVersionId, expectedCapabilityRevision },
+    { kind: "fail_capability_verification", capabilityId, brokenReplayVersionId: replayVersionId, expectedCapabilityRevision },
+    { kind: "record_replay_failure", replayVersionId, failure: replayFailure, brokenAt: "2026-08-31T12:01:00.000Z", expectedReplayRevision },
+    { kind: "supersede_replay", replayVersionId, successorReplayVersionId, supersededAt: "2026-08-31T12:02:00.000Z", expectedReplayRevision },
+    { kind: "resume_capability_exploration", capabilityId, expectedCapabilityRevision },
     { kind: "start_execution", execution },
-    { kind: "complete_execution", executionId, completion, endedAt: "2026-08-31T12:03:00.000Z" },
+    { kind: "complete_execution", executionId, completion, endedAt: "2026-08-31T12:03:00.000Z", expectedExecutionRevision },
   ])
+  assert.equal(submittedContexts.length, commands.length)
+  assert.ok(submittedContexts.every((submittedContext) => submittedContext === operationContext))
+  assert.ok(submittedContexts.every(({ admission }) => admission === operationContext.admission))
   assert.equal(Object.isFrozen(adapter), true)
 })
 
@@ -251,6 +264,11 @@ test("publishes events through Worth and preserves the returned publication resu
   const event: InterfaceCompilerEvent = {
     eventId: id<EventId>("event.adapter-test"),
     occurredAt: "2026-08-31T12:00:00.000Z",
+    protocol: "interface-compiler.events",
+    schemaVersion: 1,
+    idempotencyKey: "event.adapter-test",
+    recovery: "replay_safe",
+    integrity: { algorithm: "sha256", digest: "adapter-test-digest" },
     type: "capability.healthy",
     payload: {
       capabilityId: id<CapabilityId>("capability.adapter-test"),
@@ -265,14 +283,14 @@ test("publishes events through Worth and preserves the returned publication resu
       publishEvent: async (received, receivedOperationContext) => {
         receivedEvent = received
         receivedContext = receivedOperationContext
-        return { kind: "duplicate", eventId: received.eventId }
+        return { kind: "duplicate", eventId: received.eventId, effect: { kind: "completed" } }
       },
     }),
   )
 
   const result = await adapter.publish(event, operationContext)
 
-  assert.deepEqual(result, { kind: "duplicate", eventId: event.eventId })
+  assert.deepEqual(result, { kind: "duplicate", eventId: event.eventId, effect: { kind: "completed" } })
   assert.equal(receivedEvent, event)
   assert.equal(receivedContext, operationContext)
 })
@@ -296,7 +314,7 @@ test("requires an explicit worth-query-host facade binding", async () => {
     runtime,
   })
 
-  assert.deepEqual(await adapter.submit({ kind: "resume_capability_exploration", capabilityId: id("capability.facade") }, operationContext), failedSubmission())
+  assert.deepEqual(await adapter.submit({ kind: "resume_capability_exploration", capabilityId: id("capability.facade"), expectedCapabilityRevision: 0 }, operationContext), failedSubmission())
   assert.throws(() => createWorthAdapter(undefined as unknown as WorthQueryHostFacadeBinding), /host-facade binding is required/)
   assert.throws(
     () => createWorthAdapter({ runtime } as unknown as WorthQueryHostFacadeBinding),

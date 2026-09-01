@@ -58,6 +58,7 @@ function context(): ToolPublicationRequest["context"] {
     deadlineAt: "2026-09-01T00:00:00.000Z",
     cancellation: { isCancellationRequested: () => false, onCancellationRequested: () => () => undefined },
     budget: { maxWallClockMs: 1000 },
+    admission: { maxInFlight: 2, maxQueued: 4, overflow: "reject" },
   }
 }
 
