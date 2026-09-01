@@ -31,10 +31,11 @@ export interface WorthMetricsQueries {
  * instead of exposing a store handle, mutable aggregate, or transport-shaped
  * copy that this package could accidentally treat as authority.
  *
- * A production implementation should enter Worth through its public host
- * facade (`worth-query-host::facade`) and translate that runtime's typed
- * outcomes at this boundary. This package does not provide an in-memory
- * implementation or choose a transport that the cookbook has not specified.
+ * A production implementation of this complete port must enter Worth through
+ * its public host facade (`worth-query-host::facade`) and translate that
+ * runtime's typed outcomes at this boundary. The app-specific process client
+ * in `worth-query-client.ts` intentionally implements only the separate
+ * application-read slice; it must not be widened into this port.
  */
 export interface WorthRuntimePort extends WorthAuthority, WorthMetricsQueries {
   publishEvent(event: InterfaceCompilerEvent, context: OperationContext): Promise<EventPublicationResult>
@@ -46,10 +47,11 @@ export interface WorthRuntimePort extends WorthAuthority, WorthMetricsQueries {
  *
  * The wrapper keeps transport and FFI details out of the adapter while making
  * an absent Node binding fail closed. `boundary` is routing metadata, not an
- * attestation token: the adapter validates the port shape but cannot prove
- * that an arbitrary JavaScript object is backed by WORTH. Production code must
- * obtain this descriptor from an actual host integration. This package does
- * not define an HTTP, RPC, or process protocol.
+ * attestation token: the adapter validates the complete port shape but cannot
+ * prove that an arbitrary JavaScript object is backed by WORTH. Production
+ * code must obtain this descriptor from an actual host integration. The live
+ * demo read slice uses the separate app-specific client and does not construct
+ * this complete-port descriptor.
  */
 export const WORTH_QUERY_HOST_FACADE_BOUNDARY = "worth-query-host::facade" as const
 
