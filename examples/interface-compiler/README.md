@@ -357,6 +357,50 @@ Exploration returns only when needed.
 
 # 9. System Architecture
 
+## Runtime Authority — Non-Negotiable
+
+**Worth Query is the Interface Compiler runtime authority.** It is not an
+optional persistence adapter and it is not a decorative database wrapper.
+
+Worth owns the durable, recoverable truth for:
+
+* application and capability lifecycle commands
+* execution ownership and execution lineage
+* replay candidates, versions, activation, supersession, and invalidation
+* verification evidence, verification posture, and promotion decisions
+* domain events and all query projections, including economics and health
+* publication eligibility for compiled tools
+
+Every state transition in these concerns must be commanded through Worth and
+every durable read must come from a Worth query projection. Restarting an
+orchestrator process must not lose, recreate, or decide any of this authority.
+
+The other components have deliberately narrower roles:
+
+* The **orchestrator** is a Worth-delegated external-effect worker. It obtains
+  work and authority from Worth, calls adapters, and reports typed outcomes
+  back to Worth. It owns only in-flight process state such as cancellation and
+  resource handles.
+* **Solari** and **Gemini** are external-effect adapters. They never maintain a
+  durable capability, replay, verification, or execution ledger.
+* The **dashboard** and **tool publisher** are read/query consumers. They may
+  retain ephemeral view or request state only; they cannot infer or mint
+  verification, health, lifecycle, or publication authority.
+
+It is a correctness failure to introduce a parallel lifecycle machine,
+repository, replay/evidence store, or projection database outside Worth.
+
+```text
+Worth Query runtime
+  ├─ commands authority-owned lifecycle and execution work
+  ├─ projects capability, replay, verification, health, and cost views
+  └─ delegates external effects to orchestrator workers
+       ├─ Gemini adapter
+       └─ Solari adapter
+
+Dashboard and tool publisher read Worth projections.
+```
+
 ```text
                      GEMINI
                        │
@@ -407,7 +451,7 @@ The project should not build its own browser infrastructure.
 
 # 11. Worth's Role
 
-Worth owns authoritative learned knowledge.
+Worth owns the authoritative runtime, not merely learned knowledge.
 
 Worth stores:
 
@@ -428,7 +472,8 @@ Worth stores:
 
 The separation is:
 
-> **Gemini proposes. Solari executes. Worth remembers what is trusted.**
+> **Gemini proposes. Solari executes. Worth commands, records, verifies, and
+> projects what is trusted.**
 
 ---
 
@@ -1481,16 +1526,19 @@ Worth must materially power the system.
 
 Required:
 
+* the sole durable runtime authority; no parallel repository or state machine
 * authoritative capability state
 * replay-version state
 * active replay resolution
 * version lineage
-* execution results
+* execution ownership, execution results, and recovery lineage
 * health state
 * failure → degraded transition
 * replay failure → exploratory mode
 * candidate → verification → active transition
 * metrics aggregation
+* query projections consumed by the dashboard and tool publisher
+* authorization/publication eligibility for compiled tools
 
 Strongly preferred:
 
@@ -1499,7 +1547,10 @@ Strongly preferred:
 * derived capability health
 * lineage queries
 
-Do not use Worth as a decorative database wrapper.
+Do not use Worth as a decorative database wrapper. The orchestrator may retain
+only transient in-flight operation state and must submit outcomes through Worth
+commands; it must not decide or persist lifecycle, evidence, verification,
+health, lineage, or publication state itself.
 
 ---
 
