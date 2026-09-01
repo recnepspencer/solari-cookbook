@@ -120,16 +120,19 @@ recovery protocol has been invented.
 | --- | --- | --- |
 | `readApplication` through `WorthApplicationReadAdapter` | Live | WORTH-installed application schema, admitted principal, bounded query, typed projection and receipt |
 | `startExecution` through `WorthStartExecutionAdapter` | Live | WORTH-installed operation admission, invariant projection, effect program, compare-and-commit, execution query projection and receipt |
+| `admitExecution` through `WorthExecutionRuntimePort` | Live for arbitrary caller-issued direct or compiled identities | WORTH validates identity/mode/capability/replay eligibility, creates the execution and identity-bound journal in one admitted commit, and returns the running projection plus query receipt |
 | `completeExecution` through `WorthExecutionSettlementPort` | Live for the seeded started demo execution | WORTH-installed completion operation, expected-revision/lifecycle denial, effect commit, authoritative execution projection and query receipt |
+| `settleExecution` through `WorthExecutionRuntimePort` | Live for admitted arbitrary executions | WORTH expected-revision/lifecycle settlement and terminal projection including WORTH-projected telemetry counters, cost, timestamps, wall clock, and outcome |
 | `publish` through `WorthExecutionSettlementPort` | Live for concrete Interface Compiler v1 events | WORTH-owned application journal, typed publication operation, idempotent retention, journal query and receipt |
+| execution telemetry `publish` through `WorthExecutionRuntimePort` | Live | Model calls/tokens/cost and browser observations/actions are retained in the execution's WORTH-owned journal and re-projected at settlement; Node holds no metrics ledger |
 | `readCapability` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed capability entity, admitted bounded query, healthy projection and receipt |
 | `readActiveReplay` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed replay selected by the capability's projected active replay identity, admitted bounded query, active projection and receipt |
 | `readReplayLineage` | Unavailable | No WORTH replay-lineage projection/query is exposed by this host |
 | `readExperiment` | Unavailable | No WORTH experiment projection/query is exposed by this host |
 | `readEvidence` | Unavailable | No WORTH evidence projection/query is exposed by this host |
-| `readExecution` | Unavailable | The post-transition execution query is not exposed as a standalone read operation |
+| `readExecution` | Unavailable | Running and terminal projections are exposed only as admission/settlement handoffs, not as a standalone query |
 | `readCompilationMetrics` | Unavailable | No WORTH-owned economics projection/query is exposed by this host |
-| `submit` and all other lifecycle helpers | Unavailable | No generic mutation protocol or other typed WORTH operation contract is exposed |
+| replay degradation/recovery/publication, evidence recording, and generic `submit` | Unavailable | No generic mutation protocol or replay/evidence recovery contract is exposed; compiled failure is settled without mutating replay authority |
 | composite dashboard read | Unavailable | The dashboard still requires its complete read-only projection, which this slice does not fabricate |
 
 The existing `createWorthAdapter` remains the complete-port adapter. It still
@@ -147,17 +150,17 @@ through the narrow adapter, and asserts identity matching, receipt evidence,
 not-found, mismatch fail-closed, and unsupported-operation boundaries.
 
 Remaining work before the broad adapter can open includes approved typed WORTH
-contracts for replay lineage, experiment/evidence/arbitrary-execution/metrics
-projections and every other lifecycle/effect command;
+contracts for replay lineage, experiment/evidence, standalone execution/benchmark
+reads, replay degradation/recovery/publication, and every other lifecycle/effect command;
 faithful process/client mappings for those contracts; and the corresponding
 currentness, idempotency, cancellation, effect-uncertainty, recovery, and
 evidence tests. Until each method is implemented through WORTH, it remains
 typed unavailable. No local emulation is permitted.
 
 The event journal and execution facts use WORTH's in-memory backing for this
-demo. They are not a Node ledger, generic event bus, durable recovery service,
-or authority for metrics/capabilities/replays. No Gemini or Solari request is
-made by this slice.
+demo. Per-execution journal facts are the sole authority for measured execution
+metrics, but they are not a generic event bus or durable recovery service. No
+Gemini or Solari request is made by this slice.
 
 Test-only WORTH fixtures and the existing TypeScript test doubles remain test
 evidence only. They do not provide production authority.

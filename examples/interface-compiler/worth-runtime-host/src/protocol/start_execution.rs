@@ -7,7 +7,8 @@ use serde::Serialize;
 use super::{
     InterfaceCompilerHostDenialStage, InterfaceCompilerHostInvalidRequestReason,
     InterfaceCompilerHostQueryEvidence, InterfaceCompilerHostRequest,
-    InterfaceCompilerHostResponse, INTERFACE_COMPILER_WORTH_PROTOCOL, START_EXECUTION_OPERATION,
+    InterfaceCompilerHostResponse, ADMIT_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_PROTOCOL,
+    START_EXECUTION_OPERATION,
 };
 use crate::host::{
     InterfaceCompilerExecutionCommitKind, InterfaceCompilerStartExecutionDenialStage,
@@ -22,6 +23,11 @@ pub struct InterfaceCompilerHostExecution {
     pub lifecycle: String,
     pub revision: u64,
     pub settlement: serde_json::Value,
+    pub capability_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub replay_version_id: Option<String>,
+    pub mode: String,
+    pub metrics: serde_json::Value,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -59,11 +65,96 @@ pub(super) fn handle_start_execution(
         credential,
         timeout,
     ));
-    map_outcome(request_id, execution_id, outcome)
+    map_outcome(request_id, START_EXECUTION_OPERATION, execution_id, outcome)
+}
+
+pub(super) fn handle_admit_execution(
+    request_id: String,
+    request: InterfaceCompilerHostRequest,
+    host: &InterfaceCompilerWorthHost,
+) -> InterfaceCompilerHostResponse {
+    let execution_id = match request.execution_id {
+        Some(value) => value,
+        None => {
+            return invalid_request(
+                request_id,
+                InterfaceCompilerHostInvalidRequestReason::MissingExecutionId,
+                "admit_execution requires execution_id",
+            )
+        }
+    };
+    let capability_id = match request.capability_id {
+        Some(value) => value,
+        None => {
+            return invalid_request(
+                request_id,
+                InterfaceCompilerHostInvalidRequestReason::MissingCapabilityId,
+                "admit_execution requires capability_id",
+            )
+        }
+    };
+    let credential = match request.credential {
+        Some(value) => value,
+        None => {
+            return invalid_request(
+                request_id,
+                InterfaceCompilerHostInvalidRequestReason::MissingCredential,
+                "admit_execution requires credential",
+            )
+        }
+    };
+    let admission = match request.settlement {
+        Some(value) => value,
+        None => {
+            return invalid_request(
+                request_id,
+                InterfaceCompilerHostInvalidRequestReason::MalformedJson,
+                "admit_execution requires admission",
+            )
+        }
+    };
+    let mode = admission
+        .get("mode")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+    let replay_version_id = admission
+        .get("replayVersionId")
+        .and_then(|value| value.as_str())
+        .map(str::to_string);
+    let metrics = match admission
+        .get("metrics")
+        .cloned()
+        .and_then(|value| serde_json::from_value(value).ok())
+    {
+        Some(value) => value,
+        None => {
+            return invalid_request(
+                request_id,
+                InterfaceCompilerHostInvalidRequestReason::MalformedJson,
+                "admit_execution requires valid start metrics",
+            )
+        }
+    };
+    let timeout = request
+        .deadline_ms
+        .map(Duration::from_millis)
+        .unwrap_or(DEFAULT_REQUEST_TIMEOUT);
+    let outcome = host.admit_execution(InterfaceCompilerStartExecutionRequest::admission(
+        execution_id.clone(),
+        capability_id,
+        replay_version_id,
+        mode,
+        metrics,
+        credential,
+        timeout,
+    ));
+    map_outcome(request_id, ADMIT_EXECUTION_OPERATION, execution_id, outcome)
 }
 
 fn map_outcome(
     request_id: String,
+    operation: &'static str,
     requested_execution_id: String,
     outcome: InterfaceCompilerStartExecutionOutcome,
 ) -> InterfaceCompilerHostResponse {
@@ -75,7 +166,7 @@ fn map_outcome(
         } => InterfaceCompilerHostResponse::ExecutionTransitioned {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
-            operation: START_EXECUTION_OPERATION,
+            operation,
             commit: match commit {
                 InterfaceCompilerExecutionCommitKind::Committed => {
                     InterfaceCompilerHostCommitKind::Committed
@@ -90,6 +181,15 @@ fn map_outcome(
                 lifecycle: projection.lifecycle,
                 revision: projection.revision,
                 settlement: serde_json::from_str(&projection.settlement_json)
+                    .unwrap_or(serde_json::Value::Null),
+                capability_id: projection.capability_id,
+                replay_version_id: if projection.replay_version_id.is_empty() {
+                    None
+                } else {
+                    Some(projection.replay_version_id)
+                },
+                mode: projection.mode,
+                metrics: serde_json::from_str(&projection.metrics_json)
                     .unwrap_or(serde_json::Value::Null),
             },
             evidence: InterfaceCompilerHostQueryEvidence {
@@ -107,7 +207,7 @@ fn map_outcome(
         } => InterfaceCompilerHostResponse::LifecycleNotPending {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
-            operation: START_EXECUTION_OPERATION,
+            operation,
             execution_id,
             current_lifecycle,
         },
@@ -115,7 +215,7 @@ fn map_outcome(
             InterfaceCompilerHostResponse::ExecutionDenied {
                 protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
                 request_id,
-                operation: START_EXECUTION_OPERATION,
+                operation,
                 execution_id: requested_execution_id,
                 stage: map_denial_stage(stage),
                 kind: format!("{stage:?}"),

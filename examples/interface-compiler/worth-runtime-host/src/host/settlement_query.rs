@@ -13,6 +13,7 @@ impl InterfaceCompilerWorthHost {
             InterfaceCompilerSchema,
             EventJournal,
         >,
+        journal_id: &str,
         scope: &admission::authenticated_principal::WorthQueryRequestScope,
     ) -> Result<
         (
@@ -32,10 +33,8 @@ impl InterfaceCompilerWorthHost {
             .admit_application_query(
                 &query,
                 &access,
-                declaration::application_query::ApplicationQueryParameterSet::new().bind(
-                    event_journal_id_parameter(),
-                    DEMO_EVENT_JOURNAL_ID.to_string(),
-                ),
+                declaration::application_query::ApplicationQueryParameterSet::new()
+                    .bind(event_journal_id_parameter(), journal_id.to_string()),
                 primary_graph::WorthQueryApplicationQueryControls::current_one_shot(
                     std::num::NonZeroUsize::new(1).unwrap(),
                     std::num::NonZeroUsize::new(256 * 1024).unwrap(),

@@ -32,7 +32,7 @@ import {
 } from "./planning.js"
 import type { SemanticVerifier, SemanticVerificationResult } from "./semantic-verifier.js"
 import type { WorthAuthority } from "@interface-compiler/domain"
-type WorthEvidenceReader = Pick<WorthAuthority, "readEvidence">
+type WorthEvidenceReader = { readonly readEvidence?: WorthAuthority["readEvidence"] }
 
 export type ExperimentTerminal =
   | { readonly kind: "success"; readonly output?: JsonValue }
@@ -65,7 +65,7 @@ export async function runExperimentSession(
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
 ): Promise<ExperimentTerminal> {
-  const firstObservation = await observe(session, controller, emit)
+  const firstObservation = await observe(session, controller, emit, executionId)
   if (firstObservation.kind !== "observed") return firstObservation.intent
   let observation = firstObservation.observation
 
@@ -121,11 +121,11 @@ async function runDirect(
     if (stepSafety.value.kind === "stop") return { kind: "safety_stop", stop: stepSafety.value.result }
     const actionLogicalIdentity = `${executionId}:${actionIndex}`
     actionIndex += 1
-    const action = await executeStep(session, decision.step, controller, emit, eventIdempotencyKey("browser.action", actionLogicalIdentity))
+    const action = await executeStep(session, decision.step, controller, emit, executionId, eventIdempotencyKey("browser.action", actionLogicalIdentity))
     if (action.kind !== "completed") return action.intent
     const nextObservation = action.observation === undefined
-      ? await observe(session, controller, emit)
-      : await assessObservation(action.observation, emit)
+      ? await observe(session, controller, emit, executionId)
+      : await assessObservation(action.observation, emit, executionId)
     if (nextObservation.kind !== "observed") return nextObservation.intent
     currentObservation = nextObservation.observation
   }
@@ -146,11 +146,11 @@ async function runCompiled(
     const stepSafety = assessReplayStepSafety(step, currentObservation.observedAt)
     if (!stepSafety.ok) return { kind: "failure", message: "safety classification failed" }
     if (stepSafety.value.kind === "stop") return { kind: "safety_stop", stop: stepSafety.value.result }
-    const action = await executeStep(session, step, controller, emit, eventIdempotencyKey("browser.action", `${plan.replay.id}:${stepIndex}`))
+    const action = await executeStep(session, step, controller, emit, executionId, eventIdempotencyKey("browser.action", `${plan.replay.id}:${stepIndex}`))
     if (action.kind !== "completed") return action.intent
     const nextObservation = action.observation === undefined
-      ? await observe(session, controller, emit)
-      : await assessObservation(action.observation, emit)
+      ? await observe(session, controller, emit, executionId)
+      : await assessObservation(action.observation, emit, executionId)
     if (nextObservation.kind !== "observed") return nextObservation.intent
     currentObservation = nextObservation.observation
   }
@@ -161,19 +161,21 @@ async function observe(
   session: SolariSession,
   controller: OperationController,
   emit: RuntimeEventEmitter,
+  executionId: ExecutionId,
 ): Promise<ObservationOutcome> {
   const gate = controller.check()
   if (gate.kind === "stop") return { kind: "terminal", intent: { kind: "control_stop", stop: gate.stop } }
   const result = await session.observe(controller.context)
   if (result.kind !== "observed") return { kind: "terminal", intent: solariObservationIntent(result) }
-  return assessObservation(result.observation, emit)
+  return assessObservation(result.observation, emit, executionId)
 }
 
 async function assessObservation(
   observation: Observation,
   emit: RuntimeEventEmitter,
+  executionId: ExecutionId,
 ): Promise<ObservationOutcome> {
-  const publication = await emit("browser.observed", { sessionId: observation.sessionId, observationId: observation.id }, eventIdempotencyKey("browser.observed", `${observation.sessionId}:${observation.id}`))
+  const publication = await emit("browser.observed", { executionId, sessionId: observation.sessionId, observationId: observation.id }, eventIdempotencyKey("browser.observed", `${observation.sessionId}:${observation.id}`))
   const publicationIntent = eventPublicationIntent(publication, { kind: "completed" })
   if (publicationIntent !== undefined) return { kind: "terminal", intent: publicationIntent }
   const safety = assessObservationSafety(observation)
@@ -188,6 +190,7 @@ async function executeStep(
   step: ReplayStep,
   controller: OperationController,
   emit: RuntimeEventEmitter,
+  executionId: ExecutionId,
   idempotencyKey: string,
 ): Promise<StepOutcome> {
   const gate = controller.reserveBrowserAction()
@@ -196,7 +199,7 @@ async function executeStep(
   if (preflight.kind === "stop") return { kind: "terminal", intent: { kind: "control_stop", stop: preflight.stop } }
   const result = await session.executeStep(step, controller.context)
   if (result.kind === "completed") {
-    const publication = await emit("browser.action", { sessionId: session.sessionId, actionType: step.type }, idempotencyKey)
+    const publication = await emit("browser.action", { executionId, sessionId: session.sessionId, actionType: step.type }, idempotencyKey)
     const publicationIntent = eventPublicationIntent(publication, { kind: "completed" })
     if (publicationIntent !== undefined) return { kind: "terminal", intent: publicationIntent }
     const afterAction = controller.check()
@@ -357,6 +360,7 @@ async function postconditionFailure(
   if (new Set(evidenceIds).size !== evidenceIds.length) return { kind: "invalid", message: "semantic verifier returned duplicate evidence references" }
 
   for (const evidenceId of evidenceIds) {
+    if (worth.readEvidence === undefined) return { kind: "invalid", message: "WORTH evidence reading is unavailable on the live runtime port" }
     const evidence = await worth.readEvidence(evidenceId as EvidenceId, controller.context)
     const afterEvidenceRead = controller.check()
     if (afterEvidenceRead.kind === "stop") return { kind: "stopped", stop: afterEvidenceRead.stop }

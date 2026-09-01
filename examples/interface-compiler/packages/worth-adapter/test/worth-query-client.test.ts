@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 import { promisify } from "node:util"
-import type { ApplicationId, CapabilityId, EventId, ExecutionId, InterfaceCompilerEvent, OperationContext } from "@interface-compiler/domain"
+import type { ApplicationId, CapabilityId, EventId, ExecutionId, InterfaceCompilerEvent, IsoTimestamp, OperationContext } from "@interface-compiler/domain"
 import {
   createWorthApplicationReadAdapter,
   createCompiledPlanReadAdapter,
@@ -210,7 +210,7 @@ test("real host binary preserves unsupported operations as correlated unavailabl
     request_id: "unsupported-binary-1",
     operation: "submit_lifecycle_command",
     reason: "unsupported",
-    message: "this host exposes only read_application, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay",
+    message: "this host exposes only read_application, admit_execution, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay",
   })
 })
 
@@ -261,4 +261,25 @@ test("client settles through the real host and publishes a retained concrete eve
   const stale=await client.completeExecution(execution,{kind:"success"},"2026-09-01T12:00:01.000Z",0,context("operation.live-stale"));assert.equal(stale.kind,"stale")
   const event={eventId:"event.live.1" as EventId,occurredAt:"2026-09-01T12:00:00.000Z",protocol:"interface-compiler.events",schemaVersion:1,idempotencyKey:"compiled.started:execution.demonstration-001",recovery:"replay_safe",integrity:{algorithm:"sha256",digest:"abc"},type:"compiled.started",payload:{executionId:execution,mode:"compiled"}} satisfies InterfaceCompilerEvent
   assert.equal((await client.publish(event,context("operation.live-event"))).kind,"published");assert.equal((await client.publish(event,context("operation.live-event-retry"))).kind,"duplicate")
+})
+
+test("live narrow runtime port admits an arbitrary execution and returns WORTH-projected telemetry", async (testContext) => {
+  const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
+  testContext.after(() => client.close())
+  const execution = executionId("execution.typescript-live-42")
+  const startedAt = "2026-09-01T12:00:00.000Z" as IsoTimestamp
+  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.walmart.search-products"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
+  assert.equal(admitted.kind, "admitted")
+  if (admitted.kind !== "admitted") throw new Error("expected admission")
+  assert.equal(admitted.projection.executionId, execution)
+  assert.equal(admitted.evidence.projectedFieldCount, 8)
+  const base = { occurredAt: startedAt, protocol: "interface-compiler.events", schemaVersion: 1, recovery: "replay_safe", integrity: { algorithm: "sha256", digest: "test" } } as const
+  const model = { ...base, eventId: "event.ts.model" as EventId, idempotencyKey: "event.ts.model", type: "model.called", payload: { executionId: execution, role: "explorer", inputTokens: 13, outputTokens: 5, estimatedModelCostUsd: 0.031 } } satisfies InterfaceCompilerEvent
+  const observation = { ...base, eventId: "event.ts.observation" as EventId, idempotencyKey: "event.ts.observation", type: "browser.observed", payload: { executionId: execution, sessionId: "session.ts" as never, observationId: "observation.ts" as never } } satisfies InterfaceCompilerEvent
+  assert.equal((await client.publish(model, context("operation.live-model"))).kind, "published")
+  assert.equal((await client.publish(observation, context("operation.live-observation"))).kind, "published")
+  const settled = await client.settleExecution(execution, { kind: "success" }, "2026-09-01T12:00:02.250Z" as IsoTimestamp, admitted.projection.revision, context("operation.live-runtime-settle"))
+  assert.equal(settled.kind, "settled")
+  if (settled.kind !== "settled") throw new Error("expected settlement")
+  assert.deepEqual(settled.projection.metrics, { startedAt, endedAt: "2026-09-01T12:00:02.250Z", wallClockMs: 2250, modelCalls: 1, inputTokens: 13, outputTokens: 5, browserObservations: 1, browserActions: 0, estimatedModelCostUsd: 0.031 })
 })

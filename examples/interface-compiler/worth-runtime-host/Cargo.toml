@@ -15,4 +15,5 @@ path = "src/main.rs"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
+chrono = "0.4"
 worth-query-host = { path = "C:/forge_workspace/worktree_2/workspaces/worth-query/crates/worth-query-host" }

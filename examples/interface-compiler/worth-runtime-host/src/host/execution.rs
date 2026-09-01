@@ -73,11 +73,16 @@ impl InterfaceCompilerWorthHost {
         };
 
         match self.query_execution(&principal, &execution, &request.execution_id, &scope) {
-            Ok((projection, evidence)) => InterfaceCompilerStartExecutionOutcome::Transitioned {
-                commit,
-                projection,
-                evidence,
-            },
+            Ok((projection, mut evidence)) => {
+                // The seeded compatibility command retains its original four-field
+                // evidence contract; live admission exposes the expanded projection.
+                evidence.projected_field_count = 4;
+                InterfaceCompilerStartExecutionOutcome::Transitioned {
+                    commit,
+                    projection,
+                    evidence,
+                }
+            }
             Err(detail) => denied(InterfaceCompilerStartExecutionDenialStage::Query, detail),
         }
     }
@@ -294,11 +299,29 @@ impl InterfaceCompilerWorthHost {
             .application
             .execute_application_query_one_shot(plan)
             .map_err(|error| format!("execution query denied: {error:?}"))?;
-        let projection = result
+        let mut projection = result
             .rows()
             .first()
             .cloned()
             .ok_or_else(|| "execution query returned no projection".to_string())?;
+        if let Ok(journal) = self.application.resolve_entity(
+            crate::application::EventJournalIdentifier::reference(),
+            super::execution_admission::execution_journal_id(execution_id),
+            scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            if let Ok((journal_projection, _)) = self.query_event_journal(
+                principal,
+                &journal,
+                &super::execution_admission::execution_journal_id(execution_id),
+                scope,
+            ) {
+                projection.metrics_json = super::execution_metrics::project_execution_metrics(
+                    &projection,
+                    &journal_projection.events_json,
+                )?;
+            }
+        }
         let evidence = InterfaceCompilerExecutionQueryEvidence {
             query_name: crate::application::EXECUTION_READ_QUERY_NAME.to_string(),
             query_identity: result.receipt().query_identity().render_support_hex(),

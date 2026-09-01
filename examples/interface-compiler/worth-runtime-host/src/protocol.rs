@@ -22,6 +22,7 @@ pub use start_execution::{InterfaceCompilerHostCommitKind, InterfaceCompilerHost
 pub const INTERFACE_COMPILER_WORTH_PROTOCOL: &str = "interface-compiler.worth-host.v1";
 pub const READ_APPLICATION_OPERATION: &str = "read_application";
 pub const START_EXECUTION_OPERATION: &str = "start_execution";
+pub const ADMIT_EXECUTION_OPERATION: &str = "admit_execution";
 pub const COMPLETE_EXECUTION_OPERATION: &str = "complete_execution";
 pub const PUBLISH_DOMAIN_EVENT_OPERATION: &str = "publish_domain_event";
 pub const READ_CAPABILITY_OPERATION: &str = "read_capability";
@@ -349,6 +350,9 @@ pub fn handle_request(
     if request.operation == START_EXECUTION_OPERATION {
         return start_execution::handle_start_execution(request_id, request, host);
     }
+    if request.operation == ADMIT_EXECUTION_OPERATION {
+        return start_execution::handle_admit_execution(request_id, request, host);
+    }
     if request.operation == COMPLETE_EXECUTION_OPERATION
         || request.operation == PUBLISH_DOMAIN_EVENT_OPERATION
     {
@@ -365,7 +369,7 @@ pub fn handle_request(
             request_id,
             operation: request.operation,
             reason: InterfaceCompilerHostUnavailableReason::Unsupported,
-            message: "this host exposes only read_application, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay".to_string(),
+            message: "this host exposes only read_application, admit_execution, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay".to_string(),
         };
     }
     let Some(application_id) = request.application_id else {

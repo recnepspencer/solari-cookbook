@@ -17,6 +17,7 @@ export type { CompiledPlanReadPort, CompiledPlanReadResult, WorthQueryEvidence }
 export { createWorthStartExecutionAdapter } from "./worth-start-execution.js"
 export type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
 export type { WorthExecutionSettlementPort, WorthExecutionSettlementProjection, WorthExecutionSettlementResult } from "./execution-settlement.js"
+export type { WorthExecutionAdmissionResult, WorthExecutionRuntimePort, WorthRunningExecutionProjection, WorthRuntimeSettlementResult, WorthTerminalExecutionProjection } from "./execution-runtime.js"
 export {
   WORTH_QUERY_HOST_FACADE_BOUNDARY,
   type WorthCompilationMetricsProjection,

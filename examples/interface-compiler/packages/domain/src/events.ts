@@ -4,15 +4,15 @@ import type { ReplayStep } from "./replay.js"
 
 export interface InterfaceCompilerEventMap {
   "direct.started": { readonly executionId: ExecutionId }
-  "browser.observed": { readonly sessionId: SessionId; readonly observationId: ObservationId }
+  "browser.observed": { readonly executionId: ExecutionId; readonly sessionId: SessionId; readonly observationId: ObservationId }
   "model.called": {
-    readonly executionId?: ExecutionId
+    readonly executionId: ExecutionId
     readonly role: "explorer" | "verifier" | "consumer"
     readonly inputTokens: number
     readonly outputTokens: number
     readonly estimatedModelCostUsd: number
   }
-  "browser.action": { readonly sessionId: SessionId; readonly actionType: ReplayStep["type"] }
+  "browser.action": { readonly executionId: ExecutionId; readonly sessionId: SessionId; readonly actionType: ReplayStep["type"] }
   "direct.completed": { readonly executionId: ExecutionId; readonly outcome: Exclude<Execution["status"], "running"> }
   "exploration.started": { readonly capabilityId?: CapabilityId; readonly sessionId: SessionId }
   "experiment.executed": { readonly experimentId: ExperimentId; readonly result: "success" | "failure" | "inconclusive" }
