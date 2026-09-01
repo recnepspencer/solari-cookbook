@@ -1,0 +1,12 @@
+{
+  "name": "@interface-compiler/domain",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test \"test/**/*.test.ts\""
+  }
+}
