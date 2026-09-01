@@ -1,24 +1,35 @@
 //! Application-specific composition of the public WORTH Query host facade.
 
-use std::future::Future;
-use std::pin::pin;
-use std::task::{Context, Poll, Waker};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use worth_query_host::facade::{admission, declaration, domain, primary_graph, runtime};
+use worth_query_host::facade::{admission, declaration, domain, primary_graph};
 
 use crate::application::{
     application_id_parameter, Application, ApplicationBaseUrl, ApplicationIdentifier,
-    ApplicationName, ApplicationReadQuery, ApplicationRevision,
-    InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
+    ApplicationName, ApplicationReadQuery, ApplicationRevision, Execution, ExecutionIdentifier,
+    ExecutionLifecycle, InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
     InterfaceCompilerSchema,
 };
+
+mod bootstrap;
+mod execution;
+mod execution_contract;
+mod execution_idempotency;
+mod synchronous_future;
+pub use execution_contract::*;
+use synchronous_future::block_on;
 
 pub const DEMO_APPLICATION_ID: &str = "application.interface-compiler";
 pub const DEMO_APPLICATION_REVISION: u64 = 7;
 pub const DEMO_APPLICATION_NAME: &str = "Interface Compiler Demo";
 pub const DEMO_APPLICATION_BASE_URL: &str = "https://interface-compiler.example";
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
+pub const DEMO_EXECUTION_ID: &str = "execution.demonstration-001";
+pub const DEMO_EXECUTION_ID_TWO: &str = "execution.demonstration-002";
+pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started";
+pub const DEMO_EXECUTION_PENDING: &str = "pending";
+pub const DEMO_EXECUTION_STARTED: &str = "started";
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";
@@ -136,151 +147,14 @@ type AdmittedDemoAuthentication =
 /// serialized or exposed to the client.
 pub struct InterfaceCompilerWorthHost {
     application: primary_graph::WorthQueryPrimaryGraphApplicationRuntime<InterfaceCompilerSchema>,
+    invariant: Arc<
+        primary_graph::WorthQueryApplicationInvariantProjectionAuthority<InterfaceCompilerSchema>,
+    >,
     principal_binding: InstalledPrincipalBinding,
     authentication: AdmittedDemoAuthentication,
 }
 
 impl InterfaceCompilerWorthHost {
-    /// Installs and publishes the small in-memory application graph through
-    /// the production host facade. The in-memory graph is WORTH's backing for
-    /// this demo, not an application-owned fallback store.
-    pub fn in_memory_demo() -> Result<Self, InterfaceCompilerHostSetupError> {
-        let declaration = InterfaceCompilerSchema::declaration().map_err(|error| {
-            InterfaceCompilerHostSetupError::from_stage("declare application schema", error)
-        })?;
-        let package = domain::WorthQueryPortableDomainPackage::new(
-            domain::WorthQueryPortableDomainIdentity::new("interface_compiler_host", 1, 0),
-        )
-        .application_schema(declaration.clone())
-        .validate()
-        .map_err(|error| {
-            InterfaceCompilerHostSetupError::from_stage("validate application package", error)
-        })?;
-        let admitted = domain::WorthQueryInstallationAdmissionProfile::new(
-            "interface-compiler-host",
-            "worth-query-demo",
-        )
-        .admit(package)
-        .map_err(|error| {
-            InterfaceCompilerHostSetupError::from_stage("admit application package", error)
-        })?;
-        let installation = runtime::WorthQueryExecutionRuntimeInstaller::new()
-            .install(
-                domain::WorthQueryInstallationGeneration::initial(),
-                [admitted],
-            )
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("install WORTH runtime", error)
-            })?;
-        let (runtime, authority) = installation.into_parts();
-        let schema = runtime
-            .installed_packages()
-            .bind_application_schema(declaration)
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("bind installed schema", error)
-            })?;
-        let principal_binding = schema
-            .principal_binding(InterfaceCompilerPrincipalBinding::reference())
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("bind principal admission", error)
-            })?;
-        let authentication = admission::authenticated_principal::admit_authentication_adapter(
-            &schema,
-            admission::authenticated_principal::WorthQueryAuthenticationAdapterAdmission::new(
-                admission::authenticated_principal::WorthQueryAuthenticationAudience::new(
-                    DEMO_AUTHENTICATION_AUDIENCE,
-                )
-                .map_err(|error| {
-                    InterfaceCompilerHostSetupError::from_stage(
-                        "configure authentication audience",
-                        error,
-                    )
-                })?,
-                admission::authenticated_principal::WorthQueryAuthenticationMethod::new(
-                    DEMO_AUTHENTICATION_METHOD,
-                )
-                .map_err(|error| {
-                    InterfaceCompilerHostSetupError::from_stage(
-                        "configure authentication method",
-                        error,
-                    )
-                })?,
-            ),
-            DemoAuthenticationAdapter,
-        )
-        .map_err(|error| {
-            InterfaceCompilerHostSetupError::from_stage("admit authentication adapter", error)
-        })?;
-        let mut graph = authority
-            .prepare_primary_graph(&runtime, &schema)
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("prepare WORTH primary graph", error)
-            })?;
-        graph
-            .bind_principal(
-                &principal_binding,
-                primary_graph::WorthQueryApplicationPrincipalKey::new(DEMO_PRINCIPAL_KEY).map_err(
-                    |error| {
-                        InterfaceCompilerHostSetupError::from_stage("create principal key", error)
-                    },
-                )?,
-                1_u64,
-                declaration::authentication::WorthQueryExternalPrincipalIdentity::new(
-                    DEMO_PRINCIPAL_ISSUER,
-                    DEMO_PRINCIPAL_SUBJECT,
-                )
-                .map_err(|error| {
-                    InterfaceCompilerHostSetupError::from_stage("create principal identity", error)
-                })?,
-                declaration::authentication::WorthQueryPrincipalMappingStatus::Enabled,
-            )
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("bind principal mapping", error)
-            })?;
-        graph
-            .bind_entity(
-                primary_graph::WorthQueryApplicationEntitySeed::new(
-                    Application::reference(),
-                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_APPLICATION_ID)
-                        .map_err(|error| {
-                            InterfaceCompilerHostSetupError::from_stage(
-                                "create application key",
-                                error,
-                            )
-                        })?,
-                )
-                .field(
-                    ApplicationIdentifier::reference(),
-                    DEMO_APPLICATION_ID.to_string(),
-                )
-                .field(ApplicationRevision::reference(), DEMO_APPLICATION_REVISION)
-                .field(
-                    ApplicationName::reference(),
-                    DEMO_APPLICATION_NAME.to_string(),
-                )
-                .field(
-                    ApplicationBaseUrl::reference(),
-                    DEMO_APPLICATION_BASE_URL.to_string(),
-                ),
-            )
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage("bind application entity", error)
-            })?;
-        let application = graph
-            .publish_application_runtime(runtime, authority, schema)
-            .map_err(|error| {
-                InterfaceCompilerHostSetupError::from_stage(
-                    "publish WORTH application runtime",
-                    error,
-                )
-            })?;
-        Ok(Self {
-            application,
-            principal_binding,
-            authentication,
-        })
-    }
-
     pub fn read_application(
         &self,
         request: InterfaceCompilerApplicationReadRequest,
@@ -508,20 +382,5 @@ impl admission::authenticated_principal::WorthQueryAuthenticationAdapter
                 )
             })
         })
-    }
-}
-
-fn block_on<F: Future>(future: F) -> F::Output {
-    // The public authentication facade is async. This synchronous bridge only
-    // drives that future for the line-oriented demo; it owns no WORTH state,
-    // scheduling, lifecycle, or recovery authority.
-    let mut future = pin!(future);
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    loop {
-        match future.as_mut().poll(&mut context) {
-            Poll::Ready(output) => return output,
-            Poll::Pending => std::thread::yield_now(),
-        }
     }
 }

@@ -4,7 +4,11 @@ This is a real, deliberately narrow WORTH Query host. It installs and
 publishes a typed Interface Compiler application runtime through the public
 `worth-query-host::facade`, admits the demo credential and principal mapping,
 and executes one bounded application query against WORTH's in-memory
-relational graph.
+relational graph. Its Rust API additionally demonstrates exactly one typed
+`start_execution` transition through WORTH's admitted operation, projected
+dependencies, effect program, compare-and-commit, and typed execution query.
+That lifecycle-only projection deliberately contains no measured telemetry,
+tokens, costs, results, or fabricated metrics.
 
 The host requires the complete matching checkout at:
 
@@ -24,7 +28,8 @@ From the repository root:
 cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml -- --serve
 ```
 
-The process accepts newline-delimited JSON and emits one response per line.
+The process remains read-only: it accepts newline-delimited JSON and emits one
+response per line.
 For example:
 
 ```json

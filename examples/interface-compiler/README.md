@@ -381,16 +381,19 @@ not ownership: while the demo runs, the orchestrator and adapters must still not
 keep a competing lifecycle, replay, evidence, execution, or projection state.
 
 This checkout now ships a deliberately narrow live WORTH process binding for
-the application read path. The Rust host installs a typed application schema,
-admitted authentication/principal mapping, and bounded one-shot query through
-`worth-query-host::facade`; the TypeScript client carries only the immutable
-projection and query receipt evidence across an app-specific process boundary.
-The complete matching WORTH checkout is required at
+the application read path. The Rust host also exposes one programmatic typed
+`start_execution` demonstration that uses WORTH operation admission,
+authorization, invariant projection, effect programming, compare-and-commit,
+and a separate typed execution query. The TypeScript client remains read-only
+and carries only the immutable application projection and query receipt
+evidence across an app-specific process boundary. The complete matching WORTH
+checkout is required at
 `C:\forge_workspace\worktree_2\workspaces\worth-query`.
 
-The binding does not open the broad `WorthRuntimePort`: capability, replay,
-experiment, evidence, execution, metrics, mutation/lifecycle, and event
-operations remain explicit typed unavailable outcomes. There is no TypeScript
+The binding does not open the broad `WorthRuntimePort`: its process protocol
+still exposes only the application read, while capability, replay, experiment,
+evidence, metrics, other mutation/lifecycle, and event operations remain
+explicit typed unavailable outcomes. There is no TypeScript
 fallback store, marker-only binding, local replay/evidence authority, or
 serialized recovery handle. See [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md)
 for the exact live/unavailable surface, old-versus-complete checkout evidence,
