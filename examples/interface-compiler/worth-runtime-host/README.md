@@ -1,20 +1,25 @@
-# Worth Query demo-runtime host
+# WORTH Query demo host seam
 
-This is the runnable Rust artifact for the Interface Compiler demo. Run it
-with:
+Status: unavailable by design. This binary is a fail-closed guard, not a
+WORTH runtime, an in-memory store, or a transport.
 
-```bash
-cargo run --manifest-path worth-runtime-host/Cargo.toml
+Run it from the repository root:
+
+```powershell
+cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml
 ```
 
-The artifact is deliberately a small in-memory host manifest because this
-workspace has no executable Node binding to the actual Rust
-`worth-query-host::facade`. It records the exact demo claim: Worth Query is the
-runtime authority, backing is process-local, and a full runtime restart is not
-covered.
+The command must produce no stdout, print an availability diagnostic to stderr,
+and exit with status `78`. It starts no state machine and emits no protocol
+messages. A caller must not treat the diagnostic as a successful host response.
 
-It does not implement Worth state, lifecycle, replay, evidence, health,
-projections, or a transport. It also does not manufacture command outcomes.
-The TypeScript adapter accepts a runtime only through an explicit
-`worth-query-host::facade` bridge binding and rejects absent or unmarked
-bindings; there is no TypeScript authority fallback.
+There is currently no checked-in production process binding for
+`@interface-compiler/worth-adapter`. That package accepts a binding only when an
+integration host supplies the complete `WorthRuntimePort` through the public
+`worth-query-host::facade` boundary; it has no local fallback. The boundary
+literal is routing metadata, not proof that an arbitrary object is backed by
+WORTH. Test doubles belong only in adapter tests.
+
+The reason this seam remains closed, the public-facade evidence, the failed
+installed-source checks, and the exact prerequisites for a future typed host
+are recorded in [WORTH_BRIDGE_EVIDENCE.md](../WORTH_BRIDGE_EVIDENCE.md).
