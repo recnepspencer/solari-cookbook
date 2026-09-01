@@ -108,40 +108,30 @@ Use existing cookbook conventions where they are cleaner.
 
 # 3. Demo Target
 
-Use a real public website.
+Use a local, fictional **Enron Online** legacy energy-trading desk. It is an
+intentionally charming parody of a company that no longer exists.
 
-Primary target:
+The business model is wholesale energy trading, not generic retail ordering:
+counterparties buy or sell a defined power/gas contract at a delivery hub for a
+delivery period, subject to counterparty limits and risk approval.
 
-# Walmart
+The local demo has three source surfaces:
 
-Demo task:
+* the ugly legacy trading UI that stages the trade;
+* CSV contract data that maps consumer-friendly contract references to the
+  portal's legacy deal codes, delivery hubs, and lot sizes; and
+* a short trader playbook explaining counterparty limits and the portal's
+  non-obvious fields.
 
-> Search for a common product, add one suitable result to the cart, continue toward checkout, and stop when authentication, credentials, shipping details, personal information, or payment becomes required.
-
-Example:
+Demo request:
 
 ```text
-Go to Walmart.
-
-Search for Tide Pods.
-
-Choose a suitable result.
-
-Add one to the cart.
-
-Proceed toward checkout.
-
-Stop when credentials are required.
+Stage a 50,000 MMBtu purchase of the next-month Henry Hub gas contract for
+counterparty midwest-utility-17, then send it to risk approval.
 ```
 
-The demo must not:
-
-* enter private credentials,
-* submit payment,
-* place an order,
-* bypass authentication,
-* bypass access controls,
-* or continue beyond the credential/payment boundary.
+The portal, data, and approval are entirely local and in-memory. No real trade
+or counterparty data is involved.
 
 ---
 
@@ -156,8 +146,11 @@ This is critical.
 Gemini receives:
 
 ```text
-Go to Walmart, find Tide Pods, add one to the cart,
-proceed toward checkout, and stop when credentials are required.
+Stage a 50,000 MMBtu next-month Henry Hub gas purchase for
+midwest-utility-17, then send it to risk approval.
+
+Use the provided contract CSV and trader playbook to resolve the legacy deal
+code, delivery lot size, and approval requirement.
 ```
 
 Gemini directly controls a Solari browser.
@@ -204,30 +197,32 @@ The same Gemini model receives the same user task.
 But Gemini now has semantic tools such as:
 
 ```text
-walmart.search_products
-walmart.add_to_cart
-walmart.begin_checkout
+enron.market.resolve_contract
+enron.trades.stage_trade
+enron.risk.request_approval
 ```
 
-Gemini reasons once at the business-operation level.
+Gemini reasons at the business-operation level and makes the three semantic
+calls. It never receives selectors, DOM state, portal layout, legacy deal-code
+mapping, or replay steps.
 
 Example:
 
 ```text
-Need Tide Pods.
+Need the next-month Henry Hub contract for this counterparty.
 ↓
-walmart.search_products(...)
+enron.market.resolve_contract(...)
 ↓
-walmart.add_to_cart(...)
+enron.trades.stage_trade(...)
 ↓
-walmart.begin_checkout(...)
+enron.risk.request_approval(...)
 ↓
-AUTHENTICATION_REQUIRED
+TRADE_PENDING_RISK_APPROVAL
 ```
 
 Underneath those tools, Interface Compiler resolves a previously learned replay and executes it through Solari.
 
-Gemini does not repeatedly inspect and reason over the Walmart UI.
+Gemini does not repeatedly inspect and reason over the Enron UI.
 
 ---
 
@@ -240,7 +235,7 @@ Example format:
 ```text
 SAME MODEL
 SAME TASK
-SAME WEBSITE
+SAME LOCAL TRADING DESK
 
 DIRECT COMPUTER USE
 
@@ -253,7 +248,7 @@ Wall time:              ...
 Estimated model cost:   ...
 
 
-COMPILED CAPABILITY
+COMPILED ENERGY API
 
 Model calls:            2
 Input tokens:           ...
@@ -267,6 +262,14 @@ Estimated model cost:   ...
 Do not use fabricated demo numbers.
 
 All published numbers should come from measured runs.
+
+## Product decision lock
+
+The Enron Online energy-trading desk is the active demo target. Earlier
+Walmart and Demoblaze examples elsewhere in this document are historical
+exploration notes and are not the product direction, public API, benchmark, or
+video narrative. The implementation cutover must remove those ordinary demo
+paths rather than present them beside the energy-trading demo.
 
 ---
 
@@ -2470,46 +2473,32 @@ workspace. Its public surface is the explicit `packages/domain/src/index.ts`
 facade. Domain costs accept measured run inputs and caller-supplied pricing;
 the foundation contains no sample measurements, credentials, or `.env` values.
 
-# Safe runnable Demoblaze benchmark slice
+# Active demo direction — Enron Online
 
-The current vertical slice adds a callable harness for one fixed Demoblaze task:
-select Samsung galaxy s6, add exactly one to the cart, and stop at the first
-order/account/authentication/personal-information/shipping/payment/credential/
-access boundary. A stateful task-specific admission gate permits only public
-HTTPS Demoblaze navigation and the fixed Close (if an informational modal is
-present) → Phones (if needed) → Samsung galaxy s6 → Add to cart → Cart sequence.
-It never supplies form data, authenticates,
-clicks Place Order or Purchase, or purchases.
+The next implementation slice replaces the temporary one-capability Demoblaze
+benchmark with the local Enron Online energy-trading demo above. Its consumer
+API is intentionally stable while the portal's replay implementation may
+change:
 
-From this directory, the default inspection is deterministic and no-network:
+```ts
+const contract = await enron.market.resolveContract({
+  counterpartyRef: "midwest-utility-17",
+  market: "henry-hub-gas",
+  delivery: "next-month",
+  requestedMmbtu: 50_000,
+})
 
-```text
-npm run benchmark:demoblaze:dry-run
+const trade = await enron.trades.stageTrade({ contractRef: contract.ref })
+await enron.risk.requestApproval({ tradeRef: trade.ref })
 ```
 
-It validates configuration and reports safeguards without constructing a
-Gemini client, Solari client, or WORTH process. The paid/network-capable command
-is deliberately separate:
+The decisive proof is a local portal release that breaks
+`enron.trades.stageTrade` replay v1. WORTH must mark v1 broken/degrade the
+capability; exploration must discover v2; three real fresh Solari sessions must
+verify v2; and the unchanged consumer call must succeed through v2. The
+dashboard displays only WORTH projections for those facts and measured direct
+versus compiled workflow cost.
 
-```text
-npm run benchmark:demoblaze:run
-```
-
-That command refuses to compose live adapters unless `--execute` is present
-through the script and `INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK=true` is
-explicitly configured. See [the orchestrator README](apps/orchestrator/README.md)
-for the required credential and current-pricing environment variables.
-
-Both plans are resolved from the same immutable request before effects. Direct
-mode uses the configured Gemini reasoning adapter; compiled mode uses the
-WORTH-projected replay; both use the configured Solari adapter with fresh
-sessions. WORTH admits each execution, owns its telemetry journal, and returns
-the terminal projection used by the report. The report copies calls, tokens,
-browser observations/actions, wall clock, and estimated model cost from those
-terminal handoffs and derives only per-run savings.
-
-The checked-in replay is explicitly synthetic seed material. It can be run,
-but it cannot produce compilation economics: compile cost and break-even are
-reported as `not_measured`. Only exact WORTH-attributed discovery and
-verification terminal projections can open those fields; missing or seeded
-values never become zero or a demo figure.
+No implementation has been added for this direction yet. The current
+Demoblaze code is temporary and must be removed—not retained as a second
+ordinary demo path—when this slice is implemented.
