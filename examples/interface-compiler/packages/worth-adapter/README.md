@@ -21,9 +21,10 @@ of `WorthRuntimePort`; its `boundary` field is routing metadata, not an
 attestation token, and a marker-only object is not a valid production binding.
 
 The package also exposes the separate app-specific
-`InterfaceCompilerWorthClient` and `createWorthApplicationReadAdapter`. That
-client crosses the checked-in demo's explicit process boundary and supports
-only the WORTH-backed `readApplication` vertical slice. It returns typed
+`InterfaceCompilerWorthClient`, `createWorthApplicationReadAdapter`, and
+`createWorthStartExecutionAdapter`. That client crosses the checked-in demo's
+explicit process boundary and supports only the WORTH-backed `readApplication`
+and `startExecution` vertical slices. It returns typed
 unavailable/denied outcomes for the boundary without pretending to implement
 the complete port. The client owns only process transport and request
 correlation; it has no local authority or WORTH recovery-handle serialization.

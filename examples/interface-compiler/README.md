@@ -381,17 +381,18 @@ not ownership: while the demo runs, the orchestrator and adapters must still not
 keep a competing lifecycle, replay, evidence, execution, or projection state.
 
 This checkout now ships a deliberately narrow live WORTH process binding for
-the application read path. The Rust host also exposes one programmatic typed
-`start_execution` demonstration that uses WORTH operation admission,
+the application read path and one execution transition. The Rust host's typed
+`start_execution` demonstration uses WORTH operation admission,
 authorization, invariant projection, effect programming, compare-and-commit,
-and a separate typed execution query. The TypeScript client remains read-only
-and carries only the immutable application projection and query receipt
-evidence across an app-specific process boundary. The complete matching WORTH
+and a separate typed execution query. The TypeScript client exposes narrow
+`readApplication` and `startExecution` adapters and carries only typed terminal
+outcomes, projections, and query receipt evidence across an app-specific
+process boundary. The complete matching WORTH
 checkout is required at
 `C:\forge_workspace\worktree_2\workspaces\worth-query`.
 
 The binding does not open the broad `WorthRuntimePort`: its process protocol
-still exposes only the application read, while capability, replay, experiment,
+exposes only those two operations, while capability, replay, experiment,
 evidence, metrics, other mutation/lifecycle, and event operations remain
 explicit typed unavailable outcomes. There is no TypeScript
 fallback store, marker-only binding, local replay/evidence authority, or

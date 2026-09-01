@@ -6,7 +6,7 @@ modified.
 
 ## Current decision
 
-The Interface Compiler demo now has one real application-specific host path:
+The Interface Compiler demo now has two real application-specific host paths:
 
 1. `worth-runtime-host/src/application.rs` declares a typed WORTH application
    schema, principal binding, and `read_application` query.
@@ -14,10 +14,13 @@ The Interface Compiler demo now has one real application-specific host path:
    `worth_query_host::facade`, admits the demo authentication adapter, resolves
    the authenticated principal, admits and executes the bounded one-shot query,
    and returns the typed projection plus WORTH query receipt evidence.
-3. `worth-runtime-host/src/protocol.rs` exposes only that immutable product over
+3. The same host owns `start_execution` through WORTH typed operation admission,
+   invariant projection, effect programming, compare-and-commit, and a separate
+   typed execution query.
+4. `worth-runtime-host/src/protocol.rs` exposes only those products over
    an app-specific newline-delimited process boundary. Runtime-local proof,
    graph handles, and recovery handles never cross it.
-4. `packages/worth-adapter/src/worth-query-client.ts` owns only process
+5. `packages/worth-adapter/src/worth-query-client.ts` owns only process
    transport and request correlation. `createWorthApplicationReadAdapter`
    exposes the narrow read contract; it is not a `WorthRuntimePort`.
 
@@ -91,11 +94,11 @@ cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.t
 
 The process reads one JSON request per line and emits one JSON response per
 line. A live request has protocol
-`interface-compiler.worth-host.v1`, operation `read_application`, an
-`application_id`, a demo credential, and a bounded `deadline_ms`. The response
-is a WORTH-derived application projection or a typed `not_found`, `denied`, or
-`unavailable` outcome. The credential is a deterministic demo credential, not
-an environment secret.
+`interface-compiler.worth-host.v1`, operation `read_application` or
+`start_execution`, the corresponding domain ID, a demo credential, and a
+bounded `deadline_ms`. Responses preserve WORTH-derived projections, query
+evidence, lifecycle-not-pending, denial, and unavailable outcomes. The
+credential is a deterministic demo credential, not an environment secret.
 
 The projection's `revision` is read from the typed application field. It is
 not substituted with the query receipt's `basis_version`; the integration
@@ -111,14 +114,15 @@ recovery protocol has been invented.
 | Interface Compiler operation | Status | Authority |
 | --- | --- | --- |
 | `readApplication` through `WorthApplicationReadAdapter` | Live | WORTH-installed application schema, admitted principal, bounded query, typed projection and receipt |
+| `startExecution` through `WorthStartExecutionAdapter` | Live | WORTH-installed operation admission, invariant projection, effect program, compare-and-commit, execution query projection and receipt |
 | `readCapability` | Unavailable | No application-specific WORTH capability query has been installed |
 | `readActiveReplay` | Unavailable | No WORTH replay projection/query is exposed by this host |
 | `readReplayLineage` | Unavailable | No WORTH replay-lineage projection/query is exposed by this host |
 | `readExperiment` | Unavailable | No WORTH experiment projection/query is exposed by this host |
 | `readEvidence` | Unavailable | No WORTH evidence projection/query is exposed by this host |
-| `readExecution` | Unavailable | No WORTH execution projection/query is exposed by this host |
+| `readExecution` | Unavailable | The post-transition execution query is not exposed as a standalone read operation |
 | `readCompilationMetrics` | Unavailable | No WORTH-owned economics projection/query is exposed by this host |
-| `submit` and all lifecycle helpers | Unavailable | No typed WORTH mutation/operation contract is installed |
+| `submit` and all other lifecycle helpers | Unavailable | No other typed WORTH mutation/operation contract is exposed |
 | `publishEvent` | Unavailable | No typed WORTH event publication contract is installed |
 | composite dashboard read | Unavailable | The dashboard still requires its complete read-only projection, which this slice does not fabricate |
 

@@ -2,14 +2,25 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createInterface, type Interface as ReadlineInterface } from "node:readline"
 import type {
   ApplicationId,
-  ApplicationProjection,
+  ExecutionId,
   OperationContext,
   PartialEffectPosture,
-  WorthReadResult,
 } from "@interface-compiler/domain"
-
-export const INTERFACE_COMPILER_WORTH_PROTOCOL = "interface-compiler.worth-host.v1" as const
-export const INTERFACE_COMPILER_WORTH_READ_OPERATION = "read_application" as const
+import {
+  INTERFACE_COMPILER_WORTH_PROTOCOL,
+  INTERFACE_COMPILER_WORTH_READ_OPERATION,
+  INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION,
+  parseHostResponse,
+  type HostDenialStage,
+  type HostEvidence,
+  type HostRequest,
+  type HostResponse,
+  type HostStartDenialStage,
+  type HostUnavailableReason,
+} from "./worth-query-wire.js"
+import type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
+import type { WorthApplicationReadAdapter, WorthApplicationReadResult } from "./worth-application-read.js"
+export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION } from "./worth-query-wire.js"
 
 export interface WorthQueryProcessCommand {
   readonly command: string
@@ -22,116 +33,11 @@ export interface InterfaceCompilerWorthClientOptions {
   readonly credential: string
 }
 
-export interface WorthApplicationReadEvidence {
-  readonly queryName: string
-  readonly queryIdentity: string
-  readonly basisVersion: number
-  readonly projectedRecordCount: number
-  readonly projectedFieldCount: number
-  readonly basisReleased: boolean
-}
-
-export type WorthApplicationReadResult =
-  | {
-      readonly kind: "found"
-      readonly value: ApplicationProjection
-      readonly evidence: WorthApplicationReadEvidence
-    }
-  | Exclude<WorthReadResult<ApplicationProjection>, { readonly kind: "found" }>
-  | {
-      readonly kind: "denied"
-      readonly entity: "application"
-      readonly entityId: ApplicationId
-      readonly stage: HostDenialStage
-      readonly denialKind: string
-      readonly message: string
-    }
-  | {
-      readonly kind: "unavailable"
-      readonly entity: "application"
-      readonly entityId: ApplicationId
-      readonly operation: typeof INTERFACE_COMPILER_WORTH_READ_OPERATION
-      readonly reason: "unsupported" | "not_configured" | "protocol_mismatch" | "transport_unavailable" | "malformed_response"
-      readonly message: string
-    }
-
-export interface WorthApplicationReadAdapter {
-  readApplication(applicationId: ApplicationId, context: OperationContext): Promise<WorthApplicationReadResult>
-}
-
-type HostDenialStage = "request" | "authentication" | "principal_resolution" | "entity_resolution" | "query" | "projection"
-
-interface HostProjection {
-  readonly projection_kind: "worth_application"
-  readonly id: string
-  readonly revision: number
-  readonly name: string
-  readonly base_url: string
-}
-
-interface HostEvidence {
-  readonly query_name: string
-  readonly query_identity: string
-  readonly basis_version: number
-  readonly projected_record_count: number
-  readonly projected_field_count: number
-  readonly basis_released: boolean
-}
-
-type HostResponse =
-  | {
-      readonly outcome: "found"
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly operation: typeof INTERFACE_COMPILER_WORTH_READ_OPERATION
-      readonly application: HostProjection
-      readonly evidence: HostEvidence
-    }
-  | {
-      readonly outcome: "not_found"
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly operation: typeof INTERFACE_COMPILER_WORTH_READ_OPERATION
-      readonly application_id: string
-    }
-  | {
-      readonly outcome: "denied"
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly operation: typeof INTERFACE_COMPILER_WORTH_READ_OPERATION
-      readonly application_id: string
-      readonly stage: HostDenialStage
-      readonly kind: string
-      readonly message: string
-    }
-  | {
-      readonly outcome: "unavailable"
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly operation: string
-      readonly reason: "unsupported" | "not_configured" | "protocol_mismatch"
-      readonly message: string
-    }
-  | {
-      readonly outcome: "invalid_request"
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly reason: string
-      readonly message: string
-    }
-
 type PendingResult = HostResponse | "cancelled" | "timed_out" | undefined
 type PendingCompletion = (result: PendingResult) => void
 
-/**
- * Client for the app-specific WORTH host process.
- *
- * The client owns only process transport and request correlation. WORTH owns
- * the runtime, authentication proof, query admission, projection, currentness
- * and evidence. No WORTH handle, cache, reducer, or lifecycle authority is
- * retained here.
- */
-export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter {
+/** App-specific process transport; WORTH retains all runtime authority. */
+export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter {
   private readonly processCommand: WorthQueryProcessCommand
   private readonly credential: string
   private readonly pending = new Map<string, PendingCompletion>()
@@ -181,6 +87,25 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     return this.mapResponse(applicationId, response)
   }
 
+  public async startExecution(executionId: ExecutionId, context: OperationContext): Promise<WorthStartExecutionResult> {
+    const remainingMs = this.remainingRequestBudget(context)
+    if (remainingMs.kind === "cancelled") return this.executionInterrupted("cancelled", context, { kind: "not_started" })
+    if (remainingMs.kind === "timed_out") return this.executionInterrupted("timed_out", context, { kind: "not_started" })
+    if (remainingMs.kind === "invalid") return this.executionDenied(executionId, "request", "invalid_context", remainingMs.message)
+
+    const response = await this.send({
+      protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+      request_id: this.nextRequestId(),
+      operation: INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION,
+      execution_id: executionId,
+      credential: this.credential,
+      deadline_ms: remainingMs.milliseconds,
+    }, context, remainingMs.milliseconds)
+    if (response === "cancelled" || response === "timed_out") return this.executionInterrupted(response, context, unknownMutationPosture())
+    if (response === undefined) return this.executionUnavailable(executionId, "transport_unavailable", this.processFailure ?? "the WORTH host process is unavailable")
+    return this.mapStartExecutionResponse(executionId, response)
+  }
+
   public async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
@@ -189,7 +114,7 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     this.completePending(undefined)
     const child = this.child
     this.child = undefined
-    if (child !== undefined) child.kill()
+    if (child !== undefined) await closeChildProcess(child)
   }
 
   private remainingRequestBudget(context: OperationContext):
@@ -251,14 +176,7 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
   }
 
   private send(
-    request: {
-      readonly protocol: typeof INTERFACE_COMPILER_WORTH_PROTOCOL
-      readonly request_id: string
-      readonly operation: typeof INTERFACE_COMPILER_WORTH_READ_OPERATION
-      readonly application_id: ApplicationId
-      readonly credential: string
-      readonly deadline_ms: number
-    },
+    request: HostRequest,
     context: OperationContext,
     timeoutMs: number,
   ): Promise<PendingResult> {
@@ -357,10 +275,45 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
         return this.unavailable(applicationId, response.reason, response.message)
       case "invalid_request":
         return this.denied(applicationId, "request", response.reason, response.message)
+      default:
+        return this.unavailable(applicationId, "malformed_response", "the WORTH host returned an outcome for a different operation")
     }
   }
 
-  private cancelled(context: OperationContext): Exclude<WorthReadResult<ApplicationProjection>, { readonly kind: "found" }> {
+  private mapStartExecutionResponse(executionId: ExecutionId, response: HostResponse): WorthStartExecutionResult {
+    switch (response.outcome) {
+      case "execution_transitioned":
+        if (response.execution.execution_id !== executionId) return this.executionUnavailable(executionId, "malformed_response", "the WORTH host returned a different execution identity")
+        return { kind: "transitioned", commit: response.commit, projection: { projectionKind: "worth_execution", executionId: response.execution.execution_id as ExecutionId, lifecycle: response.execution.lifecycle }, evidence: mapEvidence(response.evidence) }
+      case "lifecycle_not_pending":
+        if (response.execution_id !== executionId) return this.executionUnavailable(executionId, "malformed_response", "the WORTH host returned a different non-pending execution identity")
+        return { kind: "lifecycle_not_pending", executionId, currentLifecycle: response.current_lifecycle }
+      case "execution_denied":
+        if (response.execution_id !== executionId) return this.executionUnavailable(executionId, "malformed_response", "the WORTH host returned a different denied execution identity")
+        return this.executionDenied(executionId, response.stage, response.kind, response.message)
+      case "unavailable":
+        if (response.operation !== INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION) return this.executionUnavailable(executionId, "malformed_response", "the WORTH host returned an unavailable operation that was not requested")
+        return this.executionUnavailable(executionId, response.reason, response.message)
+      case "invalid_request":
+        return this.executionDenied(executionId, "request", response.reason, response.message)
+      default:
+        return this.executionUnavailable(executionId, "malformed_response", "the WORTH host returned an outcome for a different operation")
+    }
+  }
+
+  private executionDenied(executionId: ExecutionId, stage: HostStartDenialStage, denialKind: string, message: string): WorthStartExecutionResult {
+    return { kind: "denied", executionId, stage, denialKind, message }
+  }
+
+  private executionUnavailable(executionId: ExecutionId, reason: HostUnavailableReason | "transport_unavailable" | "malformed_response", message: string): WorthStartExecutionResult {
+    return { kind: "unavailable", executionId, operation: INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, reason, message }
+  }
+
+  private executionInterrupted(kind: "cancelled" | "timed_out", context: OperationContext, posture: PartialEffectPosture): WorthStartExecutionResult {
+    return { kind, operationId: context.operationId, posture }
+  }
+
+  private cancelled(context: OperationContext): Exclude<WorthApplicationReadResult, { readonly kind: "found" }> {
     return {
       kind: "cancelled",
       operationId: context.operationId,
@@ -368,7 +321,7 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     }
   }
 
-  private timedOut(context: OperationContext): Exclude<WorthReadResult<ApplicationProjection>, { readonly kind: "found" }> {
+  private timedOut(context: OperationContext): Exclude<WorthApplicationReadResult, { readonly kind: "found" }> {
     return {
       kind: "timed_out",
       operationId: context.operationId,
@@ -385,71 +338,31 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
   }
 }
 
-export function createWorthApplicationReadAdapter(client: Pick<WorthApplicationReadAdapter, "readApplication">): WorthApplicationReadAdapter {
-  if (client === null || typeof client !== "object" || typeof client.readApplication !== "function") {
-    throw new TypeError("a WORTH application read client is required")
-  }
-  return Object.freeze({ readApplication: (applicationId: ApplicationId, context: OperationContext) => client.readApplication(applicationId, context) })
-}
-
-function parseHostResponse(line: string): HostResponse | undefined {
-  let value: unknown
-  try {
-    value = JSON.parse(line)
-  } catch {
-    return undefined
-  }
-  if (!isRecord(value) || value.protocol !== INTERFACE_COMPILER_WORTH_PROTOCOL || !isNonEmptyText(value.request_id) || typeof value.outcome !== "string") return undefined
-  if (value.outcome === "found" && value.operation === INTERFACE_COMPILER_WORTH_READ_OPERATION && isHostProjection(value.application) && isHostEvidence(value.evidence)) {
-    return { outcome: "found", protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: value.request_id, operation: INTERFACE_COMPILER_WORTH_READ_OPERATION, application: value.application, evidence: value.evidence }
-  }
-  if (value.outcome === "not_found" && value.operation === INTERFACE_COMPILER_WORTH_READ_OPERATION && isNonEmptyText(value.application_id)) {
-    return { outcome: "not_found", protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: value.request_id, operation: INTERFACE_COMPILER_WORTH_READ_OPERATION, application_id: value.application_id }
-  }
-  if (value.outcome === "denied" && value.operation === INTERFACE_COMPILER_WORTH_READ_OPERATION && isNonEmptyText(value.application_id) && isHostDenialStage(value.stage) && isNonEmptyText(value.kind) && typeof value.message === "string") {
-    return { outcome: "denied", protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: value.request_id, operation: INTERFACE_COMPILER_WORTH_READ_OPERATION, application_id: value.application_id, stage: value.stage, kind: value.kind, message: value.message }
-  }
-  if (value.outcome === "unavailable" && isNonEmptyText(value.operation) && isHostUnavailableReason(value.reason) && typeof value.message === "string") {
-    return { outcome: "unavailable", protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: value.request_id, operation: value.operation, reason: value.reason, message: value.message }
-  }
-  if (value.outcome === "invalid_request" && isNonEmptyText(value.reason) && typeof value.message === "string") {
-    return { outcome: "invalid_request", protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: value.request_id, reason: value.reason, message: value.message }
-  }
-  return undefined
-}
-
-function isHostProjection(value: unknown): value is HostProjection {
-  if (!isRecord(value) || value.projection_kind !== "worth_application") return false
-  return isNonEmptyText(value.id) && isRevision(value.revision) && typeof value.name === "string" && typeof value.base_url === "string"
-}
-
-function isHostEvidence(value: unknown): value is HostEvidence {
-  if (!isRecord(value)) return false
-  return isNonEmptyText(value.query_name) && isNonEmptyText(value.query_identity) && isRevision(value.basis_version) && isRevision(value.projected_record_count) && isRevision(value.projected_field_count) && typeof value.basis_released === "boolean"
-}
-
-function isHostDenialStage(value: unknown): value is HostDenialStage {
-  return value === "request" || value === "authentication" || value === "principal_resolution" || value === "entity_resolution" || value === "query" || value === "projection"
-}
-
-function isHostUnavailableReason(value: unknown): value is "unsupported" | "not_configured" | "protocol_mismatch" {
-  return value === "unsupported" || value === "not_configured" || value === "protocol_mismatch"
-}
-
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-}
-
-function isNonEmptyText(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object"
-}
-
 function unknownReadPosture(): PartialEffectPosture {
   return { kind: "unknown", recovery: "owner_reconciliation_required" }
+}
+
+function unknownMutationPosture(): PartialEffectPosture {
+  return { kind: "unknown", recovery: "owner_reconciliation_required" }
+}
+
+function mapEvidence(evidence: HostEvidence): WorthExecutionQueryEvidence {
+  return { queryName: evidence.query_name, queryIdentity: evidence.query_identity, basisVersion: evidence.basis_version, projectedRecordCount: evidence.projected_record_count, projectedFieldCount: evidence.projected_field_count, basisReleased: evidence.basis_released }
+}
+
+function closeChildProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
+  if (child.exitCode !== null) return Promise.resolve()
+  return new Promise((resolve) => {
+    const timeout = setTimeout(() => {
+      child.kill()
+      resolve()
+    }, 1_000)
+    child.once("close", () => {
+      clearTimeout(timeout)
+      resolve()
+    })
+    child.stdin.end()
+  })
 }
 
 function describeError(error: unknown): string {
