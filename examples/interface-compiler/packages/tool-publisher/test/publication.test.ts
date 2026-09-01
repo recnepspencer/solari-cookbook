@@ -46,6 +46,7 @@ function context(cancelled = false): OperationContext {
       onCancellationRequested: () => () => undefined,
     },
     budget: { maxWallClockMs: 5000 },
+    admission: { maxInFlight: 2, maxQueued: 4, overflow: "reject" },
   }
 }
 
