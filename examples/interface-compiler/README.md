@@ -375,6 +375,11 @@ Every state transition in these concerns must be commanded through Worth and
 every durable read must come from a Worth query projection. Restarting an
 orchestrator process must not lose, recreate, or decide any of this authority.
 
+For this demo, Worth may use an **in-memory backing**; persistence across a full
+demo-runtime restart is explicitly out of scope. This relaxes storage durability,
+not ownership: while the demo runs, the orchestrator and adapters must still not
+keep a competing lifecycle, replay, evidence, execution, or projection state.
+
 The other components have deliberately narrower roles:
 
 * The **orchestrator** is a Worth-delegated external-effect worker. It obtains
