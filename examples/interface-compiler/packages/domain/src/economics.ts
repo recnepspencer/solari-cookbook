@@ -26,7 +26,7 @@ export type BreakEvenCalls =
     }
   | {
       readonly kind: "unavailable"
-      readonly reason: "break_even_exceeds_safe_integer_range"
+      readonly reason: "break_even_exceeds_safe_integer_range" | "break_even_ratio_underflowed"
       readonly savingsPerCallUsd: number
     }
 
@@ -84,6 +84,9 @@ export function calculateBreakEvenCalls(input: {
   }
 
   const exactCalls = input.compileCostUsd / savingsPerCallUsd
+  if (input.compileCostUsd > 0 && exactCalls === 0) {
+    return valid({ kind: "unavailable", reason: "break_even_ratio_underflowed", savingsPerCallUsd })
+  }
   const calls = Math.ceil(exactCalls)
   if (!Number.isFinite(exactCalls) || !Number.isSafeInteger(calls)) {
     return valid({ kind: "unavailable", reason: "break_even_exceeds_safe_integer_range", savingsPerCallUsd })
@@ -136,6 +139,11 @@ export function calculateLifetimeEconomics(
   if (recalculated.value.totalCompilationCostUsd !== metrics.totalCompilationCostUsd) {
     return invalid(issue("totalCompilationCostUsd", "total compilation cost must equal its component costs"))
   }
+  if (metrics.directAverageCostUsd !== undefined && metrics.compiledAverageCostUsd !== undefined) {
+    if (!sameBreakEven(metrics.breakEvenCalls, recalculated.value.breakEvenCalls)) return invalid(issue("breakEvenCalls", "break-even result must equal its component costs"))
+  } else if (metrics.breakEvenCalls !== undefined) {
+    return invalid(issue("breakEvenCalls", "break-even requires both direct and compiled average costs"))
+  }
   if (metrics.directAverageCostUsd === undefined) return invalid(issue("directAverageCostUsd", "direct average cost is required"))
   if (metrics.compiledAverageCostUsd === undefined) return invalid(issue("compiledAverageCostUsd", "compiled average cost is required"))
 
@@ -185,4 +193,28 @@ function validateCosts(input: unknown): ReturnType<typeof issue>[] {
 
 function validateOptionalCost(value: number | undefined, field: string): ReturnType<typeof issue>[] {
   return value === undefined || isNonNegativeFiniteNumber(value) ? [] : [issue(field, "cost must be a finite non-negative number")]
+}
+
+function sameBreakEven(left: unknown, right: unknown): boolean {
+  if (left === undefined || right === undefined) return left === right
+  if (!isRecord(left) || !isRecord(right)) return false
+  if (left.kind !== right.kind || left.savingsPerCallUsd !== right.savingsPerCallUsd) return false
+  if (typeof left.savingsPerCallUsd !== "number" || !Number.isFinite(left.savingsPerCallUsd)) return false
+  switch (left.kind) {
+    case "immediate":
+      return right.kind === "immediate" && left.calls === 0 && right.calls === 0 && left.savingsPerCallUsd > 0
+    case "finite":
+      return right.kind === "finite" &&
+        isNonNegativeInteger(left.calls) && left.calls > 0 &&
+        isNonNegativeFiniteNumber(left.exactCalls) && left.exactCalls > 0 &&
+        right.calls === left.calls && right.exactCalls === left.exactCalls && left.savingsPerCallUsd > 0
+    case "never":
+      return right.kind === "never" && left.reason === "compiled_not_cheaper" && right.reason === "compiled_not_cheaper" && left.savingsPerCallUsd <= 0
+    case "unavailable":
+      return right.kind === "unavailable" &&
+        (left.reason === "break_even_exceeds_safe_integer_range" || left.reason === "break_even_ratio_underflowed") &&
+        right.reason === left.reason && left.savingsPerCallUsd > 0
+    default:
+      return false
+  }
 }

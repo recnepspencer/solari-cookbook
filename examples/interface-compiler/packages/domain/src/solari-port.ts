@@ -25,10 +25,10 @@ export type SolariStepResult =
   | { readonly kind: "timed_out"; readonly effect: PartialEffectPosture }
 
 export type SolariObservationResult =
-  | { readonly kind: "observed"; readonly observation: Observation }
-  | { readonly kind: "cancelled" }
-  | { readonly kind: "timed_out" }
-  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean }
+  | { readonly kind: "observed"; readonly observation: Observation; readonly effect: { readonly kind: "completed" } }
+  | { readonly kind: "cancelled"; readonly effect: { readonly kind: "not_started" } }
+  | { readonly kind: "timed_out"; readonly effect: { readonly kind: "not_started" } }
+  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean; readonly effect: { readonly kind: "not_started" } }
 
 export type EvidenceCaptureRequest =
   | { readonly kind: "session_recording" }
@@ -42,21 +42,21 @@ export interface EvidenceReference {
 }
 
 export type SolariEvidenceResult =
-  | { readonly kind: "captured"; readonly reference: EvidenceReference }
-  | { readonly kind: "cancelled" }
-  | { readonly kind: "timed_out" }
-  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean }
+  | { readonly kind: "captured"; readonly reference: EvidenceReference; readonly effect: { readonly kind: "completed" } }
+  | { readonly kind: "cancelled"; readonly effect: PartialEffectPosture }
+  | { readonly kind: "timed_out"; readonly effect: PartialEffectPosture }
+  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean; readonly effect: PartialEffectPosture }
 
 export type SolariCloseResult =
-  | { readonly kind: "closed" }
-  | { readonly kind: "close_failed"; readonly message: string; readonly retryable: boolean }
+  | { readonly kind: "closed"; readonly sessionId: SessionId; readonly effect: { readonly kind: "completed" } }
+  | { readonly kind: "close_failed"; readonly message: string; readonly retryable: boolean; readonly effect: PartialEffectPosture }
 
 export type SolariSessionResult =
-  | { readonly kind: "created"; readonly session: SolariSession }
-  | { readonly kind: "denied"; readonly reason: "budget_exhausted" | "application_unavailable" }
-  | { readonly kind: "cancelled" }
-  | { readonly kind: "timed_out" }
-  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean }
+  | { readonly kind: "created"; readonly lease: SolariSessionLease; readonly effect: { readonly kind: "completed" } }
+  | { readonly kind: "denied"; readonly reason: "budget_exhausted" | "application_unavailable" | "backpressure"; readonly effect: { readonly kind: "not_started" } }
+  | { readonly kind: "cancelled"; readonly effect: PartialEffectPosture }
+  | { readonly kind: "timed_out"; readonly effect: PartialEffectPosture }
+  | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean; readonly effect: PartialEffectPosture }
 
 /** Neutral browser contract; a Solari adapter owns session effects and release. */
 export interface SolariSession {
@@ -64,7 +64,12 @@ export interface SolariSession {
   observe(context: OperationContext): Promise<SolariObservationResult>
   executeStep(step: ReplayStep, context: OperationContext): Promise<SolariStepResult>
   captureEvidence(request: EvidenceCaptureRequest, context: OperationContext): Promise<SolariEvidenceResult>
-  close(context: OperationContext): Promise<SolariCloseResult>
+}
+
+/** The creating adapter owns this lease; release must be called exactly once by the caller. */
+export interface SolariSessionLease {
+  readonly session: SolariSession
+  release(context: OperationContext): Promise<SolariCloseResult>
 }
 
 export interface SolariPort {

@@ -2,14 +2,16 @@ import type { EvidenceId, ExecutionId, ExperimentId, IsoTimestamp, ObservationId
 import { validateObservation, type Observation } from "./observation.js"
 import { validateReplayFailure, type ReplayFailure } from "./replay.js"
 import { validateCondition, type Condition } from "./schema.js"
-import { invalid, isIsoTimestamp, isNonEmptyText, isRecord, issue, valid, type ValidationResult } from "./validation.js"
+import { invalid, isIsoTimestamp, isNonEmptyText, isRecord, issue, valid, type ValidationIssue, type ValidationResult } from "./validation.js"
+
+const evidenceEntityBrand: unique symbol = Symbol("Evidence")
 
 interface EvidenceCore {
   readonly id: EvidenceId
   readonly capturedAt: IsoTimestamp
 }
 
-export type Evidence =
+export type EvidenceInput =
   | (EvidenceCore & {
       readonly kind: "solari_session"
       readonly sessionId: SessionId
@@ -41,9 +43,16 @@ export type Evidence =
       readonly replayVersionId?: ReplayVersionId
     })
 
-export function createEvidence(input: Evidence): ValidationResult<Evidence> {
-  if (!input || typeof input !== "object") return invalid(issue("evidence", "evidence must be an object"))
-  const issues = [
+export type Evidence = EvidenceInput & { readonly [evidenceEntityBrand]: true }
+
+export function createEvidence(input: EvidenceInput): ValidationResult<Evidence> {
+  const issues = validateEvidence(input)
+  return issues.length > 0 ? invalid(...issues) : valid({ ...input, [evidenceEntityBrand]: true as const })
+}
+
+export function validateEvidence(input: EvidenceInput): readonly ValidationIssue[] {
+  if (!input || typeof input !== "object") return [issue("evidence", "evidence must be an object")]
+  const issues: ValidationIssue[] = [
     ...(isNonEmptyText(input.id) ? [] : [issue("id", "evidence id must not be empty")]),
     ...(isIsoTimestamp(input.capturedAt) ? [] : [issue("capturedAt", "capturedAt must be a timestamp")]),
   ]
@@ -66,6 +75,7 @@ export function createEvidence(input: Evidence): ValidationResult<Evidence> {
       break
     case "postcondition":
       issues.push(...validateCondition(input.condition))
+      if (input.result !== "satisfied" && input.result !== "not_satisfied") issues.push(issue("result", "postcondition result is not recognized"))
       if (input.observationId !== undefined && !isNonEmptyText(input.observationId)) issues.push(issue("observationId", "observation id must not be empty"))
       break
     case "failure":
@@ -76,8 +86,7 @@ export function createEvidence(input: Evidence): ValidationResult<Evidence> {
     default:
       issues.push(issue("kind", "evidence kind is not recognized"))
   }
-
-  return issues.length > 0 ? invalid(...issues) : valid(Object.freeze({ ...input }))
+  return issues
 }
 
 function validateOptionalReference(value: unknown, path: string, issues: ReturnType<typeof issue>[]): void {

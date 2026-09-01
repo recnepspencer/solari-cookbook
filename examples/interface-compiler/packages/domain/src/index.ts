@@ -1,4 +1,4 @@
-export type { Application } from "./application.js"
+export type { Application, ApplicationInput } from "./application.js"
 export { createApplication, validateApplication } from "./application.js"
 
 export type {
@@ -17,6 +17,7 @@ export {
   degradeCapability,
   failCapabilityVerification,
   resumeCapabilityExploration,
+  validateCapabilityDefinition,
 } from "./capability.js"
 
 export type {
@@ -34,7 +35,7 @@ export type {
   ReplayVersion,
   SelectStep,
   SupersededReplay,
-  VerificationRun,
+  VerificationRunProjection,
   VerificationRunReceipt,
   VerifyingReplay,
   ActiveReplay,
@@ -49,18 +50,18 @@ export {
   isCandidateReplay,
   isVerifyingReplay,
   markReplayBroken,
-  recordVerificationRun,
   successfulVerificationCount,
   supersedeReplay,
   validateReplayFailure,
+  validateCandidateReplay,
   validateReplayStep,
 } from "./replay.js"
 
 export type { Interactable, InteractableKind, Observation } from "./observation.js"
 export { findInteractables, normalizeObservation, validateObservation } from "./observation.js"
 
-export type { Evidence } from "./evidence.js"
-export { createEvidence, observationEvidence } from "./evidence.js"
+export type { Evidence, EvidenceInput } from "./evidence.js"
+export { createEvidence, observationEvidence, validateEvidence } from "./evidence.js"
 
 export type { Experiment, ExperimentDefinition, PendingExperiment, ResolvedExperiment } from "./experiment.js"
 export { resolveExperiment, startExperiment, validateExperimentDefinition } from "./experiment.js"
@@ -107,13 +108,14 @@ export type {
 } from "./safety.js"
 export { classifySafetyBoundary, isSafetyStopResult, safetyStopReason, validateSafetySignal, validateSafetyStopResult } from "./safety.js"
 
-export type { InterfaceCompilerEvent, InterfaceCompilerEventMap, InterfaceCompilerEventType } from "./events.js"
+export type { EventIntegrity, EventRecovery, InterfaceCompilerEvent, InterfaceCompilerEventMap, InterfaceCompilerEventType } from "./events.js"
 export type {
   EvidenceCaptureRequest,
   EvidenceReference,
   SessionFreshness,
   SolariPort,
   SolariSession,
+  SolariSessionLease,
   SolariSessionPurpose,
   SolariSessionRequest,
   SolariSessionResult,
@@ -127,7 +129,9 @@ export type {
   ActiveReplayProjection,
   ApplicationProjection,
   CapabilityProjection,
+  EvidenceProjection,
   ExecutionProjection,
+  ExperimentProjection,
   ReplayProjection,
   WorthAuthority,
   WorthCommand,
@@ -141,7 +145,7 @@ export type {
 export type { EventPublicationResult, EventPublisher } from "./event-publisher.js"
 export type { Clock } from "./clock-port.js"
 export type { IdSource } from "./id-source-port.js"
-export type { CancellationToken, OperationContext, PartialEffectPosture, ResourceBudget } from "./operation-context.js"
+export type { AdmissionPolicy, CancellationToken, OperationContext, PartialEffectPosture, ResourceBudget } from "./operation-context.js"
 
 export type {
   ApplicationId,

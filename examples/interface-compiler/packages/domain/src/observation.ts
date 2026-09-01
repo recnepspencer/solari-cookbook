@@ -41,8 +41,9 @@ export function findInteractables(observation: Observation, semanticDescription:
   if (expected.length === 0) return []
 
   return observation.interactables.filter((interactable) => {
+    if (!isRecord(interactable)) return false
     const candidates = [interactable.semanticGuess, interactable.name, interactable.text]
-    return candidates.some((candidate) => candidate?.trim().toLowerCase() === expected)
+    return candidates.some((candidate) => typeof candidate === "string" && candidate.trim().toLowerCase() === expected)
   })
 }
 

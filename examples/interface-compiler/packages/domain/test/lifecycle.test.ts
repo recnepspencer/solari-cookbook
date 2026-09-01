@@ -10,7 +10,6 @@ import {
   degradeCapability,
   failCapabilityVerification,
   markReplayBroken,
-  recordVerificationRun,
   resumeCapabilityExploration,
   successfulVerificationCount,
   supersedeReplay,
@@ -28,6 +27,7 @@ import {
   type VerifyingReplay,
   type ValidationResult,
 } from "../src/index.js"
+import { recordVerificationRun } from "../src/replay-verification.js"
 
 const createdAt = "2026-08-31T12:00:00.000Z"
 
@@ -77,6 +77,8 @@ function successfulReceipts(count: number): VerificationRunReceipt[] {
   return Array.from({ length: count }, (_, index) => ({
     id: id<VerificationRunId>(`verification-run.${index + 1}`),
     sessionId: id<SessionId>(`session.fresh.${index + 1}`),
+    capabilityId: id<CapabilityId>("capability.add-to-cart"),
+    replayVersionId: id<ReplayVersionId>("replay.add-to-cart.v1"),
     sessionFreshness: "fresh" as const,
     outcome: "success" as const,
     evidenceIds: [id<EvidenceId>(`evidence.run.${index + 1}`)],

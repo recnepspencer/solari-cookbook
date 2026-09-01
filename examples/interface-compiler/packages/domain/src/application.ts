@@ -1,13 +1,19 @@
 import type { ApplicationId } from "./identity.js"
 import { invalid, isNonEmptyText, issue, valid, type ValidationIssue, type ValidationResult } from "./validation.js"
 
-export interface Application {
+const applicationEntityBrand: unique symbol = Symbol("Application")
+
+export interface ApplicationInput {
   readonly id: ApplicationId
   readonly name: string
   readonly baseUrl: string
 }
 
-export function validateApplication(input: Application): readonly ValidationIssue[] {
+export interface Application extends ApplicationInput {
+  readonly [applicationEntityBrand]: true
+}
+
+export function validateApplication(input: ApplicationInput): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = []
   if (!input || typeof input !== "object") return [issue("application", "application must be an object")]
 
@@ -33,7 +39,7 @@ export function validateApplication(input: Application): readonly ValidationIssu
   return issues
 }
 
-export function createApplication(input: Application): ValidationResult<Application> {
+export function createApplication(input: ApplicationInput): ValidationResult<Application> {
   const issues = validateApplication(input)
-  return issues.length > 0 ? invalid(...issues) : valid(Object.freeze({ ...input }))
+  return issues.length > 0 ? invalid(...issues) : valid({ ...input, [applicationEntityBrand]: true as const })
 }

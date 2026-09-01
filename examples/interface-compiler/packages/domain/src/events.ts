@@ -10,6 +10,7 @@ export interface InterfaceCompilerEventMap {
     readonly role: "explorer" | "verifier" | "consumer"
     readonly inputTokens: number
     readonly outputTokens: number
+    readonly estimatedModelCostUsd: number
   }
   "browser.action": { readonly sessionId: SessionId; readonly actionType: ReplayStep["type"] }
   "direct.completed": { readonly executionId: ExecutionId; readonly outcome: Exclude<Execution["status"], "running"> }
@@ -31,10 +32,23 @@ export interface InterfaceCompilerEventMap {
 
 export type InterfaceCompilerEventType = keyof InterfaceCompilerEventMap
 
+export type EventRecovery = "replay_safe" | "owner_reconciliation_required"
+
+export interface EventIntegrity {
+  readonly algorithm: "sha256"
+  readonly digest: string
+}
+
 export type InterfaceCompilerEvent = {
   [Type in InterfaceCompilerEventType]: {
     readonly eventId: EventId
     readonly occurredAt: IsoTimestamp
+    readonly protocol: "interface-compiler.events"
+    readonly schemaVersion: 1
+    readonly idempotencyKey: string
+    readonly recovery: EventRecovery
+    readonly integrity: EventIntegrity
+    readonly estimatedModelCostUsd?: number
     readonly type: Type
     readonly payload: InterfaceCompilerEventMap[Type]
   }

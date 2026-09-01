@@ -1,13 +1,14 @@
 import type { CapabilityId, ExecutionId, IsoTimestamp, ReplayVersionId } from "./identity.js"
 import { validateReplayFailure, type ReplayFailure } from "./replay.js"
 import { isJsonValue, type JsonValue } from "./schema.js"
-import { validateSafetyStopResult, type SafetyStopResult } from "./safety.js"
+import { registerSafetyStopResult, validateSafetyStopResult, type SafetyStopResult } from "./safety.js"
 import { invalid, isIsoTimestamp, isNonEmptyText, isNonNegativeFiniteNumber, isNonNegativeInteger, isRecord, issue, valid, type ValidationResult } from "./validation.js"
 
 const runningExecutionBrand: unique symbol = Symbol("RunningExecution")
 const successfulExecutionBrand: unique symbol = Symbol("SuccessfulExecution")
 const failedExecutionBrand: unique symbol = Symbol("FailedExecution")
 const stoppedExecutionBrand: unique symbol = Symbol("StoppedExecution")
+const runningExecutionInstances = new WeakSet<object>()
 
 export type ExecutionMode = "direct" | "compiled" | "exploratory"
 
@@ -92,7 +93,7 @@ export function createExecution(input: ExecutionStart): ValidationResult<Running
   const issues = validateExecutionStart(input)
   if (issues.length > 0) return invalid(...issues)
 
-  return valid(
+  const result = valid(
     Object.freeze({
       id: input.id,
       capabilityId: input.capabilityId,
@@ -107,6 +108,8 @@ export function createExecution(input: ExecutionStart): ValidationResult<Running
       [runningExecutionBrand]: true as const,
     }),
   )
+  if (result.ok) runningExecutionInstances.add(result.value)
+  return result
 }
 
 export function finishExecution(
@@ -136,7 +139,11 @@ export function finishExecution(
     case "failure":
       return valid(Object.freeze({ ...execution, status: "failure" as const, outcome: completion, metrics, [failedExecutionBrand]: true as const }))
     case "safety_stop":
-      return valid(Object.freeze({ ...execution, status: "stopped" as const, outcome: completion, metrics, [stoppedExecutionBrand]: true as const }))
+      {
+        const result = valid(Object.freeze({ ...execution, status: "stopped" as const, outcome: completion, metrics, [stoppedExecutionBrand]: true as const }))
+        if (result.ok) registerSafetyStopResult(result.value.outcome.stop)
+        return result
+      }
     default: {
       const unreachable: never = completion
       return invalid(issue("completion", `completion kind is not recognized: ${String(unreachable)}`))
@@ -160,8 +167,10 @@ export function validateExecutionMetrics(metrics: ExecutionMetrics): readonly Re
 function validateExecutionStart(input: ExecutionStart): ReturnType<typeof issue>[] {
   if (!isRecord(input)) return [issue("execution", "execution start must be an object")]
   const issues = validateExecutionMetrics(input.metrics).slice() as ReturnType<typeof issue>[]
+  if (!isRecord(input.metrics)) return issues
   if (!isNonEmptyText(input.id)) issues.push(issue("id", "execution id must not be empty"))
   if (!isNonEmptyText(input.capabilityId)) issues.push(issue("capabilityId", "capability id must not be empty"))
+  if (input.mode !== "direct" && input.mode !== "compiled" && input.mode !== "exploratory") issues.push(issue("mode", "execution mode is not recognized"))
   if (input.metrics.endedAt !== undefined) issues.push(issue("metrics.endedAt", "a running execution cannot have endedAt"))
   if (input.metrics.wallClockMs !== undefined) issues.push(issue("metrics.wallClockMs", "a running execution cannot have wallClockMs"))
   return issues
@@ -200,7 +209,7 @@ export function validateExecutionCompletion(completion: ExecutionCompletion): re
 }
 
 export function isRunningExecution(value: unknown): value is RunningExecution {
-  return hasBrand(value, runningExecutionBrand)
+  return value !== null && typeof value === "object" && runningExecutionInstances.has(value) && hasBrand(value, runningExecutionBrand) && isRecord(value) && value.status === "running" && validateExecutionStart(value as unknown as ExecutionStart).length === 0
 }
 
 function hasBrand(value: unknown, brand: symbol): boolean {

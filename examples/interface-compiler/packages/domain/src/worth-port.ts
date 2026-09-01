@@ -1,8 +1,10 @@
 import type { Application } from "./application.js"
 import type { CapabilityDefinition, DiscoveryReason } from "./capability.js"
 import type { Execution, ExecutionCompletion, ExecutionStart, FailedExecution, StoppedExecution, SuccessfulExecution } from "./execution.js"
-import type { ApplicationId, CapabilityId, ExecutionId, IsoTimestamp, OperationId, ReplayVersionId } from "./identity.js"
-import type { CandidateReplay, ReplayFailure, ReplayStep, VerificationRun, VerificationRunReceipt } from "./replay.js"
+import type { Evidence, EvidenceInput } from "./evidence.js"
+import type { Experiment, ExperimentDefinition } from "./experiment.js"
+import type { ApplicationId, CapabilityId, EvidenceId, ExecutionId, ExperimentId, IsoTimestamp, OperationId, ReplayVersionId } from "./identity.js"
+import type { CandidateReplay, ReplayFailure, ReplayStep, VerificationRunProjection, VerificationRunReceipt } from "./replay.js"
 import type { OperationContext, PartialEffectPosture } from "./operation-context.js"
 
 export interface ApplicationProjection {
@@ -39,6 +41,7 @@ interface ReplayProjectionCore {
   readonly revision: number
   readonly capabilityId: CapabilityId
   readonly version: number
+  readonly steps: readonly ReplayStep[]
   readonly confidence: number
   readonly supersedes?: ReplayVersionId
   readonly supersededBy?: ReplayVersionId
@@ -53,17 +56,16 @@ interface VerifyingReplayProjection extends ReplayProjectionCore {
   readonly status: "verifying"
   readonly verification: {
     readonly requiredSuccessfulRuns: number
-    readonly runs: readonly VerificationRun[]
+    readonly runs: readonly VerificationRunProjection[]
   }
 }
 
 export interface ActiveReplayProjection extends ReplayProjectionCore {
   readonly status: "active"
-  readonly steps: readonly ReplayStep[]
   readonly verifiedAt: IsoTimestamp
   readonly verification: {
     readonly requiredSuccessfulRuns: number
-    readonly runs: readonly VerificationRun[]
+    readonly runs: readonly VerificationRunProjection[]
   }
 }
 
@@ -86,6 +88,24 @@ export type ReplayProjection =
   | BrokenReplayProjection
   | SupersededReplayProjection
 
+interface ExperimentProjectionCore extends ExperimentDefinition {
+  readonly projectionKind: "worth_experiment"
+  readonly revision: number
+}
+
+export type ExperimentProjection =
+  | (ExperimentProjectionCore & { readonly result: "pending"; readonly evidenceIds: readonly [] })
+  | (ExperimentProjectionCore & {
+      readonly result: Exclude<Experiment["result"], "pending">
+      readonly evidenceIds: readonly EvidenceId[]
+      readonly resolvedAt: IsoTimestamp
+    })
+
+export type EvidenceProjection = EvidenceInput & {
+  readonly projectionKind: "worth_evidence"
+  readonly revision: number
+}
+
 interface ExecutionProjectionCore {
   readonly projectionKind: "worth_execution"
   readonly id: ExecutionId
@@ -105,36 +125,46 @@ export type ExecutionProjection =
 export type WorthCommand =
   | { readonly kind: "register_application"; readonly application: Application }
   | { readonly kind: "register_capability"; readonly definition: CapabilityDefinition }
-  | { readonly kind: "record_replay_candidate"; readonly candidate: CandidateReplay }
-  | { readonly kind: "begin_replay_verification"; readonly replayVersionId: ReplayVersionId; readonly requiredSuccessfulRuns: number }
-  | { readonly kind: "record_verification_run"; readonly replayVersionId: ReplayVersionId; readonly receipt: VerificationRunReceipt }
+  | RecordExperimentCommand
+  | { readonly kind: "record_evidence"; readonly evidence: Evidence }
+  | { readonly kind: "record_replay_candidate"; readonly candidate: CandidateReplay; readonly expectedCapabilityRevision: number }
+  | { readonly kind: "begin_replay_verification"; readonly replayVersionId: ReplayVersionId; readonly requiredSuccessfulRuns: number; readonly expectedReplayRevision: number }
+  | { readonly kind: "record_verification_run"; readonly replayVersionId: ReplayVersionId; readonly receipt: VerificationRunReceipt; readonly expectedReplayRevision: number }
   | {
       readonly kind: "complete_replay_verification"
       readonly replayVersionId: ReplayVersionId
       readonly verifiedAt: IsoTimestamp
+      readonly expectedReplayRevision: number
     }
-  | { readonly kind: "begin_capability_verification"; readonly capabilityId: CapabilityId; readonly candidateReplayVersionId: ReplayVersionId }
-  | { readonly kind: "activate_capability"; readonly capabilityId: CapabilityId; readonly activeReplayVersionId: ReplayVersionId }
-  | { readonly kind: "fail_capability_verification"; readonly capabilityId: CapabilityId; readonly brokenReplayVersionId: ReplayVersionId }
+  | { readonly kind: "begin_capability_verification"; readonly capabilityId: CapabilityId; readonly candidateReplayVersionId: ReplayVersionId; readonly expectedCapabilityRevision: number }
+  | { readonly kind: "activate_capability"; readonly capabilityId: CapabilityId; readonly activeReplayVersionId: ReplayVersionId; readonly expectedCapabilityRevision: number }
+  | { readonly kind: "fail_capability_verification"; readonly capabilityId: CapabilityId; readonly brokenReplayVersionId: ReplayVersionId; readonly expectedCapabilityRevision: number }
   | {
       readonly kind: "record_replay_failure"
       readonly replayVersionId: ReplayVersionId
       readonly failure: ReplayFailure
       readonly brokenAt: IsoTimestamp
+      readonly expectedReplayRevision: number
     }
-  | { readonly kind: "resume_capability_exploration"; readonly capabilityId: CapabilityId }
-  | { readonly kind: "supersede_replay"; readonly replayVersionId: ReplayVersionId; readonly successorReplayVersionId: ReplayVersionId; readonly supersededAt: IsoTimestamp }
+  | { readonly kind: "resume_capability_exploration"; readonly capabilityId: CapabilityId; readonly expectedCapabilityRevision: number }
+  | { readonly kind: "supersede_replay"; readonly replayVersionId: ReplayVersionId; readonly successorReplayVersionId: ReplayVersionId; readonly supersededAt: IsoTimestamp; readonly expectedReplayRevision: number }
   | { readonly kind: "start_execution"; readonly execution: ExecutionStart }
-  | { readonly kind: "complete_execution"; readonly executionId: ExecutionId; readonly completion: ExecutionCompletion; readonly endedAt: IsoTimestamp }
+  | { readonly kind: "complete_execution"; readonly executionId: ExecutionId; readonly completion: ExecutionCompletion; readonly endedAt: IsoTimestamp; readonly expectedExecutionRevision: number }
+
+type RecordExperimentCommand =
+  | { readonly kind: "record_experiment"; readonly experiment: Experiment & { readonly capabilityId: CapabilityId }; readonly expectedCapabilityRevision: number }
+  | { readonly kind: "record_experiment"; readonly experiment: Experiment & { readonly capabilityId?: undefined } }
 
 export type WorthMutationProjection =
   | { readonly kind: "application"; readonly projection: ApplicationProjection }
   | { readonly kind: "capability"; readonly projection: CapabilityProjection }
   | { readonly kind: "replay"; readonly projection: ReplayProjection }
+  | { readonly kind: "experiment"; readonly projection: ExperimentProjection }
+  | { readonly kind: "evidence"; readonly projection: EvidenceProjection }
   | { readonly kind: "execution"; readonly projection: ExecutionProjection }
 
-export type WorthEntity = "application" | "capability" | "replay" | "execution"
-export type WorthEntityId = ApplicationId | CapabilityId | ReplayVersionId | ExecutionId
+export type WorthEntity = "application" | "capability" | "replay" | "experiment" | "evidence" | "execution"
+export type WorthEntityId = ApplicationId | CapabilityId | ReplayVersionId | ExperimentId | EvidenceId | ExecutionId
 
 export type WorthReadResult<T> =
   | { readonly kind: "found"; readonly value: T }
@@ -143,7 +173,7 @@ export type WorthReadResult<T> =
   | { readonly kind: "timed_out"; readonly operationId: OperationId; readonly posture: PartialEffectPosture }
   | { readonly kind: "failed"; readonly entity: WorthEntity; readonly entityId: WorthEntityId; readonly message: string; readonly retryable: boolean }
 
-export type WorthDenialReason = "not_found" | "invalid_transition" | "unauthorized_command" | "unsupported"
+export type WorthDenialReason = "not_found" | "invalid_transition" | "unauthorized_command" | "unsupported" | "backpressure"
 
 export type WorthSubmissionResult =
   | { readonly kind: "accepted"; readonly projection: WorthMutationProjection }
@@ -165,6 +195,8 @@ export interface WorthAuthority {
   readCapability(capabilityId: CapabilityId, context: OperationContext): Promise<WorthReadResult<CapabilityProjection>>
   readActiveReplay(capabilityId: CapabilityId, context: OperationContext): Promise<WorthReadResult<ActiveReplayProjection>>
   readReplayLineage(capabilityId: CapabilityId, context: OperationContext): Promise<WorthReadResult<readonly ReplayProjection[]>>
+  readExperiment(experimentId: ExperimentId, context: OperationContext): Promise<WorthReadResult<ExperimentProjection>>
+  readEvidence(evidenceId: EvidenceId, context: OperationContext): Promise<WorthReadResult<EvidenceProjection>>
   readExecution(executionId: ExecutionId, context: OperationContext): Promise<WorthReadResult<ExecutionProjection>>
   submit(command: WorthCommand, context: OperationContext): Promise<WorthSubmissionResult>
 }

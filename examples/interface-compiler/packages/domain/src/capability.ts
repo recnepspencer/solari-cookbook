@@ -1,5 +1,5 @@
 import type { ApplicationId, CapabilityId, ReplayVersionId } from "./identity.js"
-import { isActiveReplay, isBrokenReplay, isCandidateReplay, type ActiveReplay, type BrokenReplay, type CandidateReplay, type ReplayFailure } from "./replay.js"
+import { isActiveReplay, isBrokenReplay, isCandidateReplay, validateReplayFailure, type ActiveReplay, type BrokenReplay, type CandidateReplay, type ReplayFailure } from "./replay.js"
 import { validateCondition, validateJsonSchema, type Condition, type JsonSchema } from "./schema.js"
 import { invalid, isNonEmptyText, isRecord, issue, valid, type ValidationResult } from "./validation.js"
 
@@ -7,6 +7,11 @@ const discoveringCapabilityBrand: unique symbol = Symbol("DiscoveringCapability"
 const verifyingCapabilityBrand: unique symbol = Symbol("VerifyingCapability")
 const healthyCapabilityBrand: unique symbol = Symbol("HealthyCapability")
 const degradedCapabilityBrand: unique symbol = Symbol("DegradedCapability")
+
+const discoveringCapabilityInstances = new WeakSet<object>()
+const verifyingCapabilityInstances = new WeakSet<object>()
+const healthyCapabilityInstances = new WeakSet<object>()
+const degradedCapabilityInstances = new WeakSet<object>()
 
 export interface CapabilityDefinition {
   readonly id: CapabilityId
@@ -67,7 +72,7 @@ export type Capability = DiscoveringCapability | VerifyingCapability | HealthyCa
 
 export function createCapability(input: CapabilityDefinition): ValidationResult<DiscoveringCapability> {
   const issues = validateCapabilityDefinition(input)
-  return issues.length > 0
+  const result = issues.length > 0
     ? invalid(...issues)
     : valid(
         Object.freeze({
@@ -79,13 +84,15 @@ export function createCapability(input: CapabilityDefinition): ValidationResult<
           [discoveringCapabilityBrand]: true as const,
         }),
       )
+  if (result.ok) discoveringCapabilityInstances.add(result.value)
+  return result
 }
 
 export function beginCapabilityVerification(
   capability: DiscoveringCapability,
   candidate: CandidateReplay,
 ): ValidationResult<VerifyingCapability> {
-  if (!hasBrand(capability, discoveringCapabilityBrand)) {
+  if (!isIssuedCapability(capability, discoveringCapabilityInstances, discoveringCapabilityBrand, "discovering")) {
     return invalid(issue("capability", "discovering capability must come from createCapability or a domain transition"))
   }
   if (!isCandidateReplay(candidate)) {
@@ -95,7 +102,7 @@ export function beginCapabilityVerification(
     return invalid(issue("candidate.capabilityId", "candidate replay belongs to a different capability"))
   }
 
-  return valid(
+  const result = valid(
     Object.freeze({
       ...capabilityCore(capability),
       status: "verifying" as const,
@@ -103,13 +110,15 @@ export function beginCapabilityVerification(
       [verifyingCapabilityBrand]: true as const,
     }),
   )
+  if (result.ok) verifyingCapabilityInstances.add(result.value)
+  return result
 }
 
 export function activateCapability(
   capability: VerifyingCapability,
   replay: ActiveReplay,
 ): ValidationResult<HealthyCapability> {
-  if (!hasBrand(capability, verifyingCapabilityBrand)) {
+  if (!isIssuedCapability(capability, verifyingCapabilityInstances, verifyingCapabilityBrand, "verifying")) {
     return invalid(issue("capability", "verifying capability must come from beginCapabilityVerification"))
   }
   if (!isActiveReplay(replay)) {
@@ -122,7 +131,7 @@ export function activateCapability(
     return invalid(issue("replay.id", "active replay must be the capability's verifying candidate"))
   }
 
-  return valid(
+  const result = valid(
     Object.freeze({
       ...capabilityCore(capability),
       status: "healthy" as const,
@@ -130,13 +139,15 @@ export function activateCapability(
       [healthyCapabilityBrand]: true as const,
     }),
   )
+  if (result.ok) healthyCapabilityInstances.add(result.value)
+  return result
 }
 
 export function failCapabilityVerification(
   capability: VerifyingCapability,
   replay: BrokenReplay,
 ): ValidationResult<DiscoveringCapability> {
-  if (!hasBrand(capability, verifyingCapabilityBrand)) {
+  if (!isIssuedCapability(capability, verifyingCapabilityInstances, verifyingCapabilityBrand, "verifying")) {
     return invalid(issue("capability", "verifying capability must come from beginCapabilityVerification"))
   }
   if (!isBrokenReplay(replay)) {
@@ -149,7 +160,7 @@ export function failCapabilityVerification(
     return invalid(issue("replay.id", "broken replay must be the capability's verifying candidate"))
   }
 
-  return valid(
+  const result = valid(
     Object.freeze({
       ...capabilityCore(capability),
       status: "discovering" as const,
@@ -161,13 +172,15 @@ export function failCapabilityVerification(
       [discoveringCapabilityBrand]: true as const,
     }),
   )
+  if (result.ok) discoveringCapabilityInstances.add(result.value)
+  return result
 }
 
 export function degradeCapability(
   capability: HealthyCapability,
   replay: BrokenReplay,
 ): ValidationResult<DegradedCapability> {
-  if (!hasBrand(capability, healthyCapabilityBrand)) {
+  if (!isIssuedCapability(capability, healthyCapabilityInstances, healthyCapabilityBrand, "healthy")) {
     return invalid(issue("capability", "healthy capability must come from activateCapability"))
   }
   if (!isBrokenReplay(replay)) {
@@ -180,7 +193,7 @@ export function degradeCapability(
     return invalid(issue("replay.id", "broken replay must be the active replay"))
   }
 
-  return valid(
+  const result = valid(
     Object.freeze({
       ...capabilityCore(capability),
       status: "degraded" as const,
@@ -190,13 +203,15 @@ export function degradeCapability(
       [degradedCapabilityBrand]: true as const,
     }),
   )
+  if (result.ok) degradedCapabilityInstances.add(result.value)
+  return result
 }
 
 export function resumeCapabilityExploration(capability: DegradedCapability): ValidationResult<DiscoveringCapability> {
-  if (!hasBrand(capability, degradedCapabilityBrand)) {
+  if (!isIssuedCapability(capability, degradedCapabilityInstances, degradedCapabilityBrand, "degraded")) {
     return invalid(issue("capability", "degraded capability must come from degradeCapability"))
   }
-  return valid(
+  const result = valid(
     Object.freeze({
       ...capabilityCore(capability),
       status: "discovering" as const,
@@ -208,6 +223,8 @@ export function resumeCapabilityExploration(capability: DegradedCapability): Val
       [discoveringCapabilityBrand]: true as const,
     }),
   )
+  if (result.ok) discoveringCapabilityInstances.add(result.value)
+  return result
 }
 
 function capabilityCore(input: CapabilityDefinition): CapabilityCore {
@@ -223,7 +240,7 @@ function capabilityCore(input: CapabilityDefinition): CapabilityCore {
   })
 }
 
-function validateCapabilityDefinition(input: CapabilityDefinition): ReturnType<typeof issue>[] {
+export function validateCapabilityDefinition(input: CapabilityDefinition): ReturnType<typeof issue>[] {
   const issues: ReturnType<typeof issue>[] = []
   if (!isRecord(input)) return [issue("capability", "capability must be an object")]
   if (!isNonEmptyText(input.id)) issues.push(issue("id", "capability id must not be empty"))
@@ -249,4 +266,39 @@ function validateCapabilityDefinition(input: CapabilityDefinition): ReturnType<t
 
 function hasBrand(value: unknown, brand: symbol): boolean {
   return value !== null && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, brand) && (value as Record<symbol, unknown>)[brand] === true
+}
+
+function isIssuedCapability(
+  value: unknown,
+  instances: WeakSet<object>,
+  brand: symbol,
+  status: Capability["status"],
+): boolean {
+  if (value === null || typeof value !== "object" || !instances.has(value) || !hasBrand(value, brand) || (value as Record<string, unknown>).status !== status) return false
+  if (validateCapabilityDefinition(value as CapabilityDefinition).length > 0) return false
+  const record = value as Record<string, unknown>
+  switch (status) {
+    case "discovering":
+      return validateDiscoveryReason(record.discovery)
+    case "verifying":
+      return isNonEmptyText(record.candidateReplayVersionId)
+    case "healthy":
+      return isNonEmptyText(record.activeReplayVersionId)
+    case "degraded":
+      return isNonEmptyText(record.brokenReplayVersionId) && record.mode === "exploratory" && validateReplayFailure(record.failure).length === 0
+  }
+}
+
+function validateDiscoveryReason(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  switch (value.kind) {
+    case "initial":
+      return true
+    case "reexploration":
+      return isNonEmptyText(value.previousReplayVersionId) && validateReplayFailure(value.failure).length === 0
+    case "verification_failed":
+      return isNonEmptyText(value.candidateReplayVersionId) && validateReplayFailure(value.failure).length === 0
+    default:
+      return false
+  }
 }

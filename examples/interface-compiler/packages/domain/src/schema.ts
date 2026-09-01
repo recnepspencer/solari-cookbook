@@ -1,6 +1,6 @@
 /** Dependency-free JSON values, schemas, and semantic conditions. */
 
-import { invalid, isNonEmptyText, isRecord, issue, valid, type ValidationIssue, type ValidationResult } from "./validation.js"
+import { invalid, isNonEmptyText, isPlainRecord, isRecord, issue, valid, type ValidationIssue, type ValidationResult } from "./validation.js"
 
 export type JsonPrimitive = string | number | boolean | null
 export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue }
@@ -137,7 +137,7 @@ export function isJsonValue(value: unknown): value is JsonValue {
     if (typeof current !== "object") return false
     if (seen.has(current)) return false
     seen.add(current)
-    const result = Array.isArray(current) ? current.every(visit) : isRecord(current) && Object.values(current).every(visit)
+    const result = Array.isArray(current) ? current.every(visit) : isPlainRecord(current) && Object.values(current).every(visit)
     seen.delete(current)
     return result
   }
@@ -150,7 +150,7 @@ export function validateJsonSchema(schema: unknown, path = "schema"): readonly V
   const seen = new WeakSet<object>()
 
   function visit(value: unknown, currentPath: string): void {
-    if (!isRecord(value)) {
+    if (!isPlainRecord(value)) {
       issues.push(issue(currentPath, "JSON schema must be an object"))
       return
     }
@@ -163,6 +163,7 @@ export function validateJsonSchema(schema: unknown, path = "schema"): readonly V
     const type = value.type
     if (type !== undefined && type !== "string" && type !== "number" && type !== "integer" && type !== "boolean" && type !== "null" && type !== "array" && type !== "object") {
       issues.push(issue(`${currentPath}.type`, "JSON schema type is not recognized"))
+      seen.delete(value)
       return
     }
     validateMetadata(value, currentPath, issues)
@@ -186,7 +187,7 @@ export function validateJsonSchema(schema: unknown, path = "schema"): readonly V
     }
     if (type === "object") {
       if (value.properties !== undefined) {
-        if (!isRecord(value.properties)) {
+        if (!isPlainRecord(value.properties)) {
           issues.push(issue(`${currentPath}.properties`, "properties must be an object"))
         } else {
           for (const [key, child] of Object.entries(value.properties)) visit(child, `${currentPath}.properties.${key}`)

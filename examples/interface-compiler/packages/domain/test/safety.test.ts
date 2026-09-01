@@ -4,6 +4,7 @@ import {
   classifySafetyBoundary,
   createExecution,
   finishExecution,
+  isSafetyStopResult,
   type ExecutionId,
   type CapabilityId,
   type SafetyAssessment,
@@ -61,6 +62,13 @@ test("a classified safety stop remains terminal when attached to an execution", 
     }),
   )
   if (assessment.kind !== "stop") throw new Error("expected safety stop")
+
+  const reflectedCopy = Object.create(Object.getPrototypeOf(assessment.result)) as Record<PropertyKey, unknown>
+  for (const key of Reflect.ownKeys(assessment.result)) {
+    const descriptor = Object.getOwnPropertyDescriptor(assessment.result, key)
+    if (descriptor) Object.defineProperty(reflectedCopy, key, descriptor)
+  }
+  assert.equal(isSafetyStopResult(reflectedCopy), false)
 
   const execution = unwrap(
     createExecution({

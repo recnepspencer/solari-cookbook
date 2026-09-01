@@ -20,10 +20,10 @@ import {
   finishExecution,
   isActiveReplay,
   normalizeObservation,
-  recordVerificationRun,
   resolveExperiment,
   startExperiment,
   validateExecutionMetrics,
+  validateOperationContext,
   validateSafetySignal,
   validateSafetyStopResult,
   type ActiveReplay,
@@ -45,6 +45,8 @@ import {
   type ModelPricingUsdPerToken,
   type ModelUsage,
   type Observation,
+  type OperationContext,
+  type OperationId,
   type PendingExperiment,
   type ReplayVersionId,
   type SafetyBoundaryObservation,
@@ -55,6 +57,7 @@ import {
   type VerificationRunReceipt,
   type ValidationResult,
 } from "../src/index.js"
+import { recordVerificationRun } from "../src/replay-verification.js"
 
 const timestamp = "2026-08-31T12:00:00.000Z"
 
@@ -88,6 +91,8 @@ function receipt(idValue: string, sessionValue: string, evidenceValue: string): 
   return {
     id: id<VerificationRunId>(idValue),
     sessionId: id<SessionId>(sessionValue),
+    capabilityId: id<CapabilityId>("capability.add-to-cart"),
+    replayVersionId: id<ReplayVersionId>("replay.add-to-cart.v1"),
     sessionFreshness: "fresh",
     outcome: "success",
     evidenceIds: [id(evidenceValue)],
@@ -134,6 +139,16 @@ test("active replay and projection/entity types cannot be forged or interchanged
   } as unknown as ActiveReplay
   assert.equal(isActiveReplay(fakeActive), false)
 
+  const realActive = unwrap(completeReplayVerification(unwrap(recordVerificationRun(unwrap(beginReplayVerification(replay, 1)), receipt("run.real", "session.real", "evidence.real"))), timestamp))
+  assert.equal(realActive.status, "active")
+  assert.equal(isActiveReplay({ ...realActive, status: "active" } as unknown as ActiveReplay), false)
+  const reflectedCopy = Object.create(Object.getPrototypeOf(realActive)) as Record<PropertyKey, unknown>
+  for (const key of Reflect.ownKeys(realActive)) {
+    const descriptor = Object.getOwnPropertyDescriptor(realActive, key)
+    if (descriptor) Object.defineProperty(reflectedCopy, key, descriptor)
+  }
+  assert.equal(isActiveReplay(reflectedCopy), false)
+
   const capability = unwrap(createCapability(capabilityDefinition()))
   const verifyingCapability = unwrap(beginCapabilityVerification(capability, replay))
   assert.equal(activateCapability(verifyingCapability, fakeActive).ok, false)
@@ -160,6 +175,9 @@ test("domain factories take ownership of nested values", () => {
   assert.equal(Object.isFrozen(replay.steps[0].target), true)
 
   const schema = { type: "object" as const, properties: { nested: { type: "string" as const } } }
+  const typedSchema = unwrap(createSchema<{ readonly nested: string }>({ name: "NestedInput", json: schema }))
+  assert.equal(Object.isFrozen(typedSchema), true)
+  assert.equal(Object.isFrozen(typedSchema.json), true)
   const capability = unwrap(createCapability({ ...capabilityDefinition(), inputSchema: schema }))
   assert.equal(Object.isFrozen(capability.inputSchema), true)
   assert.equal(Object.isFrozen((capability.inputSchema as { properties?: unknown }).properties), true)
@@ -170,11 +188,16 @@ test("malformed runtime values fail closed without throwing", () => {
     createApplication(malformed<Application>(null)),
     createCapability(malformed<CapabilityDefinition>(null)),
     createCandidateReplay(malformed<CandidateReplayInput>(null)),
+    createCandidateReplay({ ...candidate(), supersedes: null } as unknown as CandidateReplayInput),
     normalizeObservation(malformed<Observation>(null)),
     createEvidence(malformed<Evidence>({ kind: "unknown" })),
+    createEvidence(malformed<Evidence>({ kind: "postcondition", id: id("evidence.2"), capturedAt: timestamp, condition: { kind: "checkout_started" }, result: "unknown" })),
     startExperiment(malformed<ExperimentDefinition>(null)),
+    startExperiment(malformed<ExperimentDefinition>({ id: id("experiment.2"), capabilityId: "", hypothesis: "test", proposedSteps: [], expectedOutcome: [] })),
     resolveExperiment(malformed<PendingExperiment>(null), "success", [id("evidence.1")], timestamp),
     createSchema<unknown>(malformed<{ name: string; json: JsonSchema }>(null)),
+    createSchema<unknown>(malformed<{ name: string; json: JsonSchema }>({ name: "Date", json: new Date() as unknown as JsonSchema })),
+    createSchema<unknown>(malformed<{ name: string; json: JsonSchema }>({ name: "PropertiesDate", json: { type: "object", properties: new Date() as unknown as Record<string, JsonSchema> } })),
     createExecution(malformed<ExecutionStart>(null)),
     classifySafetyBoundary(malformed<SafetyBoundaryObservation>(null)),
     calculateBreakEvenCalls(malformed<{ compileCostUsd: number; directCostPerCallUsd: number; compiledCostPerCallUsd: number }>(null)),
@@ -188,6 +211,22 @@ test("malformed runtime values fail closed without throwing", () => {
   assert.deepEqual(validateExecutionMetrics(malformed<ExecutionMetrics>(null)), [{ path: "metrics", message: "execution metrics must be an object" }])
   assert.deepEqual(validateSafetySignal(malformed<SafetySignal>({ kind: "unknown" })), [{ path: "signal.kind", message: "safety signal kind is not recognized" }])
   assert.equal(validateSafetyStopResult({ kind: "safety_stop", terminal: true, nextAction: "human_required", reason: "order_placement" }).length > 0, true)
+  assert.doesNotThrow(() => calculateLifetimeEconomics({
+    explorationCostUsd: 1,
+    verificationCostUsd: 1,
+    totalCompilationCostUsd: 2,
+    directAverageCostUsd: 2,
+    compiledAverageCostUsd: 1,
+    breakEvenCalls: null,
+  } as unknown as CompilationMetrics, 1))
+  assert.equal(calculateLifetimeEconomics({
+    explorationCostUsd: 1,
+    verificationCostUsd: 1,
+    totalCompilationCostUsd: 2,
+    directAverageCostUsd: 2,
+    compiledAverageCostUsd: 1,
+    breakEvenCalls: null,
+  } as unknown as CompilationMetrics, 1).ok, false)
 
   const running = unwrap(
     createExecution({
@@ -206,6 +245,26 @@ test("malformed runtime values fail closed without throwing", () => {
     }),
   )
   assert.equal(finishExecution(running, malformed<ExecutionCompletion>({ kind: "unknown" }), timestamp).ok, false)
+  assert.equal(
+    createExecution({
+      id: id<ExecutionId>("execution.unknown-mode"),
+      capabilityId: id<CapabilityId>("capability.add-to-cart"),
+      mode: "unknown" as ExecutionStart["mode"],
+      metrics: running.metrics,
+    }).ok,
+    false,
+  )
+
+  const context: OperationContext = {
+    operationId: id<OperationId>("operation.1"),
+    deadlineAt: timestamp,
+    cancellation: { isCancellationRequested: () => false, onCancellationRequested: () => () => undefined },
+    budget: { maxWallClockMs: 10_000, maxModelCalls: 3, maxBrowserActions: 10, maxEvidenceBytes: 100_000 },
+    admission: { maxInFlight: 2, maxQueued: 4, overflow: "defer" },
+  }
+  assert.deepEqual(validateOperationContext(context), [])
+  assert.ok(validateOperationContext({ ...context, admission: { maxInFlight: 0, maxQueued: 4, overflow: "reject" } }).length > 0)
+  assert.ok(validateOperationContext({ ...context, admission: { maxInFlight: 2, maxQueued: -1, overflow: "reject" } }).length > 0)
 })
 
 export function publicContractTypeFence(
@@ -217,9 +276,11 @@ export function publicContractTypeFence(
 ): void {
   // @ts-expect-error projections are not mutable domain entities or interchangeable records
   applicationProjection = application
+  // @ts-expect-error a Worth projection cannot be promoted into an authoritative entity
+  const entity: Application = applicationProjection
   // @ts-expect-error branded identifiers prevent cross-entity identity confusion
   capabilityId = applicationId
   // @ts-expect-error schema output types are bound to their schema descriptor
   const schemaNumber: Schema<number> = schemaString
-  void [applicationProjection, application, capabilityId, schemaNumber]
+  void [applicationProjection, application, capabilityId, schemaNumber, entity]
 }

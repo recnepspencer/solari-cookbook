@@ -13,6 +13,12 @@ export interface ResourceBudget {
   readonly maxEvidenceBytes?: number
 }
 
+export interface AdmissionPolicy {
+  readonly maxInFlight: number
+  readonly maxQueued: number
+  readonly overflow: "reject" | "defer"
+}
+
 export type PartialEffectPosture =
   | { readonly kind: "not_started" }
   | { readonly kind: "completed" }
@@ -23,6 +29,7 @@ export interface OperationContext {
   readonly deadlineAt: IsoTimestamp
   readonly cancellation: CancellationToken
   readonly budget: ResourceBudget
+  readonly admission: AdmissionPolicy
 }
 
 export function validateOperationContext(context: OperationContext): readonly ValidationIssue[] {
@@ -38,6 +45,13 @@ export function validateOperationContext(context: OperationContext): readonly Va
     validateBudgetValue(context.budget.maxModelCalls, "budget.maxModelCalls", issues, true)
     validateBudgetValue(context.budget.maxBrowserActions, "budget.maxBrowserActions", issues, true)
     validateBudgetValue(context.budget.maxEvidenceBytes, "budget.maxEvidenceBytes", issues, true)
+  }
+  if (!context.admission || typeof context.admission !== "object") {
+    issues.push(issue("admission", "bounded admission policy is required"))
+  } else {
+    if (!isNonNegativeFiniteNumber(context.admission.maxInFlight) || !Number.isSafeInteger(context.admission.maxInFlight) || context.admission.maxInFlight < 1) issues.push(issue("admission.maxInFlight", "max in-flight operations must be a positive safe integer"))
+    if (!isNonNegativeFiniteNumber(context.admission.maxQueued) || !Number.isSafeInteger(context.admission.maxQueued)) issues.push(issue("admission.maxQueued", "max queued operations must be a non-negative safe integer"))
+    if (context.admission.overflow !== "reject" && context.admission.overflow !== "defer") issues.push(issue("admission.overflow", "overflow policy must be reject or defer"))
   }
   return issues
 }

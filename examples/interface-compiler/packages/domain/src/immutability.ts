@@ -14,7 +14,21 @@ export function cloneAndFreeze<T>(value: T): T {
 
     for (const key of Reflect.ownKeys(input)) {
       if (Array.isArray(input) && key === "length") continue
-      output[key] = copy((input as { [key: PropertyKey]: unknown })[key])
+      const descriptor = Object.getOwnPropertyDescriptor(input, key)
+      if (!descriptor) continue
+      if ("value" in descriptor) {
+        descriptor.value = copy(descriptor.value)
+      } else {
+        Object.defineProperty(output, key, {
+          configurable: descriptor.configurable,
+          enumerable: typeof key === "symbol" ? false : descriptor.enumerable,
+          writable: true,
+          value: copy((input as { [key: PropertyKey]: unknown })[key]),
+        })
+        continue
+      }
+      if (typeof key === "symbol") descriptor.enumerable = false
+      Object.defineProperty(output, key, descriptor)
     }
 
     return Object.freeze(output)

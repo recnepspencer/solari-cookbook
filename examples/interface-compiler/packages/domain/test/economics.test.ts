@@ -49,6 +49,10 @@ test("break-even is typed when savings are absent, immediate, or not representab
     unwrap(calculateBreakEvenCalls({ compileCostUsd: Number.MAX_VALUE, directCostPerCallUsd: 2, compiledCostPerCallUsd: 1 })),
     { kind: "unavailable", reason: "break_even_exceeds_safe_integer_range", savingsPerCallUsd: 1 },
   )
+  assert.deepEqual(
+    unwrap(calculateBreakEvenCalls({ compileCostUsd: Number.MIN_VALUE, directCostPerCallUsd: Number.MAX_VALUE, compiledCostPerCallUsd: 0 })),
+    { kind: "unavailable", reason: "break_even_ratio_underflowed", savingsPerCallUsd: Number.MAX_VALUE },
+  )
 })
 
 test("lifetime economics includes compilation once and replay cost per execution", () => {
@@ -67,6 +71,13 @@ test("lifetime economics includes compilation once and replay cost per execution
     lifetimeCompiledCostUsd: 40,
     lifetimeNetSavingsUsd: 10,
   })
+  assert.equal(
+    calculateLifetimeEconomics(
+      { ...metrics, breakEvenCalls: { kind: "finite", calls: 99, exactCalls: 99, savingsPerCallUsd: 8 } },
+      5,
+    ).ok,
+    false,
+  )
 })
 
 test("model cost uses caller-supplied pricing and rejects invalid numeric inputs", () => {

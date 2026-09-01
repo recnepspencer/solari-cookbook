@@ -20,6 +20,7 @@ export interface SafetyBoundaryObservation {
 }
 
 const safetyStopBrand: unique symbol = Symbol("SafetyStopResult")
+const safetyStopInstances = new WeakSet<object>()
 
 interface SafetyStopCore {
   readonly kind: "safety_stop"
@@ -74,7 +75,9 @@ export function classifySafetyBoundary(observation: SafetyBoundaryObservation): 
     [safetyStopBrand]: true,
     ...safetyReason(observation.signal),
   }
-  return valid(Object.freeze({ kind: "stop" as const, terminal: true as const, result: Object.freeze(result) }))
+  const assessment = valid(Object.freeze({ kind: "stop" as const, terminal: true as const, result: Object.freeze(result) }))
+  if (assessment.ok) safetyStopInstances.add(assessment.value.result)
+  return assessment
 }
 
 export function safetyStopReason(stop: SafetyStopResult): SafetyStopResult["reason"] {
@@ -149,7 +152,7 @@ export function validateSafetyStopResult(value: unknown): readonly ReturnType<ty
   if (stop.terminal !== true) issues.push(issue("stop.terminal", "safety stop must be terminal"))
   if (stop.nextAction !== "human_required") issues.push(issue("stop.nextAction", "safety stop requires human action"))
   if (!isIsoTimestamp(stop.observedAt)) issues.push(issue("stop.observedAt", "safety stop timestamp must be valid"))
-  if (!Object.prototype.hasOwnProperty.call(value, safetyStopBrand) || (value as Record<symbol, unknown>)[safetyStopBrand] !== true) {
+  if (!safetyStopInstances.has(value) || !Object.prototype.hasOwnProperty.call(value, safetyStopBrand) || (value as Record<symbol, unknown>)[safetyStopBrand] !== true) {
     issues.push(issue("stop", "safety stop must come from classifySafetyBoundary"))
   }
   switch (stop.reason) {
@@ -171,4 +174,9 @@ export function validateSafetyStopResult(value: unknown): readonly ReturnType<ty
       issues.push(issue("stop.reason", "safety stop reason is not recognized"))
   }
   return issues
+}
+
+/** @internal Used when another domain result takes ownership of a classified stop. */
+export function registerSafetyStopResult(value: SafetyStopResult): void {
+  safetyStopInstances.add(value)
 }
