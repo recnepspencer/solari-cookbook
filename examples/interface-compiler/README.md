@@ -2347,3 +2347,26 @@ Whenever an implementation idea appears, ask:
 If not:
 
 **cut it.**
+
+---
+
+# Foundation workspace setup
+
+The foundation slice is a dependency-light TypeScript workspace containing the
+shared domain contract package. It deliberately does not include Solari or
+Gemini adapters, Worth persistence, browser automation, a dashboard, or
+benchmark fixtures. Those workstreams consume the contracts from
+`packages/domain`.
+
+From this directory, install the workspace and run its checks:
+
+```bash
+npm install
+npm run typecheck
+npm test
+```
+
+The package is published locally as `@interface-compiler/domain` within the
+workspace. Its public surface is the explicit `packages/domain/src/index.ts`
+facade. Domain costs accept measured run inputs and caller-supplied pricing;
+the foundation contains no sample measurements, credentials, or `.env` values.
