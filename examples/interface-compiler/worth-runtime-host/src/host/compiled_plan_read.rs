@@ -1,0 +1,382 @@
+//! WORTH-owned capability and active-replay reads.
+
+use super::{
+    block_on, InterfaceCompilerApplicationReadEvidence, InterfaceCompilerWorthHost,
+    MAX_REQUEST_TIMEOUT, QUERY_RESULT_BYTES, QUERY_RESULT_LIMIT,
+};
+use crate::application::*;
+use std::time::{Duration, Instant};
+use worth_query_host::facade::{admission, declaration, primary_graph};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InterfaceCompilerCompiledReadRequest {
+    pub capability_id: String,
+    pub credential: String,
+    pub timeout: Duration,
+}
+impl InterfaceCompilerCompiledReadRequest {
+    pub fn new(
+        capability_id: impl Into<String>,
+        credential: impl Into<String>,
+        timeout: Duration,
+    ) -> Self {
+        Self {
+            capability_id: capability_id.into(),
+            credential: credential.into(),
+            timeout,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceCompilerCompiledReadDenial {
+    InvalidRequest,
+    Authentication(String),
+    PrincipalResolution(String),
+    EntityResolution(String),
+    QueryNotInstalled,
+    QueryAdmission(String),
+    QueryExecution(String),
+    Projection(String),
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceCompilerCapabilityReadOutcome {
+    Found {
+        projection: InterfaceCompilerCapabilityProjection,
+        evidence: InterfaceCompilerApplicationReadEvidence,
+    },
+    NotFound {
+        capability_id: String,
+    },
+    Denied {
+        capability_id: String,
+        denial: InterfaceCompilerCompiledReadDenial,
+    },
+}
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceCompilerActiveReplayReadOutcome {
+    Found {
+        projection: InterfaceCompilerActiveReplayProjection,
+        evidence: InterfaceCompilerApplicationReadEvidence,
+    },
+    NotFound {
+        capability_id: String,
+    },
+    Denied {
+        capability_id: String,
+        denial: InterfaceCompilerCompiledReadDenial,
+    },
+}
+
+impl InterfaceCompilerWorthHost {
+    pub fn read_capability(
+        &self,
+        request: InterfaceCompilerCompiledReadRequest,
+    ) -> InterfaceCompilerCapabilityReadOutcome {
+        if invalid(&request) {
+            return InterfaceCompilerCapabilityReadOutcome::Denied {
+                capability_id: request.capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::InvalidRequest,
+            };
+        }
+        let cancellation = admission::authenticated_principal::WorthQueryCancellationSource::new();
+        let scope = admission::authenticated_principal::WorthQueryRequestScope::new(
+            Instant::now() + request.timeout,
+            cancellation.token(),
+        );
+        let external = match block_on(
+            self.authentication
+                .authenticate(request.credential.clone(), &scope),
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::Authentication(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let principal = match self.application.resolve_authenticated_principal(
+            &self.principal_binding,
+            external,
+            &scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::PrincipalResolution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let identity = match self.application.resolve_entity(
+            CapabilityIdentifier::reference(),
+            request.capability_id.clone(),
+            &scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            Ok(value) => value,
+            Err(denial)
+                if denial.kind()
+                    == primary_graph::WorthQueryEntityResolutionDenialKind::UnknownEntity =>
+            {
+                return InterfaceCompilerCapabilityReadOutcome::NotFound {
+                    capability_id: request.capability_id,
+                }
+            }
+            Err(denial) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::EntityResolution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let query = match self
+            .application
+            .installed_schema()
+            .application_query(CapabilityReadQuery::reference())
+        {
+            Ok(value) => value,
+            Err(_) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryNotInstalled,
+                }
+            }
+        };
+        let access =
+            primary_graph::WorthQueryApplicationQueryAccessContext::new(&principal, &identity);
+        let parameters = declaration::application_query::ApplicationQueryParameterSet::new()
+            .bind(capability_id_parameter(), request.capability_id.clone());
+        let plan = match self.application.admit_application_query(
+            &query,
+            &access,
+            parameters,
+            primary_graph::WorthQueryApplicationQueryControls::current_one_shot(
+                std::num::NonZeroUsize::new(QUERY_RESULT_LIMIT).unwrap(),
+                std::num::NonZeroUsize::new(QUERY_RESULT_BYTES).unwrap(),
+                &scope,
+            ),
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryAdmission(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let result = match self.application.execute_application_query_one_shot(plan) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerCapabilityReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryExecution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let Some(projection) = result.rows().first().cloned() else {
+            return InterfaceCompilerCapabilityReadOutcome::Denied {
+                capability_id: request.capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::QueryExecution(
+                    "cardinality_mismatch".to_string(),
+                ),
+            };
+        };
+        InterfaceCompilerCapabilityReadOutcome::Found {
+            projection,
+            evidence: receipt_evidence(CAPABILITY_READ_QUERY_NAME, &result),
+        }
+    }
+
+    pub fn read_active_replay(
+        &self,
+        request: InterfaceCompilerCompiledReadRequest,
+    ) -> InterfaceCompilerActiveReplayReadOutcome {
+        if invalid(&request) {
+            return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                capability_id: request.capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::InvalidRequest,
+            };
+        }
+        let active_replay_id = match self.read_capability(request.clone()) {
+            InterfaceCompilerCapabilityReadOutcome::Found { projection, .. } => {
+                projection.active_replay_id
+            }
+            InterfaceCompilerCapabilityReadOutcome::NotFound { capability_id } => {
+                return InterfaceCompilerActiveReplayReadOutcome::NotFound { capability_id }
+            }
+            InterfaceCompilerCapabilityReadOutcome::Denied {
+                capability_id,
+                denial,
+            } => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id,
+                    denial,
+                }
+            }
+        };
+        let cancellation = admission::authenticated_principal::WorthQueryCancellationSource::new();
+        let scope = admission::authenticated_principal::WorthQueryRequestScope::new(
+            Instant::now() + request.timeout,
+            cancellation.token(),
+        );
+        let external = match block_on(
+            self.authentication
+                .authenticate(request.credential.clone(), &scope),
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::Authentication(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let principal = match self.application.resolve_authenticated_principal(
+            &self.principal_binding,
+            external,
+            &scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::PrincipalResolution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let identity = match self.application.resolve_entity(
+            ReplayIdentifier::reference(),
+            active_replay_id.clone(),
+            &scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            Ok(value) => value,
+            Err(denial)
+                if denial.kind()
+                    == primary_graph::WorthQueryEntityResolutionDenialKind::UnknownEntity =>
+            {
+                return InterfaceCompilerActiveReplayReadOutcome::NotFound {
+                    capability_id: request.capability_id,
+                }
+            }
+            Err(denial) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::EntityResolution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let query = match self
+            .application
+            .installed_schema()
+            .application_query(ActiveReplayReadQuery::reference())
+        {
+            Ok(value) => value,
+            Err(_) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryNotInstalled,
+                }
+            }
+        };
+        let access =
+            primary_graph::WorthQueryApplicationQueryAccessContext::new(&principal, &identity);
+        let parameters = declaration::application_query::ApplicationQueryParameterSet::new()
+            .bind(replay_id_parameter(), active_replay_id);
+        let plan = match self.application.admit_application_query(
+            &query,
+            &access,
+            parameters,
+            primary_graph::WorthQueryApplicationQueryControls::current_one_shot(
+                std::num::NonZeroUsize::new(QUERY_RESULT_LIMIT).unwrap(),
+                std::num::NonZeroUsize::new(QUERY_RESULT_BYTES).unwrap(),
+                &scope,
+            ),
+        ) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryAdmission(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let result = match self.application.execute_application_query_one_shot(plan) {
+            Ok(value) => value,
+            Err(denial) => {
+                return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                    capability_id: request.capability_id,
+                    denial: InterfaceCompilerCompiledReadDenial::QueryExecution(format!(
+                        "{:?}",
+                        denial.kind()
+                    )),
+                }
+            }
+        };
+        let Some(projection) = result.rows().first().cloned() else {
+            return InterfaceCompilerActiveReplayReadOutcome::Denied {
+                capability_id: request.capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::QueryExecution(
+                    "cardinality_mismatch".to_string(),
+                ),
+            };
+        };
+        InterfaceCompilerActiveReplayReadOutcome::Found {
+            projection,
+            evidence: receipt_evidence(ACTIVE_REPLAY_READ_QUERY_NAME, &result),
+        }
+    }
+}
+
+fn invalid(request: &InterfaceCompilerCompiledReadRequest) -> bool {
+    request.capability_id.trim().is_empty()
+        || request.credential.trim().is_empty()
+        || request.timeout.is_zero()
+        || request.timeout > MAX_REQUEST_TIMEOUT
+}
+
+fn receipt_evidence<S, Q>(
+    name: &str,
+    result: &primary_graph::WorthQueryApplicationOneShotResult<S, Q>,
+) -> InterfaceCompilerApplicationReadEvidence {
+    let receipt = result.receipt();
+    InterfaceCompilerApplicationReadEvidence {
+        query_name: name.to_string(),
+        query_identity: receipt.query_identity().render_support_hex(),
+        basis_version: receipt.basis_version().as_u64(),
+        projected_record_count: receipt.projected_record_count(),
+        projected_field_count: receipt.projected_field_count(),
+        basis_released: receipt.basis_released(),
+    }
+}

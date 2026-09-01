@@ -384,17 +384,19 @@ This checkout now ships a deliberately narrow live WORTH process binding for
 the application read path and one execution transition. The Rust host's typed
 `start_execution` demonstration uses WORTH operation admission,
 authorization, invariant projection, effect programming, compare-and-commit,
-and a separate typed execution query. The TypeScript client exposes narrow
-`readApplication` and `startExecution` adapters and carries only typed terminal
-outcomes, projections, and query receipt evidence across an app-specific
-process boundary. The complete matching WORTH
+and a separate typed execution query. The same WORTH schema seeds one healthy
+demonstration capability and its active replay behind two admitted projection
+queries. This is an explicitly synthetic, unmeasured seed; it is not evidence
+of a compilation run against Walmart. The TypeScript client exposes narrow `readApplication`,
+`startExecution`, and compiled-plan read adapters; the latter does not claim
+the broad authority interface. The complete matching WORTH
 checkout is required at
 `C:\forge_workspace\worktree_2\workspaces\worth-query`.
 
 The binding does not open the broad `WorthRuntimePort`: its process protocol
-exposes only those two operations, while capability, replay, experiment,
-evidence, metrics, other mutation/lifecycle, and event operations remain
-explicit typed unavailable outcomes. There is no TypeScript
+exposes only those four operations. Replay lineage, experiment, evidence,
+metrics, other mutation/lifecycle, and event operations remain explicit typed
+unavailable outcomes. There is no TypeScript
 fallback store, marker-only binding, local replay/evidence authority, or
 serialized recovery handle. See [WORTH_BRIDGE_EVIDENCE.md](WORTH_BRIDGE_EVIDENCE.md)
 for the exact live/unavailable surface, old-versus-complete checkout evidence,

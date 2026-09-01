@@ -18,7 +18,6 @@ import {
   type Schema,
   type ValidationIssue,
   type ValidationResult,
-  type WorthAuthority,
   type WorthReadResult,
 } from "@interface-compiler/domain"
 
@@ -44,6 +43,13 @@ export interface DirectExperimentPlan {
 }
 
 type HealthyCapabilityProjection = Extract<CapabilityProjection, { readonly status: "healthy" }>
+
+/** Planning requires only these WORTH projections, never the command authority. */
+export interface CompiledPlanReadPort {
+  readCapability(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledProjectionReadResult<CapabilityProjection>>
+  readActiveReplay(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledProjectionReadResult<ActiveReplayProjection>>
+}
+type CompiledProjectionReadResult<T> = WorthReadResult<T> | { readonly kind: "denied" | "unavailable"; readonly message: string }
 
 export interface CompiledExperimentPlan {
   readonly kind: "compiled"
@@ -92,7 +98,7 @@ export function planDirectExperiment(input: ExperimentRequest): ValidationResult
 
 export async function planCompiledExperiment(
   input: ExperimentRequest,
-  worth: WorthAuthority,
+  worth: CompiledPlanReadPort,
   context: OperationContext,
 ): Promise<CompiledPlanningResult> {
   const requestIssues = validateExperimentRequest(input)
@@ -218,7 +224,7 @@ function validateExperimentRequest(input: ExperimentRequest): ValidationIssue[] 
   return issues
 }
 
-function mapWorthReadFailure<T>(result: Exclude<WorthReadResult<T>, { readonly kind: "found" }>, notFoundReason: CompiledUnavailableReason): CompiledPlanningResult {
+function mapWorthReadFailure<T>(result: Exclude<CompiledProjectionReadResult<T>, { readonly kind: "found" }>, notFoundReason: CompiledUnavailableReason): CompiledPlanningResult {
   switch (result.kind) {
     case "not_found":
       return { kind: "unavailable", reason: notFoundReason }
@@ -227,6 +233,9 @@ function mapWorthReadFailure<T>(result: Exclude<WorthReadResult<T>, { readonly k
     case "timed_out":
       return { kind: "unavailable", reason: "worth_timed_out" }
     case "failed":
+      return { kind: "unavailable", reason: "worth_failed", message: result.message }
+    case "denied":
+    case "unavailable":
       return { kind: "unavailable", reason: "worth_failed", message: result.message }
   }
 }

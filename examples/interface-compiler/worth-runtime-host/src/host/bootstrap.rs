@@ -135,6 +135,81 @@ impl InterfaceCompilerWorthHost {
         graph
             .bind_entity(
                 primary_graph::WorthQueryApplicationEntitySeed::new(
+                    Capability::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_CAPABILITY_ID)
+                        .map_err(|error| {
+                            InterfaceCompilerHostSetupError::from_stage(
+                                "create capability key",
+                                error,
+                            )
+                        })?,
+                )
+                .field(
+                    CapabilityIdentifier::reference(),
+                    DEMO_CAPABILITY_ID.to_string(),
+                )
+                .field(CapabilityRevision::reference(), DEMO_CAPABILITY_REVISION)
+                .field(
+                    CapabilityApplicationIdentifier::reference(),
+                    DEMO_APPLICATION_ID.to_string(),
+                )
+                .field(CapabilityName::reference(), "SearchProducts".to_string())
+                .field(
+                    CapabilityDescription::reference(),
+                    "Synthetic demo seed for a Walmart product search; not a measured compilation"
+                        .to_string(),
+                )
+                .field(CapabilityStatus::reference(), "healthy".to_string())
+                .field(
+                    CapabilityActiveReplayIdentifier::reference(),
+                    DEMO_REPLAY_ID.to_string(),
+                ),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage("bind capability entity", error)
+            })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
+                    Replay::reference(),
+                    primary_graph::WorthQueryApplicationEntityKey::new(DEMO_REPLAY_ID).map_err(
+                        |error| {
+                            InterfaceCompilerHostSetupError::from_stage("create replay key", error)
+                        },
+                    )?,
+                )
+                .field(ReplayIdentifier::reference(), DEMO_REPLAY_ID.to_string())
+                .field(ReplayRevision::reference(), DEMO_REPLAY_REVISION)
+                .field(
+                    ReplayCapabilityIdentifier::reference(),
+                    DEMO_CAPABILITY_ID.to_string(),
+                )
+                .field(ReplayVersion::reference(), 1_u64)
+                .field(
+                    ReplayStepsJson::reference(),
+                    DEMO_REPLAY_STEPS_JSON.to_string(),
+                )
+                .field(ReplayConfidenceMillis::reference(), 1000_u64)
+                .field(ReplayStatus::reference(), "active".to_string())
+                .field(
+                    ReplayCreatedAt::reference(),
+                    "2026-08-31T17:00:00.000Z".to_string(),
+                )
+                .field(
+                    ReplayVerifiedAt::reference(),
+                    "2026-08-31T18:00:00.000Z".to_string(),
+                )
+                .field(
+                    ReplayVerificationJson::reference(),
+                    DEMO_REPLAY_VERIFICATION_JSON.to_string(),
+                ),
+            )
+            .map_err(|error| {
+                InterfaceCompilerHostSetupError::from_stage("bind replay entity", error)
+            })?;
+        graph
+            .bind_entity(
+                primary_graph::WorthQueryApplicationEntitySeed::new(
                     Execution::reference(),
                     primary_graph::WorthQueryApplicationEntityKey::new(DEMO_EXECUTION_ID).map_err(
                         |error| {

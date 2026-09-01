@@ -130,6 +130,7 @@ fn process_protocol_maps_the_real_start_transition_and_lifecycle_rejection() {
             operation: START_EXECUTION_OPERATION.to_string(),
             application_id: None,
             execution_id: Some(execution_id.to_string()),
+            capability_id: None,
             credential: Some(DEMO_CREDENTIAL.to_string()),
             deadline_ms: Some(DEFAULT_REQUEST_TIMEOUT.as_millis() as u64),
         };

@@ -1,7 +1,15 @@
 //! Aggregation facade for the Interface Compiler WORTH application contract.
 
+mod application_read_query;
+mod compiled_plan_query;
+mod compiled_plan_schema;
 mod execution_query;
 mod schema;
 
+pub use application_read_query::application_read_query_definition;
+pub use compiled_plan_query::{
+    active_replay_read_query_definition, capability_read_query_definition,
+};
+pub use compiled_plan_schema::*;
 pub use execution_query::execution_read_query_definition;
 pub use schema::*;

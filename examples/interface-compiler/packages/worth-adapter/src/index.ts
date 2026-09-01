@@ -12,6 +12,8 @@ export type {
 } from "./worth-query-client.js"
 export { createWorthApplicationReadAdapter } from "./worth-application-read.js"
 export type { WorthApplicationReadAdapter, WorthApplicationReadEvidence, WorthApplicationReadResult } from "./worth-application-read.js"
+export { createCompiledPlanReadAdapter } from "./compiled-plan-read.js"
+export type { CompiledPlanReadPort, CompiledPlanReadResult, WorthQueryEvidence } from "./compiled-plan-read.js"
 export { createWorthStartExecutionAdapter } from "./worth-start-execution.js"
 export type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
 export {

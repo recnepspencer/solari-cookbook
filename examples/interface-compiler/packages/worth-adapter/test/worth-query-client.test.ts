@@ -4,9 +4,10 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 import { promisify } from "node:util"
-import type { ApplicationId, ExecutionId, OperationContext } from "@interface-compiler/domain"
+import type { ApplicationId, CapabilityId, ExecutionId, OperationContext } from "@interface-compiler/domain"
 import {
   createWorthApplicationReadAdapter,
+  createCompiledPlanReadAdapter,
   createWorthStartExecutionAdapter,
   InterfaceCompilerWorthClient,
   type WorthApplicationReadResult,
@@ -29,6 +30,7 @@ function id(value: string): ApplicationId {
 function executionId(value: string): ExecutionId {
   return value as ExecutionId
 }
+function capabilityId(value: string): CapabilityId { return value as CapabilityId }
 
 function context(operationId: string): OperationContext {
   return {
@@ -85,6 +87,58 @@ test("client crosses the process boundary and returns the WORTH application proj
     entity: "application",
     entityId: id("application.unknown"),
   })
+})
+
+test("compiled-plan adapter reads a healthy capability and its matching active replay from the live WORTH host", async (testContext) => {
+  const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
+  testContext.after(() => client.close())
+  const adapter = createCompiledPlanReadAdapter(client)
+  const id = capabilityId("capability.walmart.search-products")
+  const capability = await adapter.readCapability(id, context("operation.client-capability"))
+  const replay = await adapter.readActiveReplay(id, context("operation.client-replay"))
+  assert.equal(capability.kind, "found")
+  assert.equal(replay.kind, "found")
+  if (capability.kind === "found" && replay.kind === "found") {
+    assert.equal(capability.value.status, "healthy")
+    assert.equal(replay.value.status, "active")
+    assert.equal(capability.value.activeReplayVersionId, replay.value.id)
+    assert.equal(replay.value.capabilityId, capability.value.id)
+    assert.equal(capability.evidence.queryName, "interface_compiler_capability_read")
+    assert.equal(replay.evidence.queryName, "interface_compiler_active_replay_read")
+    assert.equal(capability.evidence.projectedFieldCount, 7)
+    assert.equal(replay.evidence.projectedFieldCount, 10)
+    assert.equal(capability.evidence.basisReleased, true)
+    assert.equal(replay.evidence.basisReleased, true)
+  }
+  const missing = await adapter.readCapability(capabilityId("capability.unknown"), context("operation.client-capability-missing"))
+  assert.equal(missing.kind, "not_found")
+})
+
+test("compiled-plan reads fail closed on a mismatched projection identity", async () => {
+  const reply = JSON.stringify({ outcome: "capability_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_capability", capability: { projection_kind: "worth_capability", id: "capability.foreign", revision: 1, application_id: "application.interface-compiler", name: "foreign", description: "foreign", status: "healthy", active_replay_version_id: "replay.foreign" }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 7, basis_released: true } })
+  const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
+  const result = await client.readCapability(capabilityId("capability.expected"), context("operation.client-capability-mismatch"))
+  await client.close()
+  assert.equal(result.kind, "unavailable")
+  if (result.kind === "unavailable") assert.equal(result.reason, "malformed_response")
+})
+
+test("compiled-plan replay fails closed on foreign verification lineage", async () => {
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.foreign", replayVersionId: "replay.expected", sessionId: "session-1", freshSession: true, outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
+  const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-lineage"))
+  await client.close()
+  assert.equal(result.kind, "unavailable")
+  if (result.kind === "unavailable") assert.equal(result.reason, "malformed_response")
+})
+
+test("compiled-plan replay does not mint missing fresh-session evidence", async () => {
+  const reply = JSON.stringify({ outcome: "active_replay_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_active_replay", replay: { projection_kind: "worth_replay", id: "replay.expected", revision: 1, capability_id: "capability.expected", version: 1, steps: [{ type: "wait", milliseconds: 1 }], confidence: 1, status: "active", created_at: "2026-08-31T17:00:00.000Z", verified_at: "2026-08-31T18:00:00.000Z", verification: { requiredSuccessfulRuns: 1, runs: [{ id: "run-1", capabilityId: "capability.expected", replayVersionId: "replay.expected", sessionId: "session-1", outcome: "success", evidenceIds: ["evidence-1"], completedAt: "2026-08-31T18:00:00.000Z" }] } }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 10, basis_released: true } })
+  const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
+  const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-fresh-session"))
+  await client.close()
+  assert.equal(result.kind, "unavailable")
+  if (result.kind === "unavailable") assert.equal(result.reason, "transport_unavailable")
 })
 
 test("client preserves WORTH authentication denial as a typed denial", async (testContext) => {
@@ -156,7 +210,7 @@ test("real host binary preserves unsupported operations as correlated unavailabl
     request_id: "unsupported-binary-1",
     operation: "submit_lifecycle_command",
     reason: "unsupported",
-    message: "this host exposes only read_application and start_execution",
+    message: "this host exposes only read_application, start_execution, read_capability, and read_active_replay",
   })
 })
 

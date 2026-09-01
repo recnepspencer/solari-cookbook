@@ -1,7 +1,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
 import { createInterface, type Interface as ReadlineInterface } from "node:readline"
 import type {
+  ActiveReplayProjection,
   ApplicationId,
+  CapabilityId,
+  CapabilityProjection,
   ExecutionId,
   OperationContext,
   PartialEffectPosture,
@@ -10,6 +13,8 @@ import {
   INTERFACE_COMPILER_WORTH_PROTOCOL,
   INTERFACE_COMPILER_WORTH_READ_OPERATION,
   INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION,
+  INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION,
+  INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION,
   parseHostResponse,
   type HostDenialStage,
   type HostEvidence,
@@ -20,7 +25,8 @@ import {
 } from "./worth-query-wire.js"
 import type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
 import type { WorthApplicationReadAdapter, WorthApplicationReadResult } from "./worth-application-read.js"
-export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION } from "./worth-query-wire.js"
+import { mapCompiledCapability, mapCompiledReplay, type CompiledPlanReadPort, type CompiledPlanReadResult } from "./compiled-plan-read.js"
+export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION } from "./worth-query-wire.js"
 
 export interface WorthQueryProcessCommand {
   readonly command: string
@@ -37,7 +43,7 @@ type PendingResult = HostResponse | "cancelled" | "timed_out" | undefined
 type PendingCompletion = (result: PendingResult) => void
 
 /** App-specific process transport; WORTH retains all runtime authority. */
-export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter {
+export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter, CompiledPlanReadPort {
   private readonly processCommand: WorthQueryProcessCommand
   private readonly credential: string
   private readonly pending = new Map<string, PendingCompletion>()
@@ -104,6 +110,29 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     if (response === "cancelled" || response === "timed_out") return this.executionInterrupted(response, context, unknownMutationPosture())
     if (response === undefined) return this.executionUnavailable(executionId, "transport_unavailable", this.processFailure ?? "the WORTH host process is unavailable")
     return this.mapStartExecutionResponse(executionId, response)
+  }
+
+  public readCapability(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledPlanReadResult<CapabilityProjection>> {
+    return this.readCompiled("capability", capabilityId, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, context) as Promise<CompiledPlanReadResult<CapabilityProjection>>
+  }
+
+  public readActiveReplay(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledPlanReadResult<ActiveReplayProjection>> {
+    return this.readCompiled("replay", capabilityId, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, context) as Promise<CompiledPlanReadResult<ActiveReplayProjection>>
+  }
+
+  private async readCompiled(entity: "capability" | "replay", capabilityId: CapabilityId, operation: typeof INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION | typeof INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, context: OperationContext): Promise<CompiledPlanReadResult<CapabilityProjection | ActiveReplayProjection>> {
+    const budget = this.remainingRequestBudget(context)
+    if (budget.kind === "cancelled" || budget.kind === "timed_out") return { kind: budget.kind, operationId: context.operationId, posture: unknownReadPosture() }
+    if (budget.kind === "invalid") return { kind: "denied", entity, entityId: capabilityId, stage: "request", denialKind: "invalid_context", message: budget.message }
+    const response = await this.send({ protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: this.nextRequestId(), operation, capability_id: capabilityId, credential: this.credential, deadline_ms: budget.milliseconds }, context, budget.milliseconds)
+    if (response === "cancelled" || response === "timed_out") return { kind: response, operationId: context.operationId, posture: unknownReadPosture() }
+    if (response === undefined) return { kind: "unavailable", entity, entityId: capabilityId, operation, reason: "transport_unavailable", message: this.processFailure ?? "the WORTH host process is unavailable" }
+    if (response.outcome === "compiled_read_not_found" && response.operation === operation && response.capability_id === capabilityId) return { kind: "not_found", entity, entityId: capabilityId }
+    if (response.outcome === "compiled_read_denied" && response.operation === operation && response.capability_id === capabilityId) return { kind: "denied", entity, entityId: capabilityId, stage: response.stage, denialKind: response.kind, message: response.message }
+    if (response.outcome === "unavailable" && response.operation === operation) return { kind: "unavailable", entity, entityId: capabilityId, operation, reason: response.reason, message: response.message }
+    if (operation === INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION && response.outcome === "capability_found") return mapCompiledCapability(capabilityId, response)
+    if (operation === INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION && response.outcome === "active_replay_found") return mapCompiledReplay(capabilityId, response)
+    return { kind: "unavailable", entity, entityId: capabilityId, operation, reason: "malformed_response", message: "the WORTH host returned a mismatched compiled-plan projection" }
   }
 
   public async close(): Promise<void> {
@@ -349,6 +378,7 @@ function unknownMutationPosture(): PartialEffectPosture {
 function mapEvidence(evidence: HostEvidence): WorthExecutionQueryEvidence {
   return { queryName: evidence.query_name, queryIdentity: evidence.query_identity, basisVersion: evidence.basis_version, projectedRecordCount: evidence.projected_record_count, projectedFieldCount: evidence.projected_field_count, basisReleased: evidence.basis_released }
 }
+
 
 function closeChildProcess(child: ChildProcessWithoutNullStreams): Promise<void> {
   if (child.exitCode !== null) return Promise.resolve()
