@@ -1,0 +1,16 @@
+{
+  "name": "@interface-compiler/gemini-adapter",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "tsx --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@google/genai": "^2.20.0",
+    "@interface-compiler/domain": "file:../domain"
+  }
+}

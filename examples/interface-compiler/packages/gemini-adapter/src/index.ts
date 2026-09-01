@@ -1,0 +1,6 @@
+export { createGeminiReasoningModelFromEnvironment } from "./config.js"
+export type { CreateGeminiModelInput, GeminiModelCreationResult } from "./config.js"
+export { GeminiReasoningModel } from "./model.js"
+export type { GeminiReasoningModelOptions, GeminiReasoningUsage } from "./model.js"
+export { GoogleGenAiTransport } from "./transport.js"
+export type { GeminiGenerateRequest, GeminiTransport, GeminiTransportResult, GeminiUsageMetadata } from "./transport.js"
