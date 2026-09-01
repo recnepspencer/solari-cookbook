@@ -6,6 +6,7 @@ import {
   type IdSource,
   type OperationContext,
   type SolariPort,
+  type SolariSessionLease,
   type SolariSessionRequest,
   type SolariSessionResult,
   type ValidationIssue,
@@ -41,12 +42,12 @@ class SolariPortAdapter implements SolariPort {
 
   async createSession(request: SolariSessionRequest, context: OperationContext): Promise<SolariSessionResult> {
     const requestIssues = validateSessionRequest(request)
-    if (requestIssues.length > 0) return this.finishCreation(context, { kind: "failed", message: failure("invalid_request", false).message, retryable: false }, "invalid_request")
-    if (validateOperationContext(context).length > 0) return this.finishCreation(context, { kind: "failed", message: failure("invalid_context", false).message, retryable: false }, "invalid_context")
-    if (request.freshness !== "fresh") return this.finishCreation(context, { kind: "failed", message: failure("freshness_unsupported", false).message, retryable: false }, "freshness_unsupported")
+    if (requestIssues.length > 0) return this.finishCreation(context, { kind: "failed", message: failure("invalid_request", false).message, retryable: false, effect: { kind: "not_started" } }, "invalid_request")
+    if (validateOperationContext(context).length > 0) return this.finishCreation(context, { kind: "failed", message: failure("invalid_context", false).message, retryable: false, effect: { kind: "not_started" } }, "invalid_context")
+    if (request.freshness !== "fresh") return this.finishCreation(context, { kind: "failed", message: failure("freshness_unsupported", false).message, retryable: false, effect: { kind: "not_started" } }, "freshness_unsupported")
 
     const startedAtMs = readClockMilliseconds(this.clock)
-    if (startedAtMs === undefined) return this.finishCreation(context, { kind: "failed", message: failure("clock_failure").message, retryable: true }, "clock_failure")
+    if (startedAtMs === undefined) return this.finishCreation(context, { kind: "failed", message: failure("clock_failure").message, retryable: true, effect: { kind: "not_started" } }, "clock_failure")
     const budget = createSessionResourceBudget(context, startedAtMs)
     const client = this.createClient()
     if (client.kind === "failed") return this.finishCreation(context, client.result, client.errorCode)
@@ -102,8 +103,8 @@ class SolariPortAdapter implements SolariPort {
     launchedBrowser = launchResult.value
     const browser = asSolariBrowser(launchedBrowser)
     if (browser === undefined) {
-      await finishUnownedCleanup(resourceRelease.close(launchedBrowser))
-      return this.finishCreation(context, { kind: "failed", message: failure("sdk_contract", false).message, retryable: false }, "sdk_contract")
+      await finishUnownedCleanup(cleanupWithReport(launchedBrowser))
+      return this.finishCreation(context, { kind: "failed", message: failure("sdk_contract", false).message, retryable: false, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } }, "sdk_contract")
     }
 
     const session = new SolariBrowserSession({
@@ -115,7 +116,8 @@ class SolariPortAdapter implements SolariPort {
       idSource: this.idSource,
       telemetry: this.telemetry,
     })
-    return this.finishCreation(context, { kind: "created", session }, undefined)
+    const lease: SolariSessionLease = { session, release: (releaseContext) => session.release(releaseContext) }
+    return this.finishCreation(context, { kind: "created", lease, effect: { kind: "completed" } }, undefined)
   }
 
   private createClient(): { kind: "created"; value: SolariSdkClient } | { kind: "failed"; result: SolariSessionResult; errorCode: SolariFailureCode } {
@@ -123,7 +125,7 @@ class SolariPortAdapter implements SolariPort {
       return { kind: "created", value: this.clientFactory(this.config) }
     } catch (error) {
       const classified = classifySolariFailure(error)
-      return { kind: "failed", result: { kind: "failed", message: classified.message, retryable: classified.retryable }, errorCode: classified.code }
+      return { kind: "failed", result: { kind: "failed", message: classified.message, retryable: classified.retryable, effect: { kind: "not_started" } }, errorCode: classified.code }
     }
   }
 
@@ -259,14 +261,14 @@ function isPurpose(value: unknown): value is SolariSessionRequest["purpose"] {
 }
 
 function sessionResultFromBoundary(result: Exclude<BoundedOperationResult<unknown>, { readonly kind: "completed" }>): SolariSessionResult {
-  if (result.kind === "cancelled") return { kind: "cancelled" }
-  if (result.kind === "timed_out") return { kind: "timed_out" }
-  if (result.kind === "denied") return result.reason === "budget_exhausted" ? { kind: "denied", reason: "budget_exhausted" } : { kind: "failed", message: failure("invalid_context", false).message, retryable: false }
+  if (result.kind === "cancelled") return { kind: "cancelled", effect: result.effect }
+  if (result.kind === "timed_out") return { kind: "timed_out", effect: result.effect }
+  if (result.kind === "denied") return result.reason === "budget_exhausted" ? { kind: "denied", reason: "budget_exhausted", effect: { kind: "not_started" } } : { kind: "failed", message: failure("invalid_context", false).message, retryable: false, effect: { kind: "not_started" } }
   if (result.kind === "failed") {
     const classified = classifySolariFailure(result.error)
-    return { kind: "failed", message: classified.message, retryable: classified.retryable }
+    return { kind: "failed", message: classified.message, retryable: classified.retryable, effect: result.effect }
   }
-  return { kind: "failed", message: failure("sdk_failure").message, retryable: true }
+  return { kind: "failed", message: failure("sdk_failure").message, retryable: true, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } }
 }
 
 function boundaryFailureCode(result: Exclude<BoundedOperationResult<unknown>, { readonly kind: "completed" }>): SolariFailureCode | undefined {

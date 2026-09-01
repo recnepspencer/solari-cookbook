@@ -1,8 +1,8 @@
 # Solari adapter
 
 This package is the live-browser boundary for Interface Compiler. It adapts
-the official `@solarisdk/browser` client to the neutral domain `SolariPort`
-and `SolariSession` contracts. It does not store capabilities, replay
+the official `@solarisdk/browser` client to the neutral domain `SolariPort`,
+`SolariSession`, and `SolariSessionLease` contracts. It does not store capabilities, replay
 lineage, executions, or evidence records.
 
 ## Setup
@@ -28,16 +28,17 @@ test suite makes no live or paid request.
 
 Session creation follows the cookbook pattern: a fresh `Solari` client launches
 with `recording: true`, the returned Playwright-compatible browser creates
-pages, and cleanup calls `browser.close()` followed by `solari.close()`.
-Cleanup is idempotent and is also started when cancellation or a deadline
-crosses an operation. A browser action that was interrupted returns an
-`unknown` partial-effect posture; the adapter never guesses whether the
-remote action completed.
+pages, and the returned lease releases it with `browser.close()` followed by
+`solari.close()`. Lease release is idempotent and is also started when
+cancellation or a deadline crosses an operation. A browser action that was
+interrupted returns an `unknown` partial-effect posture; the adapter never
+guesses whether the remote action completed. All port, session, evidence, and
+release results expose their typed effect posture.
 
 `captureEvidence({ kind: "session_recording" })` releases the browser, polls
 the SDK replay URL up to ten times with the cookbook's three-second upload
 interval, and returns the actual Solari URL plus an `EvidenceId` from the
-injected id source. Call it before ordinary close when a recording receipt is
+injected id source. Call it before lease release when a recording receipt is
 required. Screenshot and snapshot capture are explicitly reported as
 unsupported until a real artifact owner is provided; the adapter does not
 embed bytes or invent references. The current `SolariSession` contract has no

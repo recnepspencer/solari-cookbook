@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import type { ObservationId } from "@interface-compiler/domain"
+import type { EvidenceId, ObservationId } from "@interface-compiler/domain"
 import { context, createWorld, executeStepAt, sessionRequest } from "./fake-solari.js"
 
 test("observation and replay steps use the Playwright-compatible Solari page surface", async () => {
@@ -11,7 +11,7 @@ test("observation and replay steps use the Playwright-compatible Solari page sur
   const created = await world.port.createSession(sessionRequest(), operationContext)
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
-  const session = created.session
+  const session = created.lease.session
 
   const observed = await session.observe(operationContext)
   assert.equal(observed.kind, "observed")
@@ -33,8 +33,8 @@ test("observation and replay steps use the Playwright-compatible Solari page sur
   assert.deepEqual(navigated, { kind: "completed", effect: { kind: "completed" } })
   assert.deepEqual(world.browser.page.gotoValues, ["https://shop.test/cart"])
 
-  const closed = await session.close(operationContext)
-  assert.deepEqual(closed, { kind: "closed" })
+  const closed = await created.lease.release(operationContext)
+  assert.deepEqual(closed, { kind: "closed", sessionId: "solari.session.test", effect: { kind: "completed" } })
 })
 
 test("navigation outside the application origin is denied before the page navigates and retains a recording receipt", async () => {
@@ -44,7 +44,7 @@ test("navigation outside the application origin is denied before the page naviga
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await executeStepAt(created.session, 7, { type: "navigate", url: "https://outside.example/cart" }, operationContext)
+  const result = await executeStepAt(created.lease.session, 7, { type: "navigate", url: "https://outside.example/cart" }, operationContext)
   assert.equal(result.kind, "failed")
   if (result.kind !== "failed") throw new Error("expected a step failure")
   assert.equal(result.failure.kind, "step_failed")
@@ -63,7 +63,7 @@ test("navigation containing credentials is denied even when its origin matches",
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await executeStepAt(created.session, 8, { type: "navigate", url: "https://user:secret@shop.test/private" }, operationContext)
+  const result = await executeStepAt(created.lease.session, 8, { type: "navigate", url: "https://user:secret@shop.test/private" }, operationContext)
   assert.equal(result.kind, "failed")
   if (result.kind !== "failed") throw new Error("expected a step failure")
   assert.equal(result.failure.kind, "step_failed")
@@ -79,7 +79,7 @@ test("read steps are rejected until the domain port has an output carrier", asyn
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await executeStepAt(created.session, 9, {
+  const result = await executeStepAt(created.lease.session, 9, {
     type: "read",
     target: { semanticDescription: "order number" },
     outputKey: "orderNumber",
@@ -100,7 +100,7 @@ test("session recording evidence is an SDK replay URL receipt and unsupported ar
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const receipt = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  const receipt = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
   assert.deepEqual(receipt, {
     kind: "captured",
     reference: {
@@ -108,15 +108,17 @@ test("session recording evidence is an SDK replay URL receipt and unsupported ar
       kind: "session_recording",
       externalRef: "https://replay.test/session/receipt",
     },
+    effect: { kind: "completed" },
   })
-  const repeated = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  const repeated = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
   assert.deepEqual(repeated, receipt)
 
-  const unsupported = await created.session.captureEvidence({ kind: "screenshot", observationId: "observation.not-used" as ObservationId }, operationContext)
+  const unsupported = await created.lease.session.captureEvidence({ kind: "screenshot", observationId: "observation.not-used" as ObservationId }, operationContext)
   assert.deepEqual(unsupported, {
     kind: "failed",
     message: "Solari can provide session recordings but not this evidence kind",
     retryable: false,
+    effect: { kind: "not_started" },
   })
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
@@ -135,7 +137,7 @@ test("recording receipt follows the SDK's asynchronous post-release replay avail
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  const result = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
   assert.equal(result.kind, "captured")
   if (result.kind !== "captured") throw new Error("expected a recording receipt")
   assert.equal(result.reference.externalRef, "https://replay.test/session/after-upload")
@@ -149,10 +151,54 @@ test("a positive evidence-byte budget admits a URL-only receipt without material
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  const result = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
   assert.equal(result.kind, "captured")
   if (result.kind !== "captured") throw new Error("expected a recording receipt")
   assert.equal(result.reference.externalRef, "https://replay.test/session/receipt")
+  assert.equal(world.browser.closeCalls, 1)
+  assert.equal(world.client.closeCalls, 1)
+})
+
+test("evidence ID allocation failure after replay lookup reports an unknown effect", async () => {
+  const world = createWorld()
+  let replayLookedUp = false
+  world.client.replayBehavior = async () => {
+    replayLookedUp = true
+    return { url: "https://replay.test/session/id-failure" }
+  }
+  world.ids.nextEvidenceId = () => {
+    assert.equal(replayLookedUp, true)
+    throw new Error("id source failed")
+  }
+  const operationContext = context(world.clock)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+
+  const result = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  assert.deepEqual(result, { kind: "failed", message: "Solari adapter could not allocate a domain receipt id", retryable: false, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
+  assert.equal(world.browser.closeCalls, 1)
+  assert.equal(world.client.closeCalls, 1)
+})
+
+test("blank evidence IDs after replay lookup report an unknown effect", async () => {
+  const world = createWorld()
+  let replayLookedUp = false
+  world.client.replayBehavior = async () => {
+    replayLookedUp = true
+    return { url: "https://replay.test/session/blank-id" }
+  }
+  world.ids.nextEvidenceId = () => {
+    assert.equal(replayLookedUp, true)
+    return "" as EvidenceId
+  }
+  const operationContext = context(world.clock)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+
+  const result = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  assert.deepEqual(result, { kind: "failed", message: "Solari adapter could not allocate a domain receipt id", retryable: false, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
 })

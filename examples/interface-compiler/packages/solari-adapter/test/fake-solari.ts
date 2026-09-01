@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createApplication } from "@interface-compiler/domain"
 import type {
   Application,
   ApplicationId,
@@ -287,11 +288,13 @@ export function createWorld(client = new FakeClient()): AdapterWorld {
 }
 
 export function application(): Application {
-  return {
+  const result = createApplication({
     id: branded<ApplicationId>("application.shop"),
     name: "Shop",
     baseUrl: "https://shop.test/",
-  }
+  })
+  if (!result.ok) throw new Error("test application construction failed")
+  return result.value
 }
 
 export function sessionRequest(freshness: SolariSessionRequest["freshness"] = "fresh"): SolariSessionRequest {
@@ -316,6 +319,11 @@ export function context(
     budget: {
       maxWallClockMs: deadlineMs,
       ...overrides,
+    },
+    admission: {
+      maxInFlight: 1,
+      maxQueued: 0,
+      overflow: "reject",
     },
   }
 }

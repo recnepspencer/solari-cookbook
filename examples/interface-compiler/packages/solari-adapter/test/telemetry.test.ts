@@ -12,7 +12,7 @@ test("telemetry records only redacted operation facts when an SDK call fails", a
   world.browser.page.locatorValue.fillBehavior = async () => {
     throw new Error("raw password=secret-value url=https://shop.test/private")
   }
-  const result = await executeStepAt(created.session, 3, {
+  const result = await executeStepAt(created.lease.session, 3, {
     type: "fill",
     target: { semanticDescription: "private field", selector: "#password" },
     value: "secret-value",
@@ -35,10 +35,10 @@ test("malformed evidence kinds never enter redacted telemetry", async () => {
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const malformed = await created.session.captureEvidence({ kind: "https://secret.example/evidence" } as never, operationContext)
-  assert.deepEqual(malformed, { kind: "failed", message: "Solari browser request is invalid", retryable: false })
+  const malformed = await created.lease.session.captureEvidence({ kind: "https://secret.example/evidence" } as never, operationContext)
+  assert.deepEqual(malformed, { kind: "failed", message: "Solari browser request is invalid", retryable: false, effect: { kind: "not_started" } })
   const serializedTelemetry = JSON.stringify(world.telemetry.events)
   assert.equal(serializedTelemetry.includes("https://secret.example/evidence"), false)
   assert.equal(world.telemetry.events.some((event) => event.errorCode === "invalid_request" && event.evidenceKind === undefined), true)
-  await created.session.close(operationContext)
+  await created.lease.release(operationContext)
 })

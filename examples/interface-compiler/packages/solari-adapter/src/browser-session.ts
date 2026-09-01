@@ -165,42 +165,42 @@ export class SolariBrowserSession implements SolariSession {
 
     const releaseResult = await this.releaseForRecording(context)
     if (releaseResult.kind !== "completed") {
-      await this.close(context)
+      await this.release(context)
       return evidenceResultFromBoundary(releaseResult)
     }
 
     const recordingUrl = await this.pollRecordingUrl(context)
     if (recordingUrl.kind !== "completed") {
-      await this.close(context)
-      return evidenceResultFromBoundary(recordingUrl, true)
+      await this.release(context)
+      return evidenceResultFromBoundary(recordingUrl, true, { kind: "unknown", recovery: "owner_reconciliation_required" })
     }
 
     let evidenceId: EvidenceId
     try {
       evidenceId = this.idSource.nextEvidenceId()
     } catch {
-      await this.close(context)
+      await this.release(context)
       this.emit(context, "capture_evidence", "failed", "id_source_failure", undefined, "session_recording")
-      return evidenceFailure("id_source_failure", false)
+      return evidenceFailure("id_source_failure", false, { kind: "unknown", recovery: "owner_reconciliation_required" })
     }
     if (typeof evidenceId !== "string" || evidenceId.trim() === "") {
-      await this.close(context)
+      await this.release(context)
       this.emit(context, "capture_evidence", "failed", "id_source_failure", undefined, "session_recording")
-      return evidenceFailure("id_source_failure", false)
+      return evidenceFailure("id_source_failure", false, { kind: "unknown", recovery: "owner_reconciliation_required" })
     }
 
-    const closeResult = await this.close(context)
+    const closeResult = await this.release(context)
     if (closeResult.kind !== "closed") {
       this.emit(context, "capture_evidence", "failed", "close_failed", undefined, "session_recording")
-      return evidenceFailure("close_failed")
+      return evidenceFailure("close_failed", false, closeResult.effect)
     }
     this.recordingReference = recordingUrl.value
     this.recordingEvidenceId = evidenceId
     this.emit(context, "capture_evidence", "completed", undefined, undefined, "session_recording")
-    return { kind: "captured", reference: { evidenceId, kind: "session_recording", externalRef: recordingUrl.value } }
+    return { kind: "captured", reference: { evidenceId, kind: "session_recording", externalRef: recordingUrl.value }, effect: { kind: "completed" } }
   }
 
-  close(context: OperationContext): Promise<SolariCloseResult> {
+  release(context: OperationContext): Promise<SolariCloseResult> {
     if (this.closeResultPromise === undefined) {
       this.budget.closed = true
       this.closeResultPromise = this.releaseResources()
@@ -274,10 +274,10 @@ export class SolariBrowserSession implements SolariSession {
       nowMs,
       readNowMs: () => readClockMilliseconds(this.clock),
       operation,
-      onBoundary: () => this.close(context).then(() => undefined),
+      onBoundary: () => this.release(context).then(() => undefined),
     })
     this.emitBoundaryResult(context, telemetryOperation, result, stepType, evidenceKind, replayLookup)
-    if (result.kind === "cancelled" || result.kind === "timed_out") void this.close(context)
+    if (result.kind === "cancelled" || result.kind === "timed_out") void this.release(context)
     return result
   }
 
@@ -324,6 +324,7 @@ export class SolariBrowserSession implements SolariSession {
     return {
       kind: "captured",
       reference: { evidenceId: this.recordingEvidenceId, kind: "session_recording", externalRef: this.recordingReference },
+      effect: { kind: "completed" },
     }
   }
 
@@ -349,8 +350,8 @@ export class SolariBrowserSession implements SolariSession {
     } catch (error) {
       clientError = error
     }
-    if (browserError !== undefined || clientError !== undefined) return { kind: "close_failed", message: failure("close_failed").message, retryable: false }
-    return { kind: "closed" }
+    if (browserError !== undefined || clientError !== undefined) return { kind: "close_failed", message: failure("close_failed").message, retryable: false, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } }
+    return { kind: "closed", sessionId: this.sessionId, effect: { kind: "completed" } }
   }
 
   private async releaseBrowserOnce(): Promise<void> {
@@ -415,7 +416,7 @@ function admissionFailureCode(admission: Exclude<WorkflowAdmission, "acquired">)
 
 function observationResultFromAdmission(admission: Exclude<WorkflowAdmission, "acquired">): SolariObservationResult {
   const code = admissionFailureCode(admission)
-  return { kind: "failed", message: failure(code, false).message, retryable: false }
+  return { kind: "failed", message: failure(code, false).message, retryable: false, effect: { kind: "not_started" } }
 }
 
 function stepResultFromAdmission(admission: Exclude<WorkflowAdmission, "acquired">, stepIndex: number): SolariStepResult {
@@ -443,33 +444,33 @@ function failureCode(error: unknown): SolariFailureCode {
 }
 
 function observationFromValidation(result: ReturnType<typeof normalizeObservation>): SolariObservationResult {
-  return result.ok ? { kind: "observed", observation: result.value } : { kind: "failed", message: "Solari observation was invalid", retryable: false }
+  return result.ok ? { kind: "observed", observation: result.value, effect: { kind: "completed" } } : { kind: "failed", message: "Solari observation was invalid", retryable: false, effect: { kind: "not_started" } }
 }
 
 function observationResultFromBoundary<T>(result: BoundedOperationResult<T>): SolariObservationResult {
-  if (result.kind === "cancelled") return { kind: "cancelled" }
-  if (result.kind === "timed_out") return { kind: "timed_out" }
+  if (result.kind === "cancelled") return { kind: "cancelled", effect: { kind: "not_started" } }
+  if (result.kind === "timed_out") return { kind: "timed_out", effect: { kind: "not_started" } }
   if (result.kind === "failed") {
     const classified = classifySolariFailure(result.error)
-    return { kind: "failed", message: classified.message, retryable: classified.retryable }
+    return { kind: "failed", message: classified.message, retryable: classified.retryable, effect: { kind: "not_started" } }
   }
-  if (result.kind === "denied") return { kind: "failed", message: failure(result.reason === "budget_exhausted" ? "budget_exhausted" : result.reason === "session_closed" ? "session_closed" : result.reason === "invalid_context" ? "invalid_context" : "session_busy", false).message, retryable: false }
-  return { kind: "failed", message: "Solari observation was not completed", retryable: false }
+  if (result.kind === "denied") return { kind: "failed", message: failure(result.reason === "budget_exhausted" ? "budget_exhausted" : result.reason === "session_closed" ? "session_closed" : result.reason === "invalid_context" ? "invalid_context" : "session_busy", false).message, retryable: false, effect: { kind: "not_started" } }
+  return { kind: "failed", message: "Solari observation was not completed", retryable: false, effect: { kind: "not_started" } }
 }
 
-function evidenceResultFromBoundary<T>(result: BoundedOperationResult<T>, replayLookup = false): SolariEvidenceResult {
-  if (result.kind === "cancelled") return { kind: "cancelled" }
-  if (result.kind === "timed_out") return { kind: "timed_out" }
+function evidenceResultFromBoundary<T>(result: BoundedOperationResult<T>, replayLookup = false, fallbackEffect: PartialEffectPosture = { kind: "not_started" }): SolariEvidenceResult {
+  if (result.kind === "cancelled") return { kind: "cancelled", effect: result.effect.kind === "not_started" ? fallbackEffect : result.effect }
+  if (result.kind === "timed_out") return { kind: "timed_out", effect: result.effect.kind === "not_started" ? fallbackEffect : result.effect }
   if (result.kind === "failed") {
     const classified = classifySolariFailure(result.error, replayLookup)
-    return evidenceFailure(classified.code, classified.retryable)
+    return evidenceFailure(classified.code, classified.retryable, result.effect.kind === "not_started" ? fallbackEffect : result.effect)
   }
-  if (result.kind === "denied") return evidenceFailure(result.reason === "budget_exhausted" ? "budget_exhausted" : result.reason === "session_closed" ? "session_closed" : result.reason === "invalid_context" ? "invalid_context" : "session_busy", false)
-  return evidenceFailure("sdk_failure")
+  if (result.kind === "denied") return evidenceFailure(result.reason === "budget_exhausted" ? "budget_exhausted" : result.reason === "session_closed" ? "session_closed" : result.reason === "invalid_context" ? "invalid_context" : "session_busy", false, fallbackEffect)
+  return evidenceFailure("sdk_failure", true, fallbackEffect)
 }
 
-function evidenceFailure(code: SolariFailureCode, retryable = failure(code).retryable): SolariEvidenceResult {
-  return { kind: "failed", message: failure(code, retryable).message, retryable }
+function evidenceFailure(code: SolariFailureCode, retryable = failure(code).retryable, effect: PartialEffectPosture = { kind: "not_started" }): SolariEvidenceResult {
+  return { kind: "failed", message: failure(code, retryable).message, retryable, effect }
 }
 
 function waitForRecordingRetry(): Promise<void> {

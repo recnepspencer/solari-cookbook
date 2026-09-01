@@ -12,7 +12,7 @@ test("cancellation during a pending browser action returns unknown effect postur
 
   const pendingClick = delayed<void>()
   world.browser.page.locatorValue.clickBehavior = () => pendingClick.promise
-  const stepPromise = executeStepAt(created.session, 2, {
+  const stepPromise = executeStepAt(created.lease.session, 2, {
     type: "click",
     target: { semanticDescription: "Add to cart", role: "button" },
   }, operationContext)
@@ -25,7 +25,7 @@ test("cancellation during a pending browser action returns unknown effect postur
     safePoint: "after_step",
     effect: { kind: "unknown", recovery: "owner_reconciliation_required" },
   })
-  await created.session.close(operationContext)
+  await created.lease.release(operationContext)
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
   pendingClick.resolve()
@@ -40,7 +40,7 @@ test("deadline during a pending browser action returns unknown effect posture an
 
   const pendingClick = delayed<void>()
   world.browser.page.locatorValue.clickBehavior = () => pendingClick.promise
-  const stepPromise = executeStepAt(created.session, 3, {
+  const stepPromise = executeStepAt(created.lease.session, 3, {
     type: "click",
     target: { semanticDescription: "Add to cart", role: "button" },
   }, operationContext)
@@ -51,7 +51,7 @@ test("deadline during a pending browser action returns unknown effect posture an
     kind: "timed_out",
     effect: { kind: "unknown", recovery: "owner_reconciliation_required" },
   })
-  await created.session.close(operationContext)
+  await created.lease.release(operationContext)
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
   pendingClick.resolve()
@@ -64,12 +64,12 @@ test("browser-action budget denial occurs before the second SDK action", async (
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const first = await executeStepAt(created.session, 0, {
+  const first = await executeStepAt(created.lease.session, 0, {
     type: "click",
     target: { semanticDescription: "Add to cart", role: "button" },
   }, operationContext)
   assert.deepEqual(first, { kind: "completed", effect: { kind: "completed" } })
-  const second = await executeStepAt(created.session, 1, {
+  const second = await executeStepAt(created.lease.session, 1, {
     type: "click",
     target: { semanticDescription: "Buy now", role: "button" },
   }, operationContext)
@@ -91,10 +91,10 @@ test("zero evidence budget denies receipt capture without claiming an artifact",
   assert.equal(created.kind, "created")
   if (created.kind !== "created") throw new Error("expected a session")
 
-  const result = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
-  assert.deepEqual(result, { kind: "failed", message: "Solari resource budget is exhausted", retryable: false })
+  const result = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  assert.deepEqual(result, { kind: "failed", message: "Solari resource budget is exhausted", retryable: false, effect: { kind: "not_started" } })
   assert.equal(world.browser.closeCalls, 0)
-  await created.session.close(operationContext)
+  await created.lease.release(operationContext)
 })
 
 test("concurrent evidence workflows are serialized and only the owner closes the session", async () => {
@@ -110,11 +110,11 @@ test("concurrent evidence workflows are serialized and only the owner closes the
     attempts += 1
     return replayLookup.promise
   }
-  const firstPromise = created.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  const firstPromise = created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
   await new Promise<void>((resolve) => setImmediate(resolve))
 
-  const second = await created.session.captureEvidence({ kind: "session_recording" }, operationContext)
-  assert.deepEqual(second, { kind: "failed", message: "Solari session already has an operation in flight", retryable: false })
+  const second = await created.lease.session.captureEvidence({ kind: "session_recording" }, operationContext)
+  assert.deepEqual(second, { kind: "failed", message: "Solari session already has an operation in flight", retryable: false, effect: { kind: "not_started" } })
   assert.equal(attempts, 1)
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 0)
