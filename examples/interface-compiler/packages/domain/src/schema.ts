@@ -82,7 +82,7 @@ export function createSchema<T>(input: { readonly name: string; readonly json: J
   if (!isNonEmptyText(input.name)) issues.push(issue("name", "schema name must not be empty"))
   issues.push(...validateJsonSchema(input.json))
   if (issues.length > 0) return invalid(...issues)
-  return valid({ name: input.name, json: input.json, [schemaOutputBrand]: undefined as T })
+  return valid(Object.freeze({ name: input.name, json: copyJsonSchema(input.json), [schemaOutputBrand]: undefined as T }))
 }
 
 export type Condition =
@@ -125,7 +125,52 @@ export function validateCondition(condition: unknown, path = "condition"): reado
 }
 
 export function createCondition<T extends Condition>(condition: T): ValidationResult<T> {
-  return isCondition(condition) ? valid(condition) : invalid(issue("condition", "condition kind or payload is not recognized"))
+  return isCondition(condition) ? valid(copyCondition(condition) as T) : invalid(issue("condition", "condition kind or payload is not recognized"))
+}
+
+/** Copies the JSON-schema language this domain owns, preserving no caller references. */
+export function copyJsonSchema(schema: JsonSchema): JsonSchema {
+  const metadata = {
+    ...(schema.title === undefined ? {} : { title: schema.title }),
+    ...(schema.description === undefined ? {} : { description: schema.description }),
+    ...(schema.enum === undefined ? {} : { enum: Object.freeze(schema.enum.map(copyJsonValue)) }),
+    ...(schema.const === undefined ? {} : { const: copyJsonValue(schema.const) }),
+  }
+  switch (schema.type) {
+    case "string": return Object.freeze({ ...metadata, type: "string" as const, ...(schema.minLength === undefined ? {} : { minLength: schema.minLength }), ...(schema.maxLength === undefined ? {} : { maxLength: schema.maxLength }), ...(schema.pattern === undefined ? {} : { pattern: schema.pattern }) })
+    case "number": return Object.freeze({ ...metadata, type: "number" as const, ...(schema.minimum === undefined ? {} : { minimum: schema.minimum }), ...(schema.maximum === undefined ? {} : { maximum: schema.maximum }) })
+    case "integer": return Object.freeze({ ...metadata, type: "integer" as const, ...(schema.minimum === undefined ? {} : { minimum: schema.minimum }), ...(schema.maximum === undefined ? {} : { maximum: schema.maximum }) })
+    case "boolean": return Object.freeze({ ...metadata, type: "boolean" as const })
+    case "null": return Object.freeze({ ...metadata, type: "null" as const })
+    case "array": return Object.freeze({ ...metadata, type: "array" as const, ...(schema.items === undefined ? {} : { items: copyJsonSchema(schema.items) }), ...(schema.minItems === undefined ? {} : { minItems: schema.minItems }), ...(schema.maxItems === undefined ? {} : { maxItems: schema.maxItems }) })
+    case "object": {
+      const properties = schema.properties === undefined
+        ? undefined
+        : Object.freeze(Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, copyJsonSchema(value)])))
+      return Object.freeze({ ...metadata, type: "object" as const, ...(properties === undefined ? {} : { properties }), ...(schema.required === undefined ? {} : { required: Object.freeze([...schema.required]) }), ...(schema.additionalProperties === undefined ? {} : { additionalProperties: typeof schema.additionalProperties === "boolean" ? schema.additionalProperties : copyJsonSchema(schema.additionalProperties) }) })
+    }
+    default: return Object.freeze({ ...metadata })
+  }
+}
+
+/** Copies the closed semantic-condition language this domain owns. */
+export function copyCondition(condition: Condition): Condition {
+  switch (condition.kind) {
+    case "url_matches": return Object.freeze({ kind: condition.kind, pattern: condition.pattern })
+    case "text_present": return Object.freeze({ kind: condition.kind, text: condition.text })
+    case "interactable_present": return Object.freeze({ kind: condition.kind, semanticDescription: condition.semanticDescription })
+    case "cart_count_increased": return Object.freeze({ kind: condition.kind, baselineKey: condition.baselineKey })
+    case "product_in_cart": return Object.freeze({ kind: condition.kind, productRef: condition.productRef })
+    case "authentication_required": return Object.freeze({ kind: condition.kind })
+    case "checkout_started": return Object.freeze({ kind: condition.kind })
+    case "custom": return Object.freeze({ kind: condition.kind, name: condition.name, ...(condition.value === undefined ? {} : { value: copyJsonValue(condition.value) }) })
+  }
+}
+
+function copyJsonValue(value: JsonValue): JsonValue {
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return Object.freeze(value.map(copyJsonValue))
+  return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, child]) => [key, copyJsonValue(child)])))
 }
 
 export function isJsonValue(value: unknown): value is JsonValue {

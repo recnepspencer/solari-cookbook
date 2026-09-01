@@ -65,3 +65,18 @@ fn unknown_capability_is_not_inferred_from_replay_or_application_identity() {
         ));
     }
 }
+
+#[test]
+fn configured_portal_origin_changes_only_private_replay_implementation() {
+    let host = InterfaceCompilerWorthHost::in_memory_demo_at("https://demo.example.test").unwrap();
+    let replay = host.read_active_replay(InterfaceCompilerCompiledReadRequest::new(
+        DEMO_CAPABILITY_ID,
+        DEMO_CREDENTIAL,
+        DEFAULT_REQUEST_TIMEOUT,
+    ));
+    let InterfaceCompilerActiveReplayReadOutcome::Found { projection, .. } = replay else {
+        panic!("configured replay should be projected")
+    };
+    assert!(projection.steps_json.contains("https://demo.example.test/?page=mail"));
+    assert!(!projection.steps_json.contains("127.0.0.1:4310"));
+}

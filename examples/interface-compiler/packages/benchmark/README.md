@@ -150,8 +150,8 @@ const input: BenchmarkComparisonInput = {
     evidenceIds: replayVerificationEvidenceIds,
   },
   pricing: {
-    direct: { inputUsdPerToken, outputUsdPerToken },
-    compiled: { inputUsdPerToken, outputUsdPerToken },
+    direct: { inputMicrocentsPerToken, outputMicrocentsPerToken },
+    compiled: { inputMicrocentsPerToken, outputMicrocentsPerToken },
   },
   compilation: {
     task,
@@ -181,7 +181,7 @@ Each `directRecord` or `compiledRecord` must contain:
     recovery: { status: "not_required" }, // or { status: "completed" }
     safety: { kind: "safe_completion" },  // or a matching stopped_at_boundary stop
     usage,          // optional; if supplied, exactly matches execution.metrics
-    modelCostUsd,   // optional; do not pass together with pricing for this side
+    modelCostMicrocents,   // optional; do not pass together with pricing for this side
   },
 }
 ```

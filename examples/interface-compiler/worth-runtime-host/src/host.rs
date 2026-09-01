@@ -22,6 +22,7 @@ use crate::application::{
 
 mod bootstrap;
 mod compiled_plan_read;
+mod demo_fixture;
 pub use compiled_plan_read::*;
 mod execution;
 mod execution_admission;
@@ -33,23 +34,18 @@ pub use replay_recovery::*;
 mod settlement;
 mod settlement_query;
 mod settlement_support;
-pub use settlement::*;
-mod synchronous_future;
 pub use execution_contract::*;
-use synchronous_future::block_on;
+use pollster::block_on;
+pub use settlement::*;
 
 pub const DEMO_APPLICATION_ID: &str = "application.enron-online";
 pub const DEMO_APPLICATION_REVISION: u64 = 8;
 pub const DEMO_APPLICATION_NAME: &str = "Enron Online";
 pub const DEMO_APPLICATION_BASE_URL: &str = "http://127.0.0.1:4310";
-/// The primary demo capability is deliberately stage-trade: it is the replay
-/// that changes when the legacy page changes, while its public API is stable.
-pub const DEMO_CAPABILITY_ID: &str = "capability.enron.trades.stage-trade";
-pub const DEMO_REPLAY_ID: &str = "replay.enron.trades.stage-trade.v1";
-pub const ENRON_RESOLVE_CONTRACT_CAPABILITY_ID: &str = "capability.enron.market.resolve-contract";
-pub const ENRON_RESOLVE_CONTRACT_REPLAY_ID: &str = "replay.enron.market.resolve-contract.v1";
-pub const ENRON_RISK_APPROVAL_CAPABILITY_ID: &str = "capability.enron.risk.request-approval";
-pub const ENRON_RISK_APPROVAL_REPLAY_ID: &str = "replay.enron.risk.request-approval.v1";
+pub const DEMO_APPLICATION_BASE_URL_ENV: &str = "ENRON_ONLINE_BASE_URL";
+/// The stable public API survives replacement of its cross-application replay.
+pub const DEMO_CAPABILITY_ID: &str = "capability.trades.ingest-incoming-trade";
+pub const DEMO_REPLAY_ID: &str = "replay.trades.ingest-incoming-trade.v1";
 pub const DEMO_CAPABILITY_REVISION: u64 = 4;
 pub const DEMO_REPLAY_REVISION: u64 = 1;
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
@@ -59,8 +55,6 @@ pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
 pub const DEMO_EVENT_JOURNAL_ID: &str = "event-journal.interface-compiler";
-pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"http://127.0.0.1:4310/"},{"type":"select","target":{"semanticDescription":"counterparty","role":"combobox","name":"Counterparty"},"value":"midwest-utility-17"},{"type":"fill","target":{"semanticDescription":"volume","role":"textbox","name":"Volume (MMBtu)"},"value":"50000"},{"type":"fill","target":{"semanticDescription":"legacy deal code","role":"textbox","name":"Legacy deal code"},"value":"NG-HH-2026-10"},{"type":"click","target":{"semanticDescription":"stage deal ticket","role":"button","name":"Add deal ticket to blotter"}},{"type":"assert","condition":{"kind":"text_present","text":"STAGED ET-NG-1042"}}]"#;
-pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":3,"runs":[{"id":"verification.enron.stage-trade.1","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.1"],"completedAt":"2026-09-01T01:00:00.000Z"},{"id":"verification.enron.stage-trade.2","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.2","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.2"],"completedAt":"2026-09-01T01:01:00.000Z"},{"id":"verification.enron.stage-trade.3","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.3","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.3"],"completedAt":"2026-09-01T01:02:00.000Z"}]}"#;
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";
@@ -172,6 +166,26 @@ type AdmittedDemoAuthentication =
         InterfaceCompilerSchema,
         DemoAuthenticationAdapter,
     >;
+
+fn demo_application_base_url_from_environment() -> Result<String, InterfaceCompilerHostSetupError> {
+    let configured = std::env::var(DEMO_APPLICATION_BASE_URL_ENV)
+        .unwrap_or_else(|_| DEMO_APPLICATION_BASE_URL.to_string());
+    validate_demo_application_base_url(configured)
+}
+
+fn validate_demo_application_base_url(value: String) -> Result<String, InterfaceCompilerHostSetupError> {
+    let base_url = value.trim().trim_end_matches('/');
+    if (!base_url.starts_with("http://") && !base_url.starts_with("https://"))
+        || base_url.len() <= "https://".len()
+        || base_url.contains(['\r', '\n', '"'])
+        || base_url.chars().any(char::is_whitespace)
+    {
+        return Err(InterfaceCompilerHostSetupError {
+            message: format!("{DEMO_APPLICATION_BASE_URL_ENV} must be a non-empty JSON-safe http(s) portal origin"),
+        });
+    }
+    Ok(base_url.to_string())
+}
 
 /// The live WORTH-backed host. It owns the WORTH runtime-local graph and the
 /// admitted authentication adapter; no graph handle or recovery handle is

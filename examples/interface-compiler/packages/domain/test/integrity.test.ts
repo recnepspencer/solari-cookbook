@@ -7,7 +7,7 @@ import {
   calculateBreakEvenCalls,
   calculateCompilationMetrics,
   calculateLifetimeEconomics,
-  calculateModelCostUsd,
+  calculateModelCostMicrocents,
   classifySafetyBoundary,
   completeReplayVerification,
   createApplication,
@@ -42,7 +42,7 @@ import {
   type ExecutionStart,
   type ExperimentDefinition,
   type JsonSchema,
-  type ModelPricingUsdPerToken,
+  type ModelPricingMicrocentsPerToken,
   type ModelUsage,
   type Observation,
   type OperationContext,
@@ -102,7 +102,7 @@ function receipt(idValue: string, sessionValue: string, evidenceValue: string): 
 function capabilityDefinition(): CapabilityDefinition {
   return {
     id: id<CapabilityId>("capability.add-to-cart"),
-    applicationId: id<ApplicationId>("application.walmart"),
+    applicationId: id<ApplicationId>("application.wholesale-catalog"),
     name: "AddToCart",
     description: "Add a selected product to the cart.",
     inputSchema: { type: "object", properties: { productRef: { type: "string" } }, required: ["productRef"] },
@@ -200,10 +200,10 @@ test("malformed runtime values fail closed without throwing", () => {
     createSchema<unknown>(malformed<{ name: string; json: JsonSchema }>({ name: "PropertiesDate", json: { type: "object", properties: new Date() as unknown as Record<string, JsonSchema> } })),
     createExecution(malformed<ExecutionStart>(null)),
     classifySafetyBoundary(malformed<SafetyBoundaryObservation>(null)),
-    calculateBreakEvenCalls(malformed<{ compileCostUsd: number; directCostPerCallUsd: number; compiledCostPerCallUsd: number }>(null)),
-    calculateCompilationMetrics(malformed<{ explorationCostUsd: number; verificationCostUsd: number }>(null)),
+    calculateBreakEvenCalls(malformed<{ compileCostMicrocents: number; directCostPerCallMicrocents: number; compiledCostPerCallMicrocents: number }>(null)),
+    calculateCompilationMetrics(malformed<{ explorationCostMicrocents: number; verificationCostMicrocents: number }>(null)),
     calculateLifetimeEconomics(malformed<CompilationMetrics>(null), 1),
-    calculateModelCostUsd(malformed<ModelUsage>(null), malformed<ModelPricingUsdPerToken>(null)),
+    calculateModelCostMicrocents(malformed<ModelUsage>(null), malformed<ModelPricingMicrocentsPerToken>(null)),
   ]
   assert.ok(results.every((result) => result.ok === false))
 
@@ -212,19 +212,19 @@ test("malformed runtime values fail closed without throwing", () => {
   assert.deepEqual(validateSafetySignal(malformed<SafetySignal>({ kind: "unknown" })), [{ path: "signal.kind", message: "safety signal kind is not recognized" }])
   assert.equal(validateSafetyStopResult({ kind: "safety_stop", terminal: true, nextAction: "human_required", reason: "order_placement" }).length > 0, true)
   assert.doesNotThrow(() => calculateLifetimeEconomics({
-    explorationCostUsd: 1,
-    verificationCostUsd: 1,
-    totalCompilationCostUsd: 2,
-    directAverageCostUsd: 2,
-    compiledAverageCostUsd: 1,
+    explorationCostMicrocents: 100000000,
+    verificationCostMicrocents: 100000000,
+    totalCompilationCostMicrocents: 200000000,
+    directAverageCostMicrocents: 200000000,
+    compiledAverageCostMicrocents: 100000000,
     breakEvenCalls: null,
   } as unknown as CompilationMetrics, 1))
   assert.equal(calculateLifetimeEconomics({
-    explorationCostUsd: 1,
-    verificationCostUsd: 1,
-    totalCompilationCostUsd: 2,
-    directAverageCostUsd: 2,
-    compiledAverageCostUsd: 1,
+    explorationCostMicrocents: 100000000,
+    verificationCostMicrocents: 100000000,
+    totalCompilationCostMicrocents: 200000000,
+    directAverageCostMicrocents: 200000000,
+    compiledAverageCostMicrocents: 100000000,
     breakEvenCalls: null,
   } as unknown as CompilationMetrics, 1).ok, false)
 
@@ -240,7 +240,7 @@ test("malformed runtime values fail closed without throwing", () => {
         outputTokens: 0,
         browserObservations: 0,
         browserActions: 0,
-        estimatedModelCostUsd: 0,
+        estimatedModelCostMicrocents: 0,
       },
     }),
   )

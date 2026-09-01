@@ -1,62 +1,29 @@
 # Worth adapter
 
-`@interface-compiler/worth-adapter` is the stateless TypeScript boundary to
-the authoritative WORTH runtime.
+`@interface-compiler/worth-adapter` is the transport boundary to the
+authoritative WORTH runtime.
 
-The package exposes `createWorthAdapter(binding)`. The supplied
-`WorthQueryHostFacadeBinding` must identify the public
-`worth-query-host::facade` boundary and contain a `WorthRuntimePort` implemented
-by an integration host. Reads return WORTH-owned projections, including the
-aggregate compilation-metrics projection; commands and event publication are
-forwarded to WORTH, where currentness, authorization, lifecycle transitions,
-execution ownership, lineage, evidence, and durable event state remain
-authoritative. The adapter does not calculate break-even or lifetime economics
-from local observations; those values are returned only when WORTH has an
-authoritative measured projection for them.
+Its only runtime surface is `InterfaceCompilerWorthClient` and narrow ports
+derived from that client for the work the Interface Compiler worker actually
+performs: application and compiled-plan reads, execution admission and
+settlement, identity-bound telemetry publication, and replay recovery. Each
+request crosses the checked-in WORTH process boundary; WORTH decides
+currentness, authorization, lifecycle transitions, execution ownership,
+lineage, evidence, and terminal metrics.
 
-This package intentionally contains no in-memory registry, cache, reducer,
-event bus, persistence, replay engine, or projection store. The complete-port
-`WorthQueryHostFacadeBinding` remains closed unless an integration supplies all
-of `WorthRuntimePort`; its `boundary` field is routing metadata, not an
-attestation token, and a marker-only object is not a valid production binding.
+The package intentionally contains no in-memory registry, cache, reducer,
+event bus, persistence, replay engine, or projection store. The client owns
+only child-process transport and request correlation. It returns typed
+unavailable and denied outcomes for operations the demo host cannot perform;
+there is no broader facade that the live host does not implement.
 
-The package also exposes the separate app-specific
-`InterfaceCompilerWorthClient`, `createWorthApplicationReadAdapter`, and
-`createWorthStartExecutionAdapter`. That client crosses the checked-in demo's
-explicit process boundary and supports only the WORTH-backed `readApplication`
-and `startExecution` vertical slices, plus the narrow
-`WorthExecutionSettlementPort` for seeded compatibility, and the
-orchestrator-specific `WorthExecutionRuntimePort` for arbitrary execution
-admission, settlement, and identity-bound telemetry publication. It returns typed
-unavailable/denied outcomes for the boundary without pretending to implement
-the complete port. The client owns only process transport and request
-correlation; it has no local authority or WORTH recovery-handle serialization.
-Replay degradation/recovery/publication, evidence recording, and standalone
-execution/benchmark reads remain explicitly unavailable.
-
-The app-specific protocol is `interface-compiler.worth-host.v2`. Capability
+The app-specific protocol is `interface-compiler.worth-host.v1`. Capability
 and active-replay reads include typed compilation provenance. `synthetic_seed`
-means the replay may be executed but cannot support compilation economics;
-`measured` carries the exact WORTH discovery and verification execution IDs
-that a reporting caller must re-authorize as terminal projections. The client
-does not infer provenance from descriptions and rejects malformed, empty,
-duplicate, or overlapping measured identity sets.
+means the replay is runnable for this demo but cannot support compilation
+economics; `measured` carries the exact WORTH discovery and verification
+execution identities required for reporting.
 
-Runtime settlement returns the authoritative
-`WorthTerminalExecutionProjection`, including WORTH-journal-derived model
-calls, tokens, browser observations/actions, estimated model cost, timestamps,
-wall clock, and terminal outcome. The response mapper validates the metric
-window and reconstructs safety stops through the domain safety classifier; it
-does not retain an event ledger or calculate counters locally.
-See [the bridge evidence](../../WORTH_BRIDGE_EVIDENCE.md) for the exact
-live/unavailable surface and remaining prerequisites.
-
-A future app-specific typed host can implement the port without changing its
-consumers, provided it enters WORTH through the supported public facade and
-preserves the shared typed outcomes. The command helpers are convenience names
-for the shared `WorthCommand` union. They do not apply transitions locally.
-Helpers for existing replay, verification, capability, and execution records
-require the expected current entity revision; callers must obtain that revision
-from a WORTH projection and provide an `OperationContext` with bounded
-admission. Replay failure and verification outcomes remain WORTH decisions, and
-consumers receive the resulting typed submission or read projection.
+Runtime settlement returns WORTH's terminal execution projection, including
+journal-derived model calls, tokens, browser observations/actions, cost,
+timestamps, wall clock, and terminal outcome. The client validates protocol
+shape at the boundary but never keeps a local authority ledger.

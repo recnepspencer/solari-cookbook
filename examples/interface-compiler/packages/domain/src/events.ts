@@ -10,7 +10,7 @@ export interface InterfaceCompilerEventMap {
     readonly role: "explorer" | "verifier" | "consumer"
     readonly inputTokens: number
     readonly outputTokens: number
-    readonly estimatedModelCostUsd: number
+    readonly estimatedModelCostMicrocents: number
   }
   "browser.action": { readonly executionId: ExecutionId; readonly sessionId: SessionId; readonly actionType: ReplayStep["type"] }
   "direct.completed": { readonly executionId: ExecutionId; readonly outcome: Exclude<Execution["status"], "running"> }
@@ -48,7 +48,7 @@ export type InterfaceCompilerEvent = {
     readonly idempotencyKey: string
     readonly recovery: EventRecovery
     readonly integrity: EventIntegrity
-    readonly estimatedModelCostUsd?: number
+    readonly estimatedModelCostMicrocents?: number
     readonly type: Type
     readonly payload: InterfaceCompilerEventMap[Type]
   }

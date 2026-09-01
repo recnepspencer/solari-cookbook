@@ -1,0 +1,5 @@
+[
+  { "type": "navigate", "url": "http://127.0.0.1:4310/?page=mail" },
+  { "type": "click", "target": { "semanticDescription": "open legacy attachment workflow", "role": "button", "name": "Open attachment" } },
+  { "type": "assert", "condition": { "kind": "text_present", "text": "POSTED FT-1042" } }
+]

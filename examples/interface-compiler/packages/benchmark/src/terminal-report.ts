@@ -10,7 +10,6 @@ import type {
   CompiledPlanMeasurementProvenance,
   WorthQueryEvidence,
 } from "@interface-compiler/worth-adapter"
-import type { BenchmarkTaskIdentity } from "./contract.js"
 import {
   terminalBenchmarkReportSchemaVersion,
   type TerminalBenchmarkIssue,
@@ -25,6 +24,10 @@ import {
   type TerminalCompiledPlanAuthority,
   type UnavailableTerminalBenchmarkReport,
   type WorthSettledBenchmarkExecution,
+  type TerminalWorkflowBenchmarkInput,
+  type TerminalWorkflowBenchmarkReport,
+  type TerminalWorkflowRunReport,
+  type BenchmarkTaskIdentity,
 } from "./terminal-report-contract.js"
 
 export { terminalBenchmarkReportSchemaVersion } from "./terminal-report-contract.js"
@@ -42,7 +45,34 @@ export type {
   TerminalCompiledPlanAuthority,
   UnavailableTerminalBenchmarkReport,
   WorthSettledBenchmarkExecution,
+  TerminalWorkflowBenchmarkInput,
+  TerminalWorkflowBenchmarkReport,
+  TerminalWorkflowRunReport,
+  TerminalWorkflowStep,
+  BenchmarkTaskIdentity,
 } from "./terminal-report-contract.js"
+
+/** The multi-tool form of the terminal benchmark; browser steps never enter this schema. */
+export function createTerminalWorkflowBenchmarkReport(input: TerminalWorkflowBenchmarkInput): TerminalWorkflowBenchmarkReport {
+  const issues: TerminalBenchmarkIssue[] = []
+  validateTask(input.task, issues)
+  if (input.workflow.length === 0) issues.push(issue("workflow", "invalid_task", "workflow must identify at least one semantic capability"))
+  if (input.direct.length !== input.workflow.length || input.compiled.length !== input.workflow.length) issues.push(issue("workflow", "invalid_terminal_projection", "each mode must contain one WORTH terminal execution for every semantic capability"))
+  validateWorkflowSide(input.direct, "direct", input.workflow, issues)
+  validateWorkflowSide(input.compiled, "compiled", input.workflow, issues)
+  const executionIds = [...input.direct, ...input.compiled].map((entry) => entry.projection.executionId)
+  if (new Set(executionIds).size !== executionIds.length) issues.push(issue("workflow", "duplicate_execution", "WORTH execution identities must be unique across the workflow"))
+  if (issues.length > 0) return workflowUnavailable(input.task, issues)
+  const direct = workflowRun(input.direct, "direct")
+  const compiled = workflowRun(input.compiled, "compiled")
+  if (!hasSafeBenchmarkMetrics(direct.metrics) || !hasSafeBenchmarkMetrics(compiled.metrics)) {
+    issues.push(issue("workflow.metrics", "numeric_overflow", "workflow metric aggregation exceeded the safe integer range"))
+    return workflowUnavailable(input.task, issues)
+  }
+  const perRunSavings = savings(direct.metrics, compiled.metrics, issues)
+  if (issues.length > 0) return workflowUnavailable(input.task, issues)
+  return Object.freeze({ schemaVersion: terminalBenchmarkReportSchemaVersion, kind: "measured", task: freezeTask(input.task), workflow: Object.freeze(input.workflow.map((step) => Object.freeze({ ...step }))), direct, compiled, perRunSavings, provenance: Object.freeze({ authority: "worth_terminal_execution_projections" as const, executionIds: Object.freeze(executionIds) }) })
+}
 
 /**
  * Derives a one-run direct/compiled comparison exclusively from terminal WORTH
@@ -67,7 +97,7 @@ export function createTerminalBenchmarkReport(input: TerminalBenchmarkReportInpu
   const direct = runReport(input.direct, "direct")
   const compiled = runReport(input.compiled, "compiled")
   const compilationReport = compilationEconomics(input.compiledPlan.compilationProvenance, input.compilation, compilation)
-  const breakEven = breakEvenEconomics(compilationReport, direct.metrics.estimatedModelCostUsd, compiled.metrics.estimatedModelCostUsd, issues)
+  const breakEven = breakEvenEconomics(compilationReport, direct.metrics.estimatedModelCostMicrocents, compiled.metrics.estimatedModelCostMicrocents, issues)
   const perRunSavings = savings(direct.metrics, compiled.metrics, issues)
   if (issues.length > 0) return unavailable(input.task, issues)
 
@@ -148,12 +178,33 @@ function validateMatchingBoundary(
   }
 }
 
+function validateWorkflowSide(
+  entries: readonly WorthSettledBenchmarkExecution[],
+  mode: "direct" | "compiled",
+  workflow: readonly import("./terminal-report-contract.js").TerminalWorkflowStep[],
+  issues: TerminalBenchmarkIssue[],
+): void {
+  for (const [index, entry] of entries.entries()) {
+    const expected = workflow[index]
+    if (expected === undefined) continue
+    const path = `${mode}[${index}]`
+    validateEvidence(entry.evidence, `${path}.evidence`, "execution", issues)
+    validateTerminalProjection(entry, path, issues)
+    const projection = entry.projection
+    if (projection.mode !== mode) issues.push(issue(`${path}.projection.mode`, "mode_mismatch", `WORTH projection must be ${mode}`))
+    if (projection.capabilityId !== expected.capabilityId) issues.push(issue(`${path}.projection.capabilityId`, "capability_mismatch", "WORTH projection belongs to a different semantic capability"))
+    if (projection.lifecycle !== "success" || projection.outcome.kind !== "success") issues.push(issue(`${path}.projection.outcome`, "unsafe_terminal_outcome", "workflow execution did not satisfy its semantic postcondition"))
+    if (mode === "direct" && projection.replayVersionId !== undefined) issues.push(issue(`${path}.projection.replayVersionId`, "replay_mismatch", "direct execution must not name a replay"))
+    if (mode === "compiled" && projection.replayVersionId !== expected.replayVersionId) issues.push(issue(`${path}.projection.replayVersionId`, "replay_mismatch", "compiled execution must name the workflow replay"))
+  }
+}
+
 function validateCompilation(
   provenance: TerminalCompiledPlanAuthority,
   compilation: TerminalCompilationExecutions | undefined,
   comparisonIds: readonly ExecutionId[],
   issues: TerminalBenchmarkIssue[],
-): { readonly discoveryCostUsd: number; readonly verificationCostUsd: number } | undefined {
+): { readonly discoveryCostMicrocents: number; readonly verificationCostMicrocents: number } | undefined {
   if (provenance.compilationProvenance.kind === "synthetic_seed") return undefined
   if (compilation === undefined) return undefined
   const expectedDiscovery = provenance.compilationProvenance.discoveryExecutionIds
@@ -180,13 +231,13 @@ function validateCompilation(
       if (phase === "verification" && projection.replayVersionId !== provenance.replayVersionId) issues.push(issue(`${path}.projection.replayVersionId`, "replay_mismatch", "verification execution must name the admitted replay"))
     }
   }
-  const discoveryCostUsd = sumCost(compilation.discovery)
-  const verificationCostUsd = sumCost(compilation.verification)
-  if (![discoveryCostUsd, verificationCostUsd, discoveryCostUsd + verificationCostUsd].every(Number.isFinite)) {
-    issues.push(issue("compilation", "numeric_overflow", "compilation cost overflowed the finite number range"))
+  const discoveryCostMicrocents = sumCost(compilation.discovery)
+  const verificationCostMicrocents = sumCost(compilation.verification)
+  if (![discoveryCostMicrocents, verificationCostMicrocents, discoveryCostMicrocents + verificationCostMicrocents].every(Number.isSafeInteger)) {
+    issues.push(issue("compilation", "numeric_overflow", "compilation cost exceeded the safe integer range"))
     return undefined
   }
-  return { discoveryCostUsd, verificationCostUsd }
+  return { discoveryCostMicrocents, verificationCostMicrocents }
 }
 
 function validateTerminalProjection(settlement: WorthSettledBenchmarkExecution, path: string, issues: TerminalBenchmarkIssue[]): void {
@@ -195,7 +246,7 @@ function validateTerminalProjection(settlement: WorthSettledBenchmarkExecution, 
   if (projection.projectionKind !== "worth_terminal_execution" || !isNonEmptyText(projection.executionId) || !Number.isSafeInteger(projection.revision) || projection.revision < 0) {
     issues.push(issue(`${path}.projection`, "invalid_terminal_projection", "WORTH terminal projection identity or revision is invalid"))
   }
-  if (validateExecutionMetrics(projection.metrics as ExecutionMetrics).length > 0 || projection.metrics.endedAt === undefined || projection.metrics.wallClockMs === undefined) {
+  if (validateExecutionMetrics(projection.metrics as ExecutionMetrics).length > 0 || !hasSafeBenchmarkMetrics(projection.metrics) || projection.metrics.endedAt === undefined || projection.metrics.wallClockMs === undefined) {
     issues.push(issue(`${path}.projection.metrics`, "invalid_terminal_projection", "WORTH terminal metrics are invalid or incomplete"))
     return
   }
@@ -228,7 +279,7 @@ function validateExecutionIdentitySet(ids: readonly ExecutionId[], path: string,
 function compilationEconomics(
   provenance: CompiledPlanMeasurementProvenance,
   supplied: TerminalCompilationExecutions | undefined,
-  measured: { readonly discoveryCostUsd: number; readonly verificationCostUsd: number } | undefined,
+  measured: { readonly discoveryCostMicrocents: number; readonly verificationCostMicrocents: number } | undefined,
 ): TerminalCompilationEconomics {
   if (provenance.kind === "synthetic_seed") {
     return { kind: "not_measured", reason: "synthetic_seed_not_economic_evidence", rejectedSuppliedCompilation: supplied !== undefined }
@@ -238,9 +289,9 @@ function compilationEconomics(
   }
   return {
     kind: "measured",
-    discoveryCostUsd: measured.discoveryCostUsd,
-    verificationCostUsd: measured.verificationCostUsd,
-    totalCostUsd: measured.discoveryCostUsd + measured.verificationCostUsd,
+    discoveryCostMicrocents: measured.discoveryCostMicrocents,
+    verificationCostMicrocents: measured.verificationCostMicrocents,
+    totalCostMicrocents: measured.discoveryCostMicrocents + measured.verificationCostMicrocents,
     discoveryExecutionIds: Object.freeze(supplied.discovery.map((entry) => entry.projection.executionId)),
     verificationExecutionIds: Object.freeze(supplied.verification.map((entry) => entry.projection.executionId)),
   }
@@ -248,12 +299,12 @@ function compilationEconomics(
 
 function breakEvenEconomics(
   compilation: TerminalCompilationEconomics,
-  directCostUsd: number,
-  compiledCostUsd: number,
+  directCostMicrocents: number,
+  compiledCostMicrocents: number,
   issues: TerminalBenchmarkIssue[],
 ): TerminalBreakEven {
   if (compilation.kind === "not_measured") return { kind: "not_measured", reason: compilation.reason }
-  const result = calculateBreakEvenCalls({ compileCostUsd: compilation.totalCostUsd, directCostPerCallUsd: directCostUsd, compiledCostPerCallUsd: compiledCostUsd })
+  const result = calculateBreakEvenCalls({ compileCostMicrocents: compilation.totalCostMicrocents, directCostPerCallMicrocents: directCostMicrocents, compiledCostPerCallMicrocents: compiledCostMicrocents })
   if (!result.ok) {
     issues.push(issue("economics.breakEven", "numeric_overflow", "break-even inputs were not valid finite WORTH costs"))
     return { kind: "not_measured", reason: "compilation_terminal_projections_not_supplied" }
@@ -275,11 +326,24 @@ function runReport(settlement: WorthSettledBenchmarkExecution, mode: "direct" | 
       browserObservations: metrics.browserObservations,
       browserActions: metrics.browserActions,
       wallClockMs: metrics.wallClockMs,
-      estimatedModelCostUsd: metrics.estimatedModelCostUsd,
+      estimatedModelCostMicrocents: metrics.estimatedModelCostMicrocents,
     }),
     boundary: stop.reason,
     worthEvidence: Object.freeze({ ...settlement.evidence }),
   })
+}
+
+function workflowRun(entries: readonly WorthSettledBenchmarkExecution[], mode: "direct" | "compiled"): TerminalWorkflowRunReport {
+  const metrics = entries.reduce<TerminalBenchmarkMetrics>((total, entry) => ({
+    modelCalls: total.modelCalls + entry.projection.metrics.modelCalls,
+    inputTokens: total.inputTokens + entry.projection.metrics.inputTokens,
+    outputTokens: total.outputTokens + entry.projection.metrics.outputTokens,
+    browserObservations: total.browserObservations + entry.projection.metrics.browserObservations,
+    browserActions: total.browserActions + entry.projection.metrics.browserActions,
+    wallClockMs: total.wallClockMs + (entry.projection.metrics.wallClockMs ?? 0),
+    estimatedModelCostMicrocents: total.estimatedModelCostMicrocents + entry.projection.metrics.estimatedModelCostMicrocents,
+  }), { modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, wallClockMs: 0, estimatedModelCostMicrocents: 0 })
+  return Object.freeze({ mode, executionIds: Object.freeze(entries.map((entry) => entry.projection.executionId)), metrics: Object.freeze(metrics) })
 }
 
 function savings(direct: TerminalBenchmarkMetrics, compiled: TerminalBenchmarkMetrics, issues: TerminalBenchmarkIssue[]): TerminalBenchmarkSavings {
@@ -302,7 +366,22 @@ function savings(direct: TerminalBenchmarkMetrics, compiled: TerminalBenchmarkMe
 }
 
 function sumCost(entries: readonly WorthSettledBenchmarkExecution[]): number {
-  return entries.reduce((total, entry) => total + entry.projection.metrics.estimatedModelCostUsd, 0)
+  return entries.reduce((total, entry) => total + entry.projection.metrics.estimatedModelCostMicrocents, 0)
+}
+
+function hasSafeBenchmarkMetrics(metrics: TerminalBenchmarkMetrics | ExecutionMetrics): boolean {
+  if (metrics.wallClockMs === undefined) return false
+  const values: readonly number[] = [
+    metrics.modelCalls,
+    metrics.inputTokens,
+    metrics.outputTokens,
+    metrics.browserObservations,
+    metrics.browserActions,
+    metrics.wallClockMs,
+    metrics.estimatedModelCostMicrocents,
+    metrics.inputTokens + metrics.outputTokens,
+  ]
+  return values.every((value) => Number.isSafeInteger(value) && value >= 0)
 }
 
 function validSafetyStop(stop: unknown): stop is SafetyStopResult {
@@ -334,6 +413,10 @@ function issue(path: string, code: TerminalBenchmarkIssue["code"], message: stri
 
 function unavailable(task: BenchmarkTaskIdentity, issues: readonly TerminalBenchmarkIssue[]): UnavailableTerminalBenchmarkReport {
   return Object.freeze({ schemaVersion: terminalBenchmarkReportSchemaVersion, kind: "not_comparable", task: freezeTask(task), issues: Object.freeze([...issues]), provenance: Object.freeze({ authority: "worth_terminal_execution_projections" }) })
+}
+
+function workflowUnavailable(task: BenchmarkTaskIdentity, issues: readonly TerminalBenchmarkIssue[]): Extract<TerminalWorkflowBenchmarkReport, { readonly kind: "not_comparable" }> {
+  return Object.freeze({ schemaVersion: terminalBenchmarkReportSchemaVersion, kind: "not_comparable", task: freezeTask(task), issues: Object.freeze([...issues]), provenance: Object.freeze({ authority: "worth_terminal_execution_projections" as const }) })
 }
 
 function freezeTask(task: BenchmarkTaskIdentity): BenchmarkTaskIdentity {

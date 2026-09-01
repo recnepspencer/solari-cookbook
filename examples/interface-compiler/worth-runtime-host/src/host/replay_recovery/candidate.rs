@@ -1,7 +1,7 @@
 use worth_query_host::facade::primary_graph;
 
 use super::{
-    candidate_contract::valid_candidate_request, denied, valid_context, valid_identity,
+    denied, valid_context, valid_identity, validation::valid_candidate_request,
     AcceptReplacementCandidateRequest, InterfaceCompilerReplayRecoveryOutcome,
     InterfaceCompilerReplayRecoveryStage,
 };

@@ -49,7 +49,7 @@ fn admission_and_metrics_scenario() {
         event(
             "event.model",
             "model.called",
-            json!({"executionId": execution_id, "role":"explorer", "inputTokens":11, "outputTokens":7, "estimatedModelCostUsd":0.025}),
+            json!({"executionId": execution_id, "role":"explorer", "inputTokens":11, "outputTokens":7, "estimatedModelCostMicrocents":2_500_000}),
         ),
         event(
             "event.observe",
@@ -86,11 +86,27 @@ fn admission_and_metrics_scenario() {
             assert_eq!(metrics["outputTokens"], 7);
             assert_eq!(metrics["browserObservations"], 1);
             assert_eq!(metrics["browserActions"], 1);
-            assert_eq!(metrics["estimatedModelCostUsd"], 0.025);
+            assert_eq!(metrics["estimatedModelCostMicrocents"], 2_500_000);
             assert_eq!(metrics["wallClockMs"], 3500);
         }
         outcome => panic!("execution should settle with authoritative metrics: {outcome:?}"),
     }
+    let terminal = event(
+        "event.completed",
+        "direct.completed",
+        json!({"executionId": execution_id, "outcome": "success"}),
+    );
+    assert!(
+        matches!(
+            host.publish_domain_event(PublishDomainEventRequest {
+                event: terminal,
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(1),
+            }),
+            SettlementOutcome::Applied { .. }
+        ),
+        "terminal event should be retained after settlement"
+    );
 }
 
 #[test]
@@ -121,12 +137,27 @@ fn telemetry_and_terminal_guard_scenario() {
         }
         outcome => panic!("execution should be admitted: {outcome:?}"),
     };
+    let fractional_microcent = json!({
+        "eventId":"event.fractional-microcent", "occurredAt":"2026-09-01T12:00:01.000Z",
+        "protocol":"interface-compiler.events", "schemaVersion":1,
+        "idempotencyKey":"event.fractional-microcent", "recovery":"replay_safe",
+        "integrity":{"algorithm":"sha256","digest":"test"}, "type":"model.called",
+        "payload":{"executionId":execution_id,"role":"explorer","inputTokens":1,"outputTokens":1,"estimatedModelCostMicrocents":0.5}
+    });
+    assert!(matches!(
+        host.publish_domain_event(PublishDomainEventRequest {
+            event: fractional_microcent,
+            credential: DEMO_CREDENTIAL.into(),
+            timeout: Duration::from_secs(1),
+        }),
+        SettlementOutcome::Denied { .. }
+    ));
     let unknown_event = json!({
         "eventId":"event.unknown", "occurredAt":"2026-09-01T12:00:01.000Z",
         "protocol":"interface-compiler.events", "schemaVersion":1,
         "idempotencyKey":"event.unknown", "recovery":"replay_safe",
         "integrity":{"algorithm":"sha256","digest":"test"}, "type":"model.called",
-        "payload":{"executionId":"execution.not-admitted","role":"explorer","inputTokens":1,"outputTokens":1,"estimatedModelCostUsd":0.01}
+        "payload":{"executionId":"execution.not-admitted","role":"explorer","inputTokens":1,"outputTokens":1,"estimatedModelCostMicrocents":1000000}
     });
     assert!(matches!(
         host.publish_domain_event(PublishDomainEventRequest {

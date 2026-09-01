@@ -43,7 +43,7 @@ function unwrap<T>(result: ValidationResult<T>): T {
 function capabilityDefinition(): CapabilityDefinition {
   return {
     id: id<CapabilityId>("capability.add-to-cart"),
-    applicationId: id<ApplicationId>("application.walmart"),
+    applicationId: id<ApplicationId>("application.wholesale-catalog"),
     name: "AddToCart",
     description: "Add one selected product to the cart.",
     inputSchema: { type: "object", required: ["productRef"], properties: { productRef: { type: "string" } } },

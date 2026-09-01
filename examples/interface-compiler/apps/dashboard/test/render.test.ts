@@ -17,17 +17,15 @@ test("ready view exposes provisional, failed, and missing evidence states", () =
   assert.match(html, /Break-even/)
 })
 
-test("ready view renders measured values only where the projection marks them measured", () => {
+test("ready view renders Worth-provided economics without a benchmark panel", () => {
   const html = renderDashboardResult({ kind: "ready", projection: fixtureProjection() }, "cap-search")
 
   assert.match(html, /\$1\.00/)
   assert.match(html, /25 calls/)
-  assert.match(html, /Total tokens/)
-  assert.match(html, /1,200/)
   assert.match(html, /Lifetime direct cost avoided/)
   assert.match(html, /Lifetime compiled cost/)
-  assert.match(html, /Not measured/)
-  assert.match(html, /Missing: wallClockMs, estimatedModelCostUsd/)
+  assert.doesNotMatch(html, /Benchmark/)
+  assert.doesNotMatch(html, /Total tokens/)
 })
 
 test("unavailable and failed query results stay explicit and escape provider text", () => {

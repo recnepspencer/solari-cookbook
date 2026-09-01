@@ -47,10 +47,6 @@ import {
   type ValidationResult,
 } from "@interface-compiler/domain"
 import {
-  createWorthAdapter,
-  WORTH_QUERY_HOST_FACADE_BOUNDARY,
-  type WorthCompilationMetricsProjection,
-  type WorthRuntimePort,
   type WorthExecutionAdmissionResult,
   type WorthRuntimeSettlementResult,
   type ReplayDegradationRequest,
@@ -249,7 +245,7 @@ class CancellingVerifier implements SemanticVerifier {
   }
 }
 
-class FakeWorthRuntime implements WorthRuntimePort {
+class FakeWorthRuntime {
   public readonly commands: WorthCommand[] = []
   public readonly events: InterfaceCompilerEvent[] = []
   public readonly capability: CapabilityProjection = {
@@ -314,10 +310,6 @@ class FakeWorthRuntime implements WorthRuntimePort {
     return this.completed?.id === executionId
       ? { kind: "found", value: this.completed }
       : { kind: "not_found", entity: "execution", entityId: executionId }
-  }
-
-  public async readCompilationMetrics(_id: CapabilityId, _context: OperationContext): Promise<WorthReadResult<WorthCompilationMetricsProjection>> {
-    return { kind: "not_found", entity: "capability", entityId: capabilityId }
   }
 
   public async publishEvent(event: InterfaceCompilerEvent, _context: OperationContext): Promise<EventPublicationResult> {
@@ -423,7 +415,7 @@ function completedProjection(command: Extract<WorthCommand, { readonly kind: "co
     outputTokens: modelEvents.reduce((total, event) => total + (event.type === "model.called" ? event.payload.outputTokens : 0), 0),
     browserObservations: events.filter((event) => event.type === "browser.observed").length,
     browserActions: events.filter((event) => event.type === "browser.action").length,
-    estimatedModelCostUsd: modelEvents.reduce((total, event) => total + (event.type === "model.called" ? event.payload.estimatedModelCostUsd : 0), 0),
+    estimatedModelCostMicrocents: modelEvents.reduce((total, event) => total + (event.type === "model.called" ? event.payload.estimatedModelCostMicrocents : 0), 0),
   }
   if (command.completion.kind === "success") return { ...runningProjection(execution), revision: command.expectedExecutionRevision + 1, status: "success", outcome: command.completion, metrics }
   if (command.completion.kind === "safety_stop") return { ...runningProjection(execution), revision: command.expectedExecutionRevision + 1, status: "stopped", outcome: command.completion, metrics }
@@ -443,31 +435,30 @@ function operationIds(): Pick<IdSource, "nextExecutionId" | "nextEventId"> {
 }
 
 function bind(runtime: FakeWorthRuntime): OrchestratorWorthPort {
-  const adapter = createWorthAdapter({ boundary: WORTH_QUERY_HOST_FACADE_BOUNDARY, runtime })
   const evidence = { queryName: "test", queryIdentity: "test", basisVersion: 1, projectedRecordCount: 1, projectedFieldCount: 8, basisReleased: true } as const
   return {
     readApplication: async (id, context) => {
-      const result = await adapter.readApplication(id, context)
+      const result = await runtime.readApplication(id, context)
       return result.kind === "found" ? { ...result, evidence } : result
     },
     readCapability: async (id, context) => {
-      const result = await adapter.readCapability(id, context)
+      const result = await runtime.readCapability(id, context)
       return result.kind === "found" ? { ...result, evidence, compilationProvenance: { kind: "synthetic_seed" } } : result
     },
     readActiveReplay: async (id, context) => {
-      const result = await adapter.readActiveReplay(id, context)
+      const result = await runtime.readActiveReplay(id, context)
       return result.kind === "found" ? { ...result, evidence, compilationProvenance: { kind: "synthetic_seed" } } : result
     },
-    readEvidence: adapter.readEvidence,
-    publish: adapter.publish,
+    readEvidence: (id, context) => runtime.readEvidence(id, context),
+    publish: (event, context) => runtime.publishEvent(event, context),
     admitExecution: async (execution, context): Promise<WorthExecutionAdmissionResult> => {
-      const result = await adapter.startExecution(execution, context)
+      const result = await runtime.submit({ kind: "start_execution", execution }, context)
       if (result.kind !== "accepted" || result.projection.kind !== "execution") return result.kind === "cancelled" || result.kind === "timed_out" ? result : { kind: "denied", executionId: execution.id, message: "test WORTH admission rejected" }
       const projection = result.projection.projection
       return { kind: "admitted", commit: "committed", projection: { projectionKind: "worth_running_execution", executionId: projection.id, capabilityId: projection.capabilityId, ...(projection.replayVersionId === undefined ? {} : { replayVersionId: projection.replayVersionId }), mode: projection.mode, lifecycle: "started", revision: projection.revision, metrics: projection.metrics }, evidence }
     },
     settleExecution: async (executionId, completion, endedAt, revision, context): Promise<WorthRuntimeSettlementResult> => {
-      const result = await adapter.completeExecution(executionId, completion, endedAt, revision, context)
+      const result = await runtime.submit({ kind: "complete_execution", executionId, completion, endedAt, expectedExecutionRevision: revision }, context)
       if (result.kind !== "accepted" || result.projection.kind !== "execution") return result.kind === "cancelled" || result.kind === "timed_out" ? result : { kind: "denied", executionId, message: "test WORTH settlement rejected" }
       const projection = result.projection.projection
       if (projection.status === "running") return { kind: "denied", executionId, message: "test settlement remained running" }
@@ -548,7 +539,7 @@ test("a fresh blank Solari page navigates to the admitted origin before direct r
     [{ kind: "completed", observation: safeObservation("observation.after-initial-navigation"), effect: { kind: "completed" } }],
   )
   const model = new FakeModel([
-    { kind: "completed", completion: { output: { kind: "stop", signal: { kind: "authentication_required", credential: "unknown" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } },
+    { kind: "completed", completion: { output: { kind: "stop", signal: { kind: "authentication_required", credential: "unknown" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } },
   ])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
 
@@ -566,8 +557,8 @@ test("direct planning and execution publish only actual model/browser telemetry 
     [{ kind: "completed", effect: { kind: "completed" }, observation: safeObservation("observation.after-action") }],
   )
   const model = new FakeModel([
-    { kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 3, outputTokens: 4, estimatedModelCostUsd: 0.01 } }, effect: { kind: "completed" } },
-    { kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 2, outputTokens: 1, estimatedModelCostUsd: 0.002 } }, effect: { kind: "completed" } },
+    { kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 3, outputTokens: 4, estimatedModelCostMicrocents: 1000000 } }, effect: { kind: "completed" } },
+    { kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 2, outputTokens: 1, estimatedModelCostMicrocents: 200000 } }, effect: { kind: "completed" } },
   ])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model, undefined)).run(directPlan(), operationController({ maxModelCalls: 3, maxBrowserActions: 2 }).controller)
 
@@ -576,7 +567,7 @@ test("direct planning and execution publish only actual model/browser telemetry 
   assert.deepEqual(result.terminal, { kind: "success", output: { status: "done" } })
   assert.equal(solari.sessions[0]?.executedSteps.length, 1)
   const modelEvents = runtime.events.filter((event) => event.type === "model.called")
-  assert.deepEqual(modelEvents.map((event) => [event.payload.inputTokens, event.payload.outputTokens, event.payload.estimatedModelCostUsd]), [[3, 4, 0.01], [2, 1, 0.002]])
+  assert.deepEqual(modelEvents.map((event) => [event.payload.inputTokens, event.payload.outputTokens, event.payload.estimatedModelCostMicrocents]), [[3, 4, 1_000_000], [2, 1, 200_000]])
   assert.equal(modelEvents[0]?.protocol, "interface-compiler.events")
   assert.equal(modelEvents[0]?.schemaVersion, 1)
   assert.equal(modelEvents[0]?.recovery, "replay_safe")
@@ -589,7 +580,7 @@ test("direct planning and execution publish only actual model/browser telemetry 
   assert.equal(new Set(runtime.events.map((event) => event.idempotencyKey)).size, runtime.events.length)
   assert.equal(runtime.completed?.metrics.modelCalls, 2)
   assert.equal(runtime.completed?.metrics.browserActions, 1)
-  assert.equal(runtime.completed?.metrics.estimatedModelCostUsd, 0.012)
+  assert.equal(runtime.completed?.metrics.estimatedModelCostMicrocents, 1_200_000)
 })
 
 test("compiled planning resolves Worth projections and executes without Gemini reasoning", async () => {
@@ -741,7 +732,7 @@ test("an event failure after a completed browser effect stops before the next mo
     [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
     [{ kind: "completed", effect: { kind: "completed" } }],
   )
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
 
   assert.equal(result.kind, "attempted")
@@ -761,7 +752,7 @@ test("cancellation before browser telemetry is typed and prevents the next model
     undefined,
     operation.cancellation.cancel,
   )
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operation.controller)
 
   assert.equal(result.kind, "finalization_blocked")
@@ -798,7 +789,7 @@ test("cancellation after a completed delegated action is classified as an after-
     [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
     [{ kind: "completed", effect: { kind: "completed" }, observation: safeObservation("observation.after-action") }],
   )
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operation.controller)
 
   assert.equal(result.kind, "finalization_blocked")
@@ -812,7 +803,7 @@ test("cancellation after a completed delegated action is classified as an after-
 test("a false semantic postcondition cannot settle a direct run as success", async () => {
   const runtime = new FakeWorthRuntime()
   const solari = new ScriptedSolari([{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }], [])
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model, new FailedVerifier())).run(directPlan([{ kind: "text_present", text: "must be present" }]), operationController().controller)
 
   assert.equal(result.kind, "attempted")
@@ -824,13 +815,13 @@ test("a false semantic postcondition cannot settle a direct run as success", asy
 test("verifier usage is forwarded to Worth as measured model telemetry", async () => {
   const runtime = new FakeWorthRuntime()
   const solari = new ScriptedSolari([{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }], [])
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
-  const verifier = new FailedVerifier({ usage: { inputTokens: 5, outputTokens: 2, estimatedModelCostUsd: 0.009 } })
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
+  const verifier = new FailedVerifier({ usage: { inputTokens: 5, outputTokens: 2, estimatedModelCostMicrocents: 900000 } })
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model, verifier)).run(directPlan([{ kind: "text_present", text: "must be present" }]), operationController().controller)
 
   assert.equal(result.kind, "attempted")
   const verifierEvents = runtime.events.filter((event): event is Extract<InterfaceCompilerEvent, { readonly type: "model.called" }> => event.type === "model.called" && event.payload.role === "verifier")
-  assert.deepEqual(verifierEvents.map((event) => [event.payload.inputTokens, event.payload.outputTokens, event.payload.estimatedModelCostUsd]), [[5, 2, 0.009]])
+  assert.deepEqual(verifierEvents.map((event) => [event.payload.inputTokens, event.payload.outputTokens, event.payload.estimatedModelCostMicrocents]), [[5, 2, 900_000]])
   assert.equal(runtime.completed?.metrics.modelCalls, 2)
 })
 
@@ -838,7 +829,7 @@ test("cancellation after verifier completion remains an after-effect control sto
   const runtime = new FakeWorthRuntime()
   const operation = operationController()
   const solari = new ScriptedSolari([{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }], [])
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model, new CancellingVerifier(operation.cancellation.cancel))).run(directPlan([{ kind: "text_present", text: "done" }]), operation.controller)
 
   assert.equal(result.kind, "finalization_blocked")
@@ -854,7 +845,7 @@ test("a direct browser failure remains an execution failure and does not degrade
     [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
     [{ kind: "failed", failure, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } }],
   )
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "act", step: clickStep() }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
 
   assert.equal(result.kind, "attempted")
@@ -938,7 +929,7 @@ test("cleanup failure cannot be reported as a successful delegated execution", a
     [],
     { kind: "close_failed", message: "browser release failed", retryable: true, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } },
   )
-  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } }])
+  const model = new FakeModel([{ kind: "completed", completion: { output: { kind: "complete", output: { status: "done" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostMicrocents: 100000 } }, effect: { kind: "completed" } }])
   const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
 
   assert.equal(result.kind, "attempted")

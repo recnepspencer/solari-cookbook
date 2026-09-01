@@ -41,5 +41,5 @@ export function validateApplication(input: ApplicationInput): readonly Validatio
 
 export function createApplication(input: ApplicationInput): ValidationResult<Application> {
   const issues = validateApplication(input)
-  return issues.length > 0 ? invalid(...issues) : valid({ ...input, [applicationEntityBrand]: true as const })
+  return issues.length > 0 ? invalid(...issues) : valid(Object.freeze({ ...structuredClone(input), [applicationEntityBrand]: true as const }))
 }

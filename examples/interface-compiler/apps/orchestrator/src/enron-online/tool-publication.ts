@@ -1,13 +1,28 @@
-import { buildToolPublicationArtifact, createToolPublicationPolicy, type GeminiToolDefinition } from "@interface-compiler/tool-publisher"
-import { ENRON_ONLINE_APPLICATION_ID, ENRON_ONLINE_CAPABILITY_PROJECTIONS, REQUEST_RISK_APPROVAL_CAPABILITY_ID, RESOLVE_CONTRACT_CAPABILITY_ID, STAGE_TRADE_CAPABILITY_ID } from "./contracts.js"
+import {
+  buildToolPublicationArtifact,
+  createToolPublicationPolicy,
+  type GeminiToolDefinition,
+} from "@interface-compiler/tool-publisher"
+import {
+  ENRON_ONLINE_APPLICATION_ID,
+  INGEST_INCOMING_TRADE_CAPABILITY_ID,
+  INGEST_INCOMING_TRADE_PROJECTION,
+} from "./contracts.js"
 
-/** Produces the exact semantic-only definitions given to a consumer model. */
+/** The consumer receives one stable operation, never UI or attachment mechanics. */
 export function publishEnronOnlineConsumerTools(): readonly GeminiToolDefinition[] {
-  const policy = createToolPublicationPolicy({ namespace: "enron", audience: "gemini_consumer", applicationScope: { kind: "allowlist", ids: [ENRON_ONLINE_APPLICATION_ID] }, capabilityScope: { kind: "allowlist", ids: [RESOLVE_CONTRACT_CAPABILITY_ID, STAGE_TRADE_CAPABILITY_ID, REQUEST_RISK_APPROVAL_CAPABILITY_ID] }, maxDescriptionLength: 500, maxExamples: 1, additionalForbiddenTerms: [] })
-  if (!policy.ok) throw new Error("Enron Online publication policy is invalid")
-  return Object.freeze(ENRON_ONLINE_CAPABILITY_PROJECTIONS.map((projection) => {
-    const result = buildToolPublicationArtifact(projection, policy.value, [])
-    if (result.kind !== "valid") throw new Error(`WORTH projection for ${projection.capabilityId} is not publishable`)
-    return result.artifact.definition
-  }))
+  const policy = createToolPublicationPolicy({
+    namespace: "trades",
+    audience: "gemini_consumer",
+    applicationScope: { kind: "allowlist", ids: [ENRON_ONLINE_APPLICATION_ID] },
+    capabilityScope: { kind: "allowlist", ids: [INGEST_INCOMING_TRADE_CAPABILITY_ID] },
+    maxDescriptionLength: 500,
+    maxExamples: 1,
+    additionalForbiddenTerms: [],
+  })
+  if (!policy.ok) throw new Error("UI API Builder publication policy is invalid")
+
+  const result = buildToolPublicationArtifact(INGEST_INCOMING_TRADE_PROJECTION, policy.value, [])
+  if (result.kind !== "valid") throw new Error("WORTH projection is not publishable")
+  return Object.freeze([result.artifact.definition])
 }

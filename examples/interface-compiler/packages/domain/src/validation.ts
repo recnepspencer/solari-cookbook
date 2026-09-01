@@ -1,7 +1,5 @@
 /** Typed construction results used by pure domain factories. */
 
-import { cloneAndFreeze } from "./immutability.js"
-
 export interface ValidationIssue {
   readonly path: string
   readonly message: string
@@ -12,11 +10,11 @@ export type ValidationResult<T> =
   | { readonly ok: false; readonly issues: readonly ValidationIssue[] }
 
 export function valid<T>(value: T): ValidationResult<T> {
-  return Object.freeze({ ok: true as const, value: cloneAndFreeze(value) })
+  return Object.freeze({ ok: true as const, value })
 }
 
 export function invalid(...issues: ValidationIssue[]): ValidationResult<never> {
-  return Object.freeze({ ok: false as const, issues: cloneAndFreeze(issues) })
+  return Object.freeze({ ok: false as const, issues: Object.freeze(issues.map((entry) => Object.freeze({ ...entry }))) })
 }
 
 export function issue(path: string, message: string): ValidationIssue {

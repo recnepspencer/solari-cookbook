@@ -2,7 +2,7 @@ use worth_query_host::facade::primary_graph;
 
 use super::{
     denied, valid_context, valid_identity, valid_timestamp,
-    verification_contract::valid_verification_request_revisions, ActivateReplacementRequest,
+    validation::valid_verification_request_revisions, ActivateReplacementRequest,
     InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
 };
 use crate::application::{

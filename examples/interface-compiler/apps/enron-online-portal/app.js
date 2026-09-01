@@ -1,8 +1,81 @@
 (() => {
-  const pages={market:"MB-01",ticket:"DE-17",blotter:"BT-42",risk:"RQ-03",limits:"CL-09",benchmarks:"IC-01"};const params=new URLSearchParams(location.search);const release=params.get("release")==="v2"?"v2":"v1";const state={page:Object.hasOwn(pages,params.get("page"))?params.get("page"):"market",ticket:null};const byId=(id)=>document.querySelector(`#${id}`);
-  const show=(page)=>{state.page=page;document.querySelectorAll("[data-page]").forEach((el)=>el.hidden=el.dataset.page!==page);document.querySelectorAll("[data-nav]").forEach((el)=>el.classList.toggle("active",el.dataset.nav===page));byId("screen-code").textContent=pages[page];document.title=`Enron Online — ${page}`};
-  document.querySelectorAll("[data-nav]").forEach((link)=>link.addEventListener("click",(event)=>{event.preventDefault();const page=link.dataset.nav;history.pushState({},"",`?page=${page}${release==="v2"?"&release=v2":""}`);show(page)}));window.addEventListener("popstate",()=>show(new URLSearchParams(location.search).get("page")||"market"));byId("release").textContent=release;byId("stage-v1").hidden=release!=="v1";byId("stage-v2").hidden=release!=="v2";
-  const render=()=>{const blotter=byId("blotter-body"),risk=byId("risk-table"),button=byId("risk-button");if(!state.ticket){blotter.innerHTML='<tr><td colspan="6" class="empty">No staged tickets in this browser session.</td></tr>';risk.innerHTML='<tr><td colspan="5" class="empty">Waiting for a staged ticket.</td></tr>';button.disabled=true;return}blotter.innerHTML=`<tr><td>${state.ticket.ref}</td><td>${state.ticket.counterparty}</td><td>${state.ticket.code}</td><td>${state.ticket.volume.toLocaleString()} MMBtu</td><td class="amber">STAGED</td><td><button data-risk-action type="button">Review</button></td></tr>`;risk.innerHTML=`<tr><td>${state.ticket.ref}</td><td>${state.ticket.counterparty}</td><td>$159,000 indicative</td><td class="green">WITHIN OPEN LIMIT</td><td>${state.ticket.riskRequested?"PENDING_LIMIT_REVIEW":"READY FOR SUBMISSION"}</td></tr>`;button.disabled=state.ticket.riskRequested;document.querySelector("[data-risk-action]")?.addEventListener("click",()=>show("risk"))};
-  const stage=()=>{const counterparty=byId("counterparty").value,volume=Number(byId("volume").value),code=byId("deal-code").value.trim();if(!counterparty||!Number.isFinite(volume)||volume<=0||!code){byId("stage-result").textContent="E-104: complete counterparty, volume, and legacy deal code.";return}state.ticket={ref:"ET-NG-1042",counterparty:counterparty==="midwest-utility-17"?"Midwest Utility 17":"Prairie Light Cooperative",volume,code,riskRequested:false};byId("stage-result").innerHTML=`STAGED <b>${state.ticket.ref}</b> / ${volume.toLocaleString()} MMBtu / ${code} &nbsp; <a href="?page=blotter" data-open-blotter>Open intraday blotter</a>`;byId("stage-result").querySelector("[data-open-blotter]").addEventListener("click",(event)=>{event.preventDefault();show("blotter")});render()};
-  byId("stage-v1").addEventListener("click",stage);byId("stage-v2").addEventListener("click",stage);byId("clear").addEventListener("click",()=>{state.ticket=null;byId("stage-result").textContent="No deal ticket is staged.";byId("risk-result").textContent="No approval has been requested.";render()});byId("risk-button").addEventListener("click",()=>{if(!state.ticket)return;state.ticket.riskRequested=true;byId("risk-result").textContent=`RISK QUEUED / ${state.ticket.ref} / status: PENDING_LIMIT_REVIEW`;render()});byId("return-ticket").addEventListener("click",()=>show("ticket"));setInterval(()=>{byId("clock").textContent=new Date().toLocaleTimeString("en-US",{hour12:false});if(state.ticket)byId("blotter-time").textContent=new Date().toLocaleTimeString("en-US",{hour12:false})},1000);render();show(state.page);
-})();
+  const pages = { mail: true, financials: true, control: true }
+  const state = { page: new URLSearchParams(location.search).get("page") || "mail", data: null }
+  const byId = (id) => document.getElementById(id)
+
+  async function request(url, options) {
+    const response = await fetch(url, options)
+    if (!response.ok) throw new Error(await response.text())
+    return response.json()
+  }
+
+  function show(page) {
+    state.page = pages[page] ? page : "mail"
+    document.querySelectorAll("[data-page]").forEach((element) => { element.hidden = element.dataset.page !== state.page })
+    document.querySelectorAll("[data-nav]").forEach((element) => element.classList.toggle("active", element.dataset.nav === state.page))
+    history.replaceState({}, "", `?page=${state.page}`)
+  }
+
+  function renderFinancials(receipts) {
+    const body = byId("financials-body")
+    if (receipts.length === 0) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">No Financials trades posted.</td></tr>'
+      return
+    }
+    body.innerHTML = receipts.map((receipt) => `<tr><td>${receipt.tradeId}</td><td>${receipt.counterparty}</td><td>${receipt.instrument}</td><td>${receipt.deliveryMonth}</td><td>${receipt.quantity.toLocaleString()} MMBtu @ $${receipt.price}</td><td>${receipt.financialReceiptId}</td><td class="green">${receipt.status.toUpperCase()}</td></tr>`).join("")
+  }
+
+  function renderControlPlane(release) {
+    byId("active-release").textContent = release
+    byId("worth-posture").textContent = release === "v2"
+      ? "Health: HEALTHY · verification evidence: 3 fresh Solari sessions · replacement history: v1 degraded → v2 active"
+      : "Recovery drill ready: v1 is intentionally stale. Run the recovery launcher to see v2 activated after three fresh Solari sessions."
+  }
+
+  function render() {
+    if (!state.data) return
+    const { message, receipts, release } = state.data
+    byId("mail-subject").textContent = message.delivered ? message.subject : "Awaiting delivered trade"
+    byId("mail-from").textContent = message.delivered ? `From: ${message.from}` : "No source message is currently in the inbox."
+    byId("attachment").textContent = message.delivered ? `${message.attachmentName} · sha256:${message.attachmentSha256.slice(0, 16)}…` : "—"
+    byId("message-id").textContent = message.delivered ? message.id : "—"
+    byId("ingest-v2").disabled = !message.delivered
+    renderFinancials(receipts)
+    renderControlPlane(release)
+  }
+
+  async function refresh() {
+    state.data = await request("/api/state")
+    render()
+  }
+
+  byId("deliver").addEventListener("click", async () => {
+    await request("/api/deliver", { method: "POST" })
+    await refresh()
+    byId("mail-result").textContent = "EMAIL RECEIVED / CSV attachment available for semantic ingestion."
+    byId("timeline").textContent = "email received → awaiting capability call"
+  })
+
+  byId("ingest-v2").addEventListener("click", async () => {
+    const result = await request("/api/ingest", { method: "POST" })
+    await refresh()
+    const receipt = result.receipt
+    byId("mail-result").textContent = `${result.duplicate ? "DUPLICATE / existing" : "POSTED"} ${receipt.tradeId} / verified Financials receipt ${receipt.financialReceiptId}`
+    byId("timeline").textContent = "email received → attachment validated → trade normalized → Financials posted → receipt verified"
+    byId("idempotency").textContent = `${result.duplicate ? "Duplicate suppressed" : "New post"}: ${receipt.idempotencyKey}`
+  })
+
+  byId("reset").addEventListener("click", async () => {
+    await request("/api/reset", { method: "POST" })
+    await refresh()
+    byId("mail-result").textContent = "Demo state reset."
+  })
+
+  document.querySelectorAll("[data-nav]").forEach((element) => element.addEventListener("click", (event) => {
+    event.preventDefault()
+    show(element.dataset.nav)
+  }))
+
+  refresh().then(() => show(state.page)).catch(() => { byId("mail-result").textContent = "E-500: portal state could not be loaded." })
+  setInterval(() => void refresh(), 1000)
+})()

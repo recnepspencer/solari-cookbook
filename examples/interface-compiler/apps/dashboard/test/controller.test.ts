@@ -1,11 +1,12 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import { JSDOM } from "jsdom"
 import { mountDashboard } from "../src/controller.js"
 import type { WorthDashboardProjection, WorthDashboardQuery, WorthDashboardResult } from "../src/dashboard-contract.js"
 import { fixtureProjection } from "./fixtures.js"
 
 test("mounted controller loads a ready projection and exposes the retry action for a retryable failure", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   const projection = fixtureProjection()
   let calls = 0
   const query: WorthDashboardQuery = {
@@ -14,16 +15,16 @@ test("mounted controller loads a ready projection and exposes the retry action f
       return calls === 1 ? { kind: "failed", message: "temporary query failure", retryable: true } : ready(projection)
     },
   }
-  const mount = mountDashboard(root.asElement(), query)
+  const mount = mountDashboard(root, query)
 
   await nextTick()
   assert.equal(calls, 1)
   assert.match(root.innerHTML, /data-action="refresh"/)
-  root.dispatchClick(FakeTarget.refresh())
+  click(root, "[data-action='refresh']")
   await nextTick()
   assert.equal(calls, 2)
   assert.match(root.innerHTML, /Fixture shop projection/)
-  root.dispatchClick(FakeTarget.capability("cap-checkout"))
+  click(root, "[data-capability-id='cap-checkout']")
   await nextTick()
   assert.match(root.innerHTML, /Begin checkout/)
   assert.match(root.innerHTML, /PROVISIONAL/)
@@ -31,7 +32,7 @@ test("mounted controller loads a ready projection and exposes the retry action f
 })
 
 test("dispose prevents later refreshes and stops the mounted controller from rendering", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   let calls = 0
   let signal: AbortSignal | undefined
   const query: WorthDashboardQuery = {
@@ -41,7 +42,7 @@ test("dispose prevents later refreshes and stops the mounted controller from ren
       return new Promise<WorthDashboardResult>(() => undefined)
     },
   }
-  const mount = mountDashboard(root.asElement(), query, { queryTimeoutMs: 1000 })
+  const mount = mountDashboard(root, query, { queryTimeoutMs: 1000 })
   await nextTick()
   mount.dispose()
   const previousMarkup = root.innerHTML
@@ -53,7 +54,7 @@ test("dispose prevents later refreshes and stops the mounted controller from ren
 })
 
 test("immediate disposal prevents a deferred query read from starting", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   let calls = 0
   const query: WorthDashboardQuery = {
     readDashboard: async () => {
@@ -61,7 +62,7 @@ test("immediate disposal prevents a deferred query read from starting", async ()
       return ready(fixtureProjection())
     },
   }
-  const mount = mountDashboard(root.asElement(), query)
+  const mount = mountDashboard(root, query)
   mount.dispose()
   await nextTick()
 
@@ -69,7 +70,7 @@ test("immediate disposal prevents a deferred query read from starting", async ()
 })
 
 test("deadline turns a hanging projection read into an explicit timed-out state", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   let signal: AbortSignal | undefined
   const query: WorthDashboardQuery = {
     readDashboard: (context) => {
@@ -77,7 +78,7 @@ test("deadline turns a hanging projection read into an explicit timed-out state"
       return new Promise<WorthDashboardResult>(() => undefined)
     },
   }
-  const mount = mountDashboard(root.asElement(), query, { queryTimeoutMs: 5 })
+  const mount = mountDashboard(root, query, { queryTimeoutMs: 5 })
 
   await wait(20)
   assert.match(root.innerHTML, /Worth query timed out/)
@@ -87,7 +88,7 @@ test("deadline turns a hanging projection read into an explicit timed-out state"
 })
 
 test("older and unsupported responses cannot replace a newer admitted projection", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   const newer = atRevision(fixtureProjection(), 2, "2026-08-31T18:00:02.000Z")
   const older = atRevision(fixtureProjection(), 1, "2026-08-31T18:00:01.000Z")
   let calls = 0
@@ -97,7 +98,7 @@ test("older and unsupported responses cannot replace a newer admitted projection
       return calls === 1 ? ready(newer) : ready(older)
     },
   }
-  const mount = mountDashboard(root.asElement(), query)
+  const mount = mountDashboard(root, query)
   await nextTick()
   assert.match(root.innerHTML, /Revision 2/)
   await mount.refresh()
@@ -107,15 +108,15 @@ test("older and unsupported responses cannot replace a newer admitted projection
     readDashboard: async () => ({ kind: "ready", projection: { ...newer, schemaVersion: "worth-dashboard.v0" } as unknown as WorthDashboardProjection }),
   }
   mount.dispose()
-  const unsupportedRoot = new FakeRoot()
-  const unsupportedMount = mountDashboard(unsupportedRoot.asElement(), unsupportedQuery)
+  const unsupportedRoot = createTestRoot()
+  const unsupportedMount = mountDashboard(unsupportedRoot, unsupportedQuery)
   await nextTick()
   assert.match(unsupportedRoot.innerHTML, /unsupported dashboard projection envelope/)
   unsupportedMount.dispose()
 })
 
 test("a superseded in-flight response cannot overwrite the newer response", async () => {
-  const root = new FakeRoot()
+  const root = createTestRoot()
   const firstProjection = atRevision(fixtureProjection(), 3)
   const secondProjection = atRevision(fixtureProjection(), 4)
   let firstResolve: ((result: WorthDashboardResult) => void) | undefined
@@ -127,7 +128,7 @@ test("a superseded in-flight response cannot overwrite the newer response", asyn
       return Promise.resolve(ready(secondProjection))
     },
   }
-  const mount = mountDashboard(root.asElement(), query)
+  const mount = mountDashboard(root, query)
   await nextTick()
   await mount.refresh()
   assert.match(root.innerHTML, /Revision 4/)
@@ -153,49 +154,15 @@ async function wait(milliseconds: number): Promise<void> {
   await new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 }
 
-class FakeRoot {
-  innerHTML = ""
-  private listener: EventListener | undefined
-
-  addEventListener(_type: string, listener: EventListenerOrEventListenerObject): void {
-    this.listener = typeof listener === "function" ? listener : (event) => listener.handleEvent(event)
-  }
-
-  removeEventListener(_type: string, listener: EventListenerOrEventListenerObject): void {
-    if (this.listener === listener) this.listener = undefined
-  }
-
-  dispatchClick(target: FakeTarget): void {
-    this.listener?.(new FakeClickEvent(target) as unknown as Event)
-  }
-
-  asElement(): HTMLElement {
-    return this as unknown as HTMLElement
-  }
+function createTestRoot(): HTMLElement {
+  const { document } = new JSDOM("<html><body><div id=\"root\"></div></body></html>").window
+  const root = document.getElementById("root")
+  if (root === null) throw new Error("test root was not created")
+  return root as unknown as HTMLElement
 }
 
-class FakeClickEvent {
-  constructor(readonly target: FakeTarget) {}
-}
-
-class FakeTarget {
-  readonly dataset: { readonly capabilityId?: string }
-
-  private constructor(private readonly action: "refresh" | "capability", capabilityId?: string) {
-    this.dataset = capabilityId === undefined ? {} : { capabilityId }
-  }
-
-  static refresh(): FakeTarget {
-    return new FakeTarget("refresh")
-  }
-
-  static capability(capabilityId: string): FakeTarget {
-    return new FakeTarget("capability", capabilityId)
-  }
-
-  closest(selector: string): FakeTarget | null {
-    if (this.action === "refresh" && selector === "[data-action='refresh']") return this
-    if (this.action === "capability" && selector === "[data-capability-id]") return this
-    return null
-  }
+function click(root: HTMLElement, selector: string): void {
+  const target = root.querySelector(selector)
+  assert.ok(target, `expected ${selector} in rendered dashboard`)
+  target.dispatchEvent(new target.ownerDocument.defaultView!.Event("click", { bubbles: true }))
 }

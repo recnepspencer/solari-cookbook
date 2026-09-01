@@ -82,7 +82,7 @@ test("a classified safety stop remains terminal when attached to an execution", 
         outputTokens: 5,
         browserObservations: 2,
         browserActions: 1,
-        estimatedModelCostUsd: 0.01,
+        estimatedModelCostMicrocents: 1000000,
       },
     }),
   )

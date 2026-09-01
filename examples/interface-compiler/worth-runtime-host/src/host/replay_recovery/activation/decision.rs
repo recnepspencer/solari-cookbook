@@ -9,10 +9,9 @@ use crate::application::{
     ReplayVerificationJson, ReplayVerifiedAt,
 };
 use crate::host::replay_recovery::{
-    denied, stale, verification_contract::verification_admits_activation,
-    ActivateReplacementRequest, InterfaceCompilerReplacementVerification,
-    InterfaceCompilerReplayRecoveryEntity, InterfaceCompilerReplayRecoveryOutcome,
-    InterfaceCompilerReplayRecoveryStage,
+    denied, stale, validation::verification_admits_activation, ActivateReplacementRequest,
+    InterfaceCompilerReplacementVerification, InterfaceCompilerReplayRecoveryEntity,
+    InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
 };
 use crate::host::InterfaceCompilerWorthHost;
 

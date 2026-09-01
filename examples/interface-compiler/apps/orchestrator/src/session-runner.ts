@@ -307,7 +307,7 @@ async function emitModelEvent<TOutput>(
     role,
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
-    estimatedModelCostUsd: usage.estimatedModelCostUsd,
+    estimatedModelCostMicrocents: usage.estimatedModelCostMicrocents,
   }, eventIdempotencyKey("model.called", `${executionId}:${role}:${logicalIdentity}`))
   return eventPublicationIntent(publication, result.kind === "completed" ? { kind: "completed" } : { kind: "unknown", recovery: "owner_reconciliation_required" })
 }
@@ -400,7 +400,7 @@ async function emitVerificationUsage(
     role: "verifier",
     inputTokens: result.usage.inputTokens,
     outputTokens: result.usage.outputTokens,
-    estimatedModelCostUsd: result.usage.estimatedModelCostUsd,
+    estimatedModelCostMicrocents: result.usage.estimatedModelCostMicrocents,
   }, eventIdempotencyKey("model.called", `${executionId}:verifier:${observationId}`))
   return eventPublicationIntent(publication, result.effect)
 }
@@ -408,7 +408,7 @@ async function emitVerificationUsage(
 function validReasoningUsage(usage: ReasoningUsage): boolean {
   return Number.isSafeInteger(usage.inputTokens) && usage.inputTokens >= 0 &&
     Number.isSafeInteger(usage.outputTokens) && usage.outputTokens >= 0 &&
-    Number.isFinite(usage.estimatedModelCostUsd) && usage.estimatedModelCostUsd >= 0
+    Number.isFinite(usage.estimatedModelCostMicrocents) && usage.estimatedModelCostMicrocents >= 0
 }
 
 type PostconditionFailureResult =

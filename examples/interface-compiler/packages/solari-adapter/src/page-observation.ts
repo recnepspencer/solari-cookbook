@@ -37,7 +37,7 @@ async function readInteractables(page: SolariSdkPage): Promise<readonly Interact
   return rows.filter((row) => row.visible).map((row) => {
     const text = boundedText(row.text ?? "")
     const name = boundedText(row.name ?? "")
-    const role = boundedText(row.role ?? "")
+    const role = boundedText(row.role ?? inferredRole(row.tagName) ?? "")
     const semanticGuess = name || text || role || undefined
     return {
       kind: interactableKind(row.tagName, row.role),
@@ -63,6 +63,18 @@ function interactableKind(tagName: string, role: string | null): Interactable["k
     case "form": return "form"
     case "table": return "table"
     default: return "other"
+  }
+}
+
+function inferredRole(tagName: string): string | undefined {
+  switch (tagName.toLowerCase()) {
+    case "a": return "link"
+    case "button": return "button"
+    case "input": return "textbox"
+    case "select": return "combobox"
+    case "table": return "table"
+    case "form": return "form"
+    default: return undefined
   }
 }
 

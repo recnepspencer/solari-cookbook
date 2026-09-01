@@ -1,0 +1,63 @@
+services:
+  checks:
+    build:
+      context: .
+    command:
+      - sh
+      - -lc
+      - >-
+        npm run typecheck &&
+        npm test &&
+        npm run typecheck:enron:live &&
+        cargo test --manifest-path worth-runtime-host/Cargo.toml &&
+        npm run typecheck --prefix apps/dashboard &&
+        npm test --prefix apps/dashboard
+
+  portal:
+    build:
+      context: .
+    command: npm run demo:enron:portal
+    environment:
+      ENRON_ONLINE_HOST: 0.0.0.0
+      ENRON_ONLINE_RELEASE: ${ENRON_ONLINE_RELEASE:-v1}
+    ports:
+      - "4310:4310"
+    profiles:
+      - portal
+      - recovery
+
+  tunnel:
+    image: cloudflare/cloudflared@sha256:51c9cefcb4569df44e1ad403ab1d3d8065aa8e84339bcfc6aee75502e1140339
+    command:
+      - tunnel
+      - --no-autoupdate
+      - --url
+      - http://portal:4310
+    depends_on:
+      portal:
+        condition: service_started
+    profiles:
+      - tunnel
+
+  simulation-recovery:
+    build:
+      context: .
+    command:
+      - sh
+      - -lc
+      - cargo build --manifest-path worth-runtime-host/Cargo.toml && npm run demo:enron:recovery
+    depends_on:
+      portal:
+        condition: service_started
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - cargo-registry:/root/.cargo/registry
+      - worth-runtime-target:/workspace/worth-runtime-host/target
+    profiles:
+      - recovery
+
+volumes:
+  cargo-registry:
+  worth-runtime-target:

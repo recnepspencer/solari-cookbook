@@ -4,7 +4,7 @@ import {
   createSchema,
   type CancellationToken,
   type Clock,
-  type ModelPricingUsdPerToken,
+  type ModelPricingMicrocentsPerToken,
   type OperationContext,
   type Schema,
   type ValidationResult,
@@ -22,7 +22,7 @@ import { inspectGeminiEnvironment } from "../src/config.js"
 import type { GoogleGenAI } from "@google/genai"
 
 const now = "2026-08-31T12:00:00.000Z"
-const pricing: ModelPricingUsdPerToken = { inputUsdPerToken: 0.001, outputUsdPerToken: 0.002 }
+const pricing: ModelPricingMicrocentsPerToken = { inputMicrocentsPerToken: 100000, outputMicrocentsPerToken: 200000 }
 
 function unwrap<T>(result: ValidationResult<T>): T {
   if (!result.ok) throw new Error(result.issues.map((entry) => `${entry.path}: ${entry.message}`).join(", "))
@@ -100,7 +100,7 @@ test("maps official-shaped usage metadata to typed output and an explicit estima
   assert.equal(result.completion.usage.inputTokens, 3)
   assert.equal(result.completion.usage.outputTokens, 4)
   assert.equal((result.completion.usage as GeminiReasoningUsage).thoughtsTokens, 1)
-  assert.ok(Math.abs(result.completion.usage.estimatedModelCostUsd - 0.013) < Number.EPSILON)
+  assert.equal(result.completion.usage.estimatedModelCostMicrocents, 1_300_000)
   assert.equal(transport.requests.length, 1)
   assert.equal(transport.requests[0]?.model, "test-model")
   assert.equal(transport.requests[0]?.prompt, '{"a":"two","z":1}')
@@ -114,7 +114,7 @@ test("rejects malformed or schema-mismatched provider output without claiming co
     text: "not-json",
     usage: { promptTokenCount: 1, candidatesTokenCount: 1 },
   })).structuredComplete("input", responseSchema(), context())
-  assert.deepEqual(malformed, { kind: "failed", message: "Gemini response was not valid JSON", retryable: false, usage: { inputTokens: 1, outputTokens: 1, thoughtsTokens: 0, estimatedModelCostUsd: 0.003 }, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
+  assert.deepEqual(malformed, { kind: "failed", message: "Gemini response was not valid JSON", retryable: false, usage: { inputTokens: 1, outputTokens: 1, thoughtsTokens: 0, estimatedModelCostMicrocents: 300000 }, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
 
   const mismatched = await model(new FakeTransport({
     kind: "completed",
@@ -152,7 +152,7 @@ test("propagates cancellation to an in-flight transport and preserves an explici
   }))
   const pending = model(transport).structuredComplete("input", responseSchema(), context({ cancellation }))
   cancellation.cancel()
-  assert.deepEqual(await pending, { kind: "cancelled", usage: { inputTokens: 2, outputTokens: 0, thoughtsTokens: 0, estimatedModelCostUsd: 0.002 }, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
+  assert.deepEqual(await pending, { kind: "cancelled", usage: { inputTokens: 2, outputTokens: 0, thoughtsTokens: 0, estimatedModelCostMicrocents: 200000 }, effect: { kind: "unknown", recovery: "owner_reconciliation_required" } })
   assert.equal(transport.requests.length, 1)
 })
 

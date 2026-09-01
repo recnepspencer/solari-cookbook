@@ -18,7 +18,7 @@ import { INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, INTERFACE_COMPILER_W
 const interfaceCompilerRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)))
 const hostManifest = resolve(interfaceCompilerRoot, "worth-runtime-host/Cargo.toml")
 const hostTargetDirectory = process.env.INTERFACE_COMPILER_WORTH_TARGET_DIR ?? resolve(interfaceCompilerRoot, "worth-runtime-host/target")
-const hostBinary = resolve(hostTargetDirectory, "debug/worth-runtime-host.exe")
+const hostBinary = resolve(hostTargetDirectory, "debug", `worth-runtime-host${process.platform === "win32" ? ".exe" : ""}`)
 const execFileAsync = promisify(execFile)
 
 function liveHostProcess() {
@@ -95,7 +95,7 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
   const adapter = createCompiledPlanReadAdapter(client)
-  const id = capabilityId("capability.enron.trades.stage-trade")
+  const id = capabilityId("capability.trades.ingest-incoming-trade")
   const capability = await adapter.readCapability(id, context("operation.client-capability"))
   const replay = await adapter.readActiveReplay(id, context("operation.client-replay"))
   assert.equal(capability.kind, "found")
@@ -258,8 +258,8 @@ test("start execution preserves cancellation, timeout, and request correlation p
 })
 
 test("recovery mutations distinguish interruption before dispatch from an uncertain sent request", async () => {
-  const capability = capabilityId("capability.enron.trades.stage-trade")
-  const replay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
+  const capability = capabilityId("capability.trades.ingest-incoming-trade")
+  const replay = "replay.trades.ingest-incoming-trade.v1" as ReplayVersionId
   const execution = executionId("execution.recovery-interruption")
   const request = { executionId: execution, capabilityId: capability, replayVersionId: replay, expectedExecutionRevision: 2, expectedCapabilityRevision: 4, expectedReplayRevision: 1 }
   const cancelledContext = context("operation.recovery-cancelled")
@@ -278,8 +278,8 @@ test("recovery mutations distinguish interruption before dispatch from an uncert
 })
 
 test("adapter preserves typed unresolved and known-committed WORTH recovery outcomes", () => {
-  const capability = capabilityId("capability.enron.trades.stage-trade")
-  const replay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
+  const capability = capabilityId("capability.trades.ingest-incoming-trade")
+  const replay = "replay.trades.ingest-incoming-trade.v1" as ReplayVersionId
   const response = parseHostResponse(JSON.stringify({
     outcome: "replay_recovery_stopped",
     protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
@@ -319,16 +319,16 @@ test("client settles through the real host and publishes a retained concrete eve
 test("live recovery facade degrades a failed replay and activates a verified explored replacement", async (testContext) => {
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
-  const capability = capabilityId("capability.enron.trades.stage-trade")
-  const brokenReplay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
-  const replacement = "replay.enron.trades.stage-trade.v2" as ReplayVersionId
+  const capability = capabilityId("capability.trades.ingest-incoming-trade")
+  const brokenReplay = "replay.trades.ingest-incoming-trade.v1" as ReplayVersionId
+  const replacement = "replay.trades.ingest-incoming-trade.v2" as ReplayVersionId
   const execution = executionId("execution.typescript-replay-recovery")
   const admitted = await client.admitExecution({
     id: execution,
     capabilityId: capability,
     replayVersionId: brokenReplay,
     mode: "compiled",
-    metrics: { startedAt: "2026-09-01T12:00:00.000Z" as IsoTimestamp, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 },
+    metrics: { startedAt: "2026-09-01T12:00:00.000Z" as IsoTimestamp, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostMicrocents: 0 },
   }, context("operation.recovery-admit"))
   assert.equal(admitted.kind, "admitted")
   if (admitted.kind !== "admitted") throw new Error("expected WORTH admission")
@@ -348,9 +348,9 @@ test("live recovery facade degrades a failed replay and activates a verified exp
     capabilityId: capability,
     version: 2,
     steps: [
-      { type: "navigate", url: "https://interface-compiler.example/search" },
-      { type: "fill", target: { semanticDescription: "catalog query", role: "searchbox" }, value: "laundry detergent" },
-      { type: "click", target: { semanticDescription: "run catalog query", role: "button", name: "Search" } },
+      { type: "navigate", url: "https://interface-compiler.example/?page=mail" },
+      { type: "click", target: { semanticDescription: "deliver incoming trade", role: "button", name: "Deliver new trade email" } },
+      { type: "click", target: { semanticDescription: "post trade to Financials", role: "button", name: "Review CSV & post to Financials" } },
     ],
     confidence: 0.875,
     discoveredFromExperimentId: "experiment.typescript.recovery" as never,
@@ -401,18 +401,18 @@ test("live narrow runtime port admits an arbitrary execution and returns WORTH-p
   testContext.after(() => client.close())
   const execution = executionId("execution.typescript-live-42")
   const startedAt = "2026-09-01T12:00:00.000Z" as IsoTimestamp
-  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.enron.trades.stage-trade"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
+  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.trades.ingest-incoming-trade"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostMicrocents: 0 } }, context("operation.live-admit"))
   assert.equal(admitted.kind, "admitted")
   if (admitted.kind !== "admitted") throw new Error("expected admission")
   assert.equal(admitted.projection.executionId, execution)
   assert.equal(admitted.evidence.projectedFieldCount, 8)
   const base = { occurredAt: startedAt, protocol: "interface-compiler.events", schemaVersion: 1, recovery: "replay_safe", integrity: { algorithm: "sha256", digest: "test" } } as const
-  const model = { ...base, eventId: "event.ts.model" as EventId, idempotencyKey: "event.ts.model", type: "model.called", payload: { executionId: execution, role: "explorer", inputTokens: 13, outputTokens: 5, estimatedModelCostUsd: 0.031 } } satisfies InterfaceCompilerEvent
+  const model = { ...base, eventId: "event.ts.model" as EventId, idempotencyKey: "event.ts.model", type: "model.called", payload: { executionId: execution, role: "explorer", inputTokens: 13, outputTokens: 5, estimatedModelCostMicrocents: 3100000 } } satisfies InterfaceCompilerEvent
   const observation = { ...base, eventId: "event.ts.observation" as EventId, idempotencyKey: "event.ts.observation", type: "browser.observed", payload: { executionId: execution, sessionId: "session.ts" as never, observationId: "observation.ts" as never } } satisfies InterfaceCompilerEvent
   assert.equal((await client.publish(model, context("operation.live-model"))).kind, "published")
   assert.equal((await client.publish(observation, context("operation.live-observation"))).kind, "published")
   const settled = await client.settleExecution(execution, { kind: "success" }, "2026-09-01T12:00:02.250Z" as IsoTimestamp, admitted.projection.revision, context("operation.live-runtime-settle"))
   assert.equal(settled.kind, "settled")
   if (settled.kind !== "settled") throw new Error("expected settlement")
-  assert.deepEqual(settled.projection.metrics, { startedAt, endedAt: "2026-09-01T12:00:02.250Z", wallClockMs: 2250, modelCalls: 1, inputTokens: 13, outputTokens: 5, browserObservations: 1, browserActions: 0, estimatedModelCostUsd: 0.031 })
+  assert.deepEqual(settled.projection.metrics, { startedAt, endedAt: "2026-09-01T12:00:02.250Z", wallClockMs: 2250, modelCalls: 1, inputTokens: 13, outputTokens: 5, browserObservations: 1, browserActions: 0, estimatedModelCostMicrocents: 3100000 })
 })

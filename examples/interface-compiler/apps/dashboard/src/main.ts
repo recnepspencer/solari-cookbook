@@ -1,7 +1,7 @@
 import "./styles.css"
 import type { WorthDashboardQuery } from "./dashboard-contract.js"
 import { mountDashboard } from "./controller.js"
-import { renderDashboardResult } from "./render.js"
+import { mountDashboardResult } from "./render.js"
 
 declare global {
   interface Window {
@@ -16,7 +16,7 @@ if (root === null) {
 
 const query = window.interfaceCompilerWorthQuery
 if (query === undefined) {
-  root.innerHTML = renderDashboardResult({ kind: "unavailable", reason: "not_configured" })
+  mountDashboardResult(root, { kind: "unavailable", reason: "not_configured" })
 } else {
   mountDashboard(root, query)
 }

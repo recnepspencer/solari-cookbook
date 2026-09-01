@@ -129,9 +129,9 @@ pub(super) fn valid_measured_event(event: &serde_json::Value) -> bool {
                     .and_then(|value| value.as_u64())
                     .is_some()
                 && payload
-                    .get("estimatedModelCostUsd")
-                    .and_then(|value| value.as_f64())
-                    .is_some_and(|value| value.is_finite() && value >= 0.0)
+                    .get("estimatedModelCostMicrocents")
+                    .and_then(|value| value.as_u64())
+                    .is_some()
         }
         "browser.observed" | "browser.action" => has_execution,
         _ => true,

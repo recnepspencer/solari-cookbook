@@ -10,7 +10,7 @@ use crate::application::{
     ReplayRevision, ReplayStatus,
 };
 use crate::host::replay_recovery::{
-    denied, failure_contract::replay_failure_from_settlement, stale, DegradeReplayRequest,
+    denied, stale, validation::replay_failure_from_settlement, DegradeReplayRequest,
     InterfaceCompilerReplayRecoveryEntity, InterfaceCompilerReplayRecoveryOutcome,
     InterfaceCompilerReplayRecoveryStage, MAX_RECOVERY_JSON_BYTES,
 };

@@ -43,7 +43,7 @@ fn validate_arguments() -> Result<(), String> {
         }
         if argument == "--help" {
             println!("Reads newline-delimited Interface Compiler WORTH requests from stdin.");
-            println!("Supported operations: read_application, start_execution, complete_execution, publish_domain_event, read_capability, read_active_replay");
+            println!("Supported operations: read_application, start_execution, admit_execution, complete_execution, publish_domain_event, read_capability, read_active_replay, degrade_replay, accept_replacement_candidate, record_replacement_verification, activate_replacement");
             std::process::exit(0);
         }
         return Err(format!("unsupported argument: {argument}"));

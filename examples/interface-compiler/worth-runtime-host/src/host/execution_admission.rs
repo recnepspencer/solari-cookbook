@@ -342,10 +342,7 @@ fn validate_admission(request: &InterfaceCompilerStartExecutionRequest) -> Resul
     {
         return Err("compiled execution requires a valid replay identity".into());
     }
-    if chrono::DateTime::parse_from_rfc3339(&request.metrics.started_at).is_err()
-        || !request.metrics.estimated_model_cost_usd.is_finite()
-        || request.metrics.estimated_model_cost_usd < 0.0
-    {
+    if chrono::DateTime::parse_from_rfc3339(&request.metrics.started_at).is_err() {
         return Err("start metrics are malformed".into());
     }
     Ok(())

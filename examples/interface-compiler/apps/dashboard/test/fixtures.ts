@@ -1,3 +1,4 @@
+import { createEvidence, type EvidenceInput } from "@interface-compiler/domain"
 import type {
   ApplicationId,
   CapabilityId,
@@ -127,18 +128,18 @@ export function fixtureProjection(): WorthDashboardProjection {
         capabilityId: healthyCapabilityId,
         kind: "measured",
         metrics: {
-          explorationCostUsd: 0.6,
-          verificationCostUsd: 0.4,
-          totalCompilationCostUsd: 1,
-          directAverageCostUsd: 0.05,
-          compiledAverageCostUsd: 0.01,
-          breakEvenCalls: { kind: "finite", calls: 25, exactCalls: 25, savingsPerCallUsd: 0.04 },
+          explorationCostMicrocents: 60000000,
+          verificationCostMicrocents: 40000000,
+          totalCompilationCostMicrocents: 100000000,
+          directAverageCostMicrocents: 5000000,
+          compiledAverageCostMicrocents: 1000000,
+          breakEvenCalls: { kind: "finite", calls: 25, exactCalls: 25, savingsPerCallMicrocents: 4000000 },
         },
         lifetime: {
           executions: 100,
-          lifetimeDirectCostAvoidedUsd: 5,
-          lifetimeCompiledCostUsd: 2,
-          lifetimeNetSavingsUsd: 3,
+          lifetimeDirectCostAvoidedMicrocents: 500000000,
+          lifetimeCompiledCostMicrocents: 200000000,
+          lifetimeNetSavingsMicrocents: 300000000,
         },
         measuredExecutionIds: [executionId("execution-success")],
       },
@@ -152,28 +153,6 @@ export function fixtureProjection(): WorthDashboardProjection {
       },
       { capabilityId: degradedCapabilityId, kind: "missing", reason: "no_measured_runs", measuredExecutionIds: [] },
     ],
-    benchmark: {
-      direct: {
-        kind: "measured",
-        values: {
-          modelCalls: 10,
-          inputTokens: 1000,
-          outputTokens: 200,
-          totalTokens: 1200,
-          browserObservations: 10,
-          browserActions: 8,
-          wallClockMs: 2500,
-          estimatedModelCostUsd: 0.5,
-        },
-        executionIds: [executionId("execution-success")],
-      },
-      compiled: {
-        kind: "partial",
-        values: { modelCalls: 2, inputTokens: 150, outputTokens: 30, browserObservations: 3, browserActions: 2 },
-        missing: ["wallClockMs", "estimatedModelCostUsd"],
-        executionIds: [],
-      },
-    },
   }
 }
 
@@ -323,7 +302,7 @@ function execution(id: string, capabilityId: CapabilityId, status: "running" | "
       outputTokens: 20,
       browserObservations: 2,
       browserActions: 1,
-      estimatedModelCostUsd: 0.02,
+      estimatedModelCostMicrocents: 2000000,
     }
     return { ...base, status, metrics }
   }
@@ -337,7 +316,7 @@ function execution(id: string, capabilityId: CapabilityId, status: "running" | "
     outputTokens: 20,
     browserObservations: 2,
     browserActions: 1,
-    estimatedModelCostUsd: 0.02,
+    estimatedModelCostMicrocents: 2000000,
   }
   const terminalBase = { ...base, metrics }
   if (status === "success") return { ...terminalBase, status, outcome: { kind: "success" } }
@@ -346,26 +325,32 @@ function execution(id: string, capabilityId: CapabilityId, status: "running" | "
 
 function observationEvidence(id: string): DashboardEvidenceProjection {
   const evidenceIdValue = evidenceId(id)
-  const evidence: Evidence = { id: evidenceIdValue, capturedAt: timestamp, kind: "observation", observationId: `observation-${id}` as ObservationId, screenshotRef: "https://evidence.example.test/screenshot" }
+  const evidence = admittedEvidence({ id: evidenceIdValue, capturedAt: timestamp, kind: "observation", observationId: `observation-${id}` as ObservationId, screenshotRef: "https://evidence.example.test/screenshot" })
   return { status: "present", evidence, reference: "https://evidence.example.test/observation" }
 }
 
 function sessionEvidence(id: string): DashboardEvidenceProjection {
   const evidenceIdValue = evidenceId(id)
-  const evidence: Evidence = { id: evidenceIdValue, capturedAt: timestamp, kind: "solari_session", sessionId: sessionId("session-explorer"), recordingRef: "recording://explorer-3" }
+  const evidence = admittedEvidence({ id: evidenceIdValue, capturedAt: timestamp, kind: "solari_session", sessionId: sessionId("session-explorer"), recordingRef: "recording://explorer-3" })
   return { status: "present", evidence }
 }
 
 function postconditionEvidence(id: string): DashboardEvidenceProjection {
   const evidenceIdValue = evidenceId(id)
-  const evidence: Evidence = { id: evidenceIdValue, capturedAt: timestamp, kind: "postcondition", condition: { kind: "text_present", text: "Results" }, result: "satisfied" }
+  const evidence = admittedEvidence({ id: evidenceIdValue, capturedAt: timestamp, kind: "postcondition", condition: { kind: "text_present", text: "Results" }, result: "satisfied" })
   return { status: "present", evidence }
 }
 
 function failureEvidence(id: string): DashboardEvidenceProjection {
   const evidenceIdValue = evidenceId(id)
-  const evidence: Evidence = { id: evidenceIdValue, capturedAt: timestamp, kind: "failure", failure: { kind: "step_failed", stepIndex: 2, message: "Cart control was not found", evidenceIds: [evidenceIdValue] } }
+  const evidence = admittedEvidence({ id: evidenceIdValue, capturedAt: timestamp, kind: "failure", failure: { kind: "step_failed", stepIndex: 2, message: "Cart control was not found", evidenceIds: [evidenceIdValue] } })
   return { status: "failed", evidence }
+}
+
+function admittedEvidence(input: EvidenceInput): Evidence {
+  const result = createEvidence(input)
+  if (!result.ok) throw new Error(result.issues.map((entry) => entry.message).join(", "))
+  return result.value
 }
 
 function session(id: string, label: string, purpose: SolariSessionProjection["purpose"], status: SolariSessionProjection["status"], evidenceIds: string[]): SolariSessionProjection {

@@ -9,10 +9,9 @@ use crate::application::{
     ReplayVersion,
 };
 use crate::host::replay_recovery::{
-    candidate_contract::candidate_json, denied, recovery_binding,
-    AcceptReplacementCandidateRequest, InterfaceCompilerReplacementVerification,
-    InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
-    REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
+    denied, recovery_binding, validation::candidate_json, AcceptReplacementCandidateRequest,
+    InterfaceCompilerReplacementVerification, InterfaceCompilerReplayRecoveryOutcome,
+    InterfaceCompilerReplayRecoveryStage, REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
 };
 use crate::host::InterfaceCompilerWorthHost;
 

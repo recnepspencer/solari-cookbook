@@ -1,5 +1,6 @@
 import type {
   BreakEvenCalls,
+  ApplicationId,
   CapabilityId,
   ExecutionId,
   ReplayVersionId,
@@ -10,9 +11,14 @@ import type {
   WorthQueryEvidence,
   WorthRuntimeSettlementResult,
 } from "@interface-compiler/worth-adapter"
-import type { BenchmarkTaskIdentity } from "./contract.js"
-
 export const terminalBenchmarkReportSchemaVersion = "interface-compiler.terminal-benchmark.v1" as const
+
+export interface BenchmarkTaskIdentity {
+  readonly taskId: string
+  readonly applicationId: ApplicationId
+  readonly objectiveFingerprint: string
+  readonly modelId: string
+}
 
 export type WorthSettledBenchmarkExecution = Extract<WorthRuntimeSettlementResult, { readonly kind: "settled" }>
 
@@ -44,7 +50,7 @@ export interface TerminalBenchmarkMetrics {
   readonly browserObservations: number
   readonly browserActions: number
   readonly wallClockMs: number
-  readonly estimatedModelCostUsd: number
+  readonly estimatedModelCostMicrocents: number
 }
 
 export interface TerminalBenchmarkRunReport {
@@ -67,9 +73,9 @@ export type TerminalBenchmarkSavings = Readonly<{
 export type TerminalCompilationEconomics =
   | {
       readonly kind: "measured"
-      readonly discoveryCostUsd: number
-      readonly verificationCostUsd: number
-      readonly totalCostUsd: number
+      readonly discoveryCostMicrocents: number
+      readonly verificationCostMicrocents: number
+      readonly totalCostMicrocents: number
       readonly discoveryExecutionIds: readonly ExecutionId[]
       readonly verificationExecutionIds: readonly ExecutionId[]
     }
@@ -127,3 +133,40 @@ export interface UnavailableTerminalBenchmarkReport {
 }
 
 export type TerminalBenchmarkReport = MeasuredTerminalBenchmarkReport | UnavailableTerminalBenchmarkReport
+
+export interface TerminalWorkflowStep {
+  readonly capabilityId: CapabilityId
+  readonly replayVersionId: ReplayVersionId
+}
+
+export interface TerminalWorkflowBenchmarkInput {
+  readonly task: BenchmarkTaskIdentity
+  readonly workflow: readonly TerminalWorkflowStep[]
+  readonly direct: readonly WorthSettledBenchmarkExecution[]
+  readonly compiled: readonly WorthSettledBenchmarkExecution[]
+}
+
+export interface TerminalWorkflowRunReport {
+  readonly mode: "direct" | "compiled"
+  readonly executionIds: readonly ExecutionId[]
+  readonly metrics: TerminalBenchmarkMetrics
+}
+
+export type TerminalWorkflowBenchmarkReport =
+  | {
+      readonly schemaVersion: typeof terminalBenchmarkReportSchemaVersion
+      readonly kind: "measured"
+      readonly task: BenchmarkTaskIdentity
+      readonly workflow: readonly TerminalWorkflowStep[]
+      readonly direct: TerminalWorkflowRunReport
+      readonly compiled: TerminalWorkflowRunReport
+      readonly perRunSavings: TerminalBenchmarkSavings
+      readonly provenance: { readonly authority: "worth_terminal_execution_projections"; readonly executionIds: readonly ExecutionId[] }
+    }
+  | {
+      readonly schemaVersion: typeof terminalBenchmarkReportSchemaVersion
+      readonly kind: "not_comparable"
+      readonly task: BenchmarkTaskIdentity
+      readonly issues: readonly TerminalBenchmarkIssue[]
+      readonly provenance: { readonly authority: "worth_terminal_execution_projections" }
+    }

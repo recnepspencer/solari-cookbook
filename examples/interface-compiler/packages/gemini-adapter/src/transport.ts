@@ -66,9 +66,17 @@ export class GoogleGenAiTransport implements GeminiTransport {
           : { kind: "cancelled" }
       }
 
+      const status = error !== null && typeof error === "object" && typeof (error as { readonly status?: unknown }).status === "number"
+        ? (error as { readonly status: number }).status
+        : undefined
+      const providerMessage = error !== null && typeof error === "object" && typeof (error as { readonly message?: unknown }).message === "string"
+        ? (error as { readonly message: string }).message.replace(/AIza[\w-]+|AQ\.[\w-]+/g, "[redacted]")
+        : undefined
       return {
         kind: "failed",
-        message: "Gemini API request failed",
+        message: providerMessage === undefined
+          ? status === undefined ? "Gemini API request failed" : `Gemini API request failed with status ${status}`
+          : `Gemini API request failed: ${providerMessage}`,
         retryable: isRetryableProviderError(error),
       }
     }

@@ -37,9 +37,9 @@ export function assessReplayStepSafety(step: ReplayStep, observedAt: IsoTimestam
   const detected = detectSafetySignal(descriptions)
   const signal = detected.kind !== "safe_to_continue"
     ? detected
-    : step.type === "fill" && !isProductSearchTarget(step.target)
+    : step.type === "fill" && !isProductSearchTarget(step.target) && !isDeclaredBusinessDataTarget(step.target)
       ? { kind: "personal_information_required" as const, information: "unknown" as const }
-      : step.type === "select"
+      : step.type === "select" && !isDeclaredBusinessDataTarget(step.target)
         ? { kind: "personal_information_required" as const, information: "unknown" as const }
         : detected
   return classifySafetyBoundary({ observedAt, signal })
@@ -69,7 +69,7 @@ function detectNormalizedSafetySignal(normalized: string, includeAuthentication:
   if (matches(normalized, /\bcheckout\b|\b(?:place|submit|confirm|review)\s+(?:your\s+)?order\b|\b(?:buy|pay)\s+now\b|\bcomplete\s+(?:the\s+|your\s+)?purchase\b|\bconfirm\s+(?:the\s+|your\s+)?purchase\b|\bfinali[sz]e\s+(?:the\s+|your\s+)?order\b|\border confirmation\b|\b(?:continue|proceed)\s+(?:as\s+guest|to\s+(?:payment|shipping|delivery))\b/)) {
     return { kind: "order_placement" }
   }
-  if (matches(normalized, /\b(full name|date of birth|phone(?: number)?|email(?: address)?|contact info(?:rmation)?|contact details?|personal information|personal details?|street address)\b|\b(?:enter|provide)\s+(?:your\s+)?(?:name|phone|email|personal details?)\b|\bcontact info\s+required\b/)) {
+  if (matches(normalized, /\b(full name|date of birth|phone(?: number)?|email address|email (?:input|field|required)|contact info(?:rmation)?|contact details?|personal information|personal details?|street address)\b|\b(?:enter|provide)\s+(?:your\s+)?(?:name|phone|email|personal details?)\b|\bcontact info\s+required\b/)) {
     return { kind: "personal_information_required", information: personalInformationKind(normalized) }
   }
   return { kind: "safe_to_continue" }
@@ -99,7 +99,7 @@ function normalizeDescriptions(descriptions: readonly (string | undefined)[]): s
 }
 
 function isActiveAuthenticationBoundary(descriptions: readonly (string | undefined)[]): boolean {
-  const text = descriptions.filter((description): description is string => description !== undefined).join(" ").toLowerCase().replace(/[-_]+/g, " ")
+  const text = normalizeDescriptions(descriptions)
   return matches(text, /\/(?:account|login|signin|sign-in)(?:[/?#]|$)|\b(?:sign in|log in|login|authentication|account)\s+(?:is\s+)?required\b|\b(?:sign in|log in)\s+to\s+(?:continue|checkout|proceed)\b|\b(?:enter|provide)\s+(?:your\s+)?(?:credentials?|password|username)\b|\bcreate\s+(?:an?\s+)?account\b|\bpassword\s+(?:field|required)\b/)
 }
 
@@ -108,7 +108,19 @@ function isProductSearchTarget(target: Extract<ReplayStep, { readonly type: "fil
     .filter((entry): entry is string => entry !== undefined)
     .join(" ")
     .toLowerCase()
-  return matches(text, /\b(?:product\s+)?search(?:box|\s+field|\s+input)?\b|\bsearch\s+(?:products?|walmart)\b/)
+  return matches(text, /\b(?:product\s+)?search(?:box|\s+field|\s+input)?\b|\bsearch\s+products?\b/)
+}
+
+/**
+ * Non-personal fields that an explicitly scoped business capability may use.
+ * Sensitive terms still win above; unknown form fields remain fail-closed.
+ */
+function isDeclaredBusinessDataTarget(target: Extract<ReplayStep, { readonly type: "fill" | "select" }>["target"]): boolean {
+  const text = [target.semanticDescription, target.role, target.name, target.text, target.selector]
+    .filter((entry): entry is string => entry !== undefined)
+    .join(" ")
+    .toLowerCase()
+  return matches(text, /\b(counterparty|contract(?:\s+(?:ref(?:erence)?|code))?|trade\s+(?:ref(?:erence)?|code)|deal\s+code|volume|market|delivery\s+hub)\b/)
 }
 
 function credentialKind(text: string): "username" | "password" | "one_time_code" | "unknown" {

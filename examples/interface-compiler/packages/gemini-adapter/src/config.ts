@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai"
-import { calculateModelCostUsd, type Clock, type ModelPricingUsdPerToken, type ValidationIssue } from "@interface-compiler/domain"
+import { calculateModelCostMicrocents, type Clock, type ModelPricingMicrocentsPerToken, type ValidationIssue } from "@interface-compiler/domain"
 import { GeminiReasoningModel } from "./model.js"
 import { GoogleGenAiTransport } from "./transport.js"
 import { systemClock } from "./clock.js"
@@ -21,7 +21,7 @@ export type GeminiModelCreationResult =
   | { readonly kind: "missing_model" }
 
 export interface CreateGeminiModelInput {
-  readonly pricing: ModelPricingUsdPerToken
+  readonly pricing: ModelPricingMicrocentsPerToken
   readonly model?: string
   readonly clock?: Clock
 }
@@ -41,7 +41,7 @@ export function createGeminiReasoningModelFromEnvironment(input: CreateGeminiMod
   const apiKey = environmentText(environment.GEMINI_API_KEY)
   if (apiKey === undefined || apiKey.length === 0) return { kind: "missing_api_key" }
 
-  const pricingIssues = calculateModelCostUsd({ inputTokens: 0, outputTokens: 0 }, input.pricing)
+  const pricingIssues = calculateModelCostMicrocents({ inputTokens: 0, outputTokens: 0 }, input.pricing)
   if (!pricingIssues.ok) return { kind: "invalid_configuration", issues: pricingIssues.issues }
 
   const client = new GoogleGenAI({ apiKey })

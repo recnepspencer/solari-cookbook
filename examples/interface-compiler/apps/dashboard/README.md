@@ -36,9 +36,9 @@ dashboard may sort and select records for display, but it does not promote a
 candidate, repair a failure, decide that evidence is sufficient, or aggregate
 an authoritative ledger.
 
-Only numbers returned in Worth projections are shown as measured economics or
-benchmark metrics. The dashboard performs presentation-only derivation, such
-as selecting a capability and counting visible rows; it does not calculate or
-persist authoritative economics and it has no command path.
+Only economics returned in Worth projections are shown as measured. The
+dashboard performs presentation-only derivation, such as selecting a
+capability and counting visible rows; it does not calculate or persist
+authoritative economics and it has no command path.
 
 No credentials or `.env` values are required by this package.

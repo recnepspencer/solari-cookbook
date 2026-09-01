@@ -11,7 +11,8 @@
     "test": "npm run test --workspace @interface-compiler/domain && npm run test --workspace @interface-compiler/worth-adapter && npm run test --workspace @interface-compiler/tool-publisher && npm run test --workspace @interface-compiler/solari-adapter && npm run test --workspace @interface-compiler/gemini-adapter && npm run test --workspace @interface-compiler/benchmark && npm run test --workspace @interface-compiler/orchestrator",
     "demo:enron:portal": "node apps/enron-online-portal/server.mjs",
     "demo:enron:story": "tsx apps/orchestrator/src/enron-online-demo-cli.ts",
-    "benchmark:enron:validate": "npm test --workspace @interface-compiler/benchmark -- --test-name-pattern=semantic"
+    "typecheck:enron:live": "tsc --noEmit -p apps/orchestrator/test/live/tsconfig.json",
+    "demo:enron:recovery": "tsx apps/orchestrator/test/live/enron-recovery.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

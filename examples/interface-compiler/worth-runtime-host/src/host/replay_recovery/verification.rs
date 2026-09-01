@@ -2,7 +2,7 @@ use worth_query_host::facade::primary_graph;
 
 use super::{
     denied, valid_context, valid_identity,
-    verification_contract::{valid_verification_request_revisions, valid_verification_run},
+    validation::{valid_verification_request_revisions, valid_verification_run},
     InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
     RecordReplacementVerificationRequest,
 };

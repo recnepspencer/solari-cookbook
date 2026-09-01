@@ -66,8 +66,7 @@ pre {
 .session-heading,
 .timeline-heading,
 .timeline-verification,
-.subsection-heading,
-.benchmark-heading {
+.subsection-heading {
   display: flex;
   align-items: center;
 }
@@ -437,16 +436,14 @@ pre {
   margin-bottom: 12px;
 }
 
-.subsection h3,
-.benchmark-heading h3 {
+.subsection h3 {
   font-size: 0.95rem;
   margin: 0;
 }
 
 .contract-grid,
 .condition-grid,
-.economics-grid,
-.benchmark-grid {
+.economics-grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -637,43 +634,6 @@ details code {
   margin-bottom: 0;
 }
 
-.benchmark-column {
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  min-width: 0;
-  padding: 13px;
-}
-
-.benchmark-heading {
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.benchmark-values {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-}
-
-.benchmark-values > div {
-  align-items: baseline;
-  display: flex;
-  gap: 8px;
-  justify-content: space-between;
-}
-
-.benchmark-values dt,
-.benchmark-values dd {
-  font-size: 0.74rem;
-  margin: 0;
-}
-
-.benchmark-values dt {
-  color: var(--muted);
-}
-
 .missing-value,
 .missing-note {
   color: var(--warning);
@@ -843,8 +803,7 @@ details code {
 
   .detail-grid,
   .contract-grid,
-  .condition-grid,
-  .benchmark-grid {
+  .condition-grid {
     grid-template-columns: 1fr;
   }
 }

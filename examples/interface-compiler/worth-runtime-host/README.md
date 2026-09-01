@@ -1,88 +1,41 @@
-# Interface Compiler WORTH Query host
+# Solari UI API Builder WORTH host
 
-This is a real, deliberately narrow WORTH Query host. It installs and
-publishes a typed Interface Compiler application runtime through the public
-`worth-query-host::facade`, admits the demo credential and principal mapping,
-and executes bounded application queries against WORTH's in-memory relational
-graph. The installed application is the local Enron Online gas desk, with three
-semantic capabilities (`resolve-contract`, `stage-trade`, and
-`request-approval`) and active replays. Its Rust API additionally demonstrates a typed
-`start_execution` transition through WORTH's admitted operation, projected
-dependencies, effect program, compare-and-commit, and typed execution query.
-The same application facade now admits `complete_execution` for the seeded
-started execution and `publish_domain_event` for the concrete Interface
-Compiler v1 event set. Both commit WORTH-owned facts and return a WORTH query
-projection/receipt. Arbitrary direct and compiled execution admission creates
-a WORTH-owned identity-bound event journal. Settlement re-projects actual
-published model and browser telemetry into terminal metrics; the host does not
-accept a caller-supplied terminal metric total.
-
-The host requires the complete matching checkout at:
-
-```text
-C:\forge_workspace\worktree_2\workspaces\worth-query
-```
-
-That path is a Cargo dependency only; this worktree does not modify Forge
-source. The full boundary evidence is in
-[WORTH_BRIDGE_EVIDENCE.md](../WORTH_BRIDGE_EVIDENCE.md).
-
-## Run the process host
-
-From the repository root:
-
-```powershell
-cargo run --manifest-path examples/interface-compiler/worth-runtime-host/Cargo.toml -- --serve
-```
-
-The process accepts newline-delimited JSON and emits one response per line.
-Reads and admitted lifecycle/event commands all execute through WORTH.
-For example:
-
-```json
-{"protocol":"interface-compiler.worth-host.v2","request_id":"demo-1","operation":"read_application","application_id":"application.enron-online","credential":"interface-compiler-demo","deadline_ms":5000}
-```
-
-The live response contains the WORTH-derived `worth_application` projection and
-query receipt evidence. Unsupported operations return a typed
-`unavailable/unsupported` response. Invalid credentials return a typed
-authentication denial.
-
-The seeded capability and replay carry
-`{"kind":"synthetic_seed"}` compilation provenance. That marker is a
-fail-closed economics contract: the replay is runnable for this demo, but no
-compile-cost or break-even value may be attributed to it. Future measured
-provenance must name exact WORTH discovery and verification execution IDs.
-
-## TypeScript client
-
-Use the app-specific client from `@interface-compiler/worth-adapter`:
+This narrow in-memory host installs the demo's typed WORTH application runtime.
+It is intentionally not a general WORTH proxy and exposes only reads plus the
+typed replay-recovery operations needed for:
 
 ```ts
-import {
-  createWorthApplicationReadAdapter,
-  InterfaceCompilerWorthClient,
-} from "@interface-compiler/worth-adapter"
-
-const client = new InterfaceCompilerWorthClient({
-  process: {
-    command: "cargo",
-    args: ["run", "--quiet", "--manifest-path", "examples/interface-compiler/worth-runtime-host/Cargo.toml", "--", "--serve"],
-  },
-  credential: "interface-compiler-demo",
-})
-const worth = createWorthApplicationReadAdapter(client)
-const result = await worth.readApplication(applicationId, context)
-await client.close()
+trades.ingestIncomingTrade({ messageId })
 ```
 
-The client retains only child-process transport and request correlation. It
-does not cache projections, run a reducer, own lifecycle/replay/evidence
-state, or serialize WORTH recovery handles. The returned read result includes a
-typed `found`, `not_found`, `denied`, `unavailable`, `cancelled`, or `timed_out`
-outcome.
+The host seeds stale replay v1 for
+`capability.trades.ingest-incoming-trade`. During the live recovery drill,
+WORTH records v1's failure, accepts v2, retains three fresh-session verifier
+receipts, and activates v2 while the public capability remains unchanged.
 
-This is not a complete `WorthRuntimePort` implementation. The existing broad
-`createWorthAdapter` remains closed until every read, mutation, lifecycle,
-metrics, and event method is faithfully implemented through WORTH. No
-TypeScript fallback or test runtime is supplied.
+## Setup
+
+Run `pwsh -File .\scripts\bootstrap.ps1` from the Interface Compiler root.
+It clones the source-available WORTH dependency into `.local/worth`, checks out
+the tested pinned revision, and keeps the tracked Cargo path unchanged. See
+[SETUP.md](../SETUP.md) for Docker and one-command setup.
+
+## Local host
+
+```powershell
+cargo run --manifest-path worth-runtime-host/Cargo.toml -- --serve
+```
+
+The process uses newline-delimited JSON with protocol
+`interface-compiler.worth-host.v1`. It accepts a deterministic demo credential,
+not an environment secret. Reads return WORTH-derived projections and typed
+query receipts; unsupported operations return typed unavailable results.
+
+Run the host test suite with:
+
+```powershell
+cargo test --manifest-path worth-runtime-host/Cargo.toml
+```
+
+The demo does not claim persistent storage, autonomous replay discovery, or
+production trade posting.

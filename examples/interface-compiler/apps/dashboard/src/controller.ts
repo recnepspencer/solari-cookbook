@@ -1,6 +1,6 @@
 import type { WorthDashboardProjection, WorthDashboardQuery, WorthDashboardResult } from "./dashboard-contract.js"
-import { isSupportedWorthDashboardProjection } from "./dashboard-contract.js"
-import { renderDashboardResult, renderLoadingState } from "./render.js"
+import { isSupportedWorthDashboardProjection } from "./dashboard-decoder.js"
+import { mountDashboardResult, mountLoadingState } from "./render.js"
 
 export const defaultDashboardQueryTimeoutMs = 15_000
 
@@ -34,7 +34,7 @@ export function mountDashboard(root: HTMLElement, query: WorthDashboardQuery, op
 
   const render = (result: WorthDashboardResult): void => {
     if (disposed) return
-    root.innerHTML = renderDashboardResult(result, selectedCapabilityId)
+    mountDashboardResult(root, result, selectedCapabilityId)
   }
 
   const cancelActiveRequest = (): void => {
@@ -68,7 +68,7 @@ export function mountDashboard(root: HTMLElement, query: WorthDashboardQuery, op
       timeout,
     }
     activeRequest = request
-    root.innerHTML = renderLoadingState()
+    mountLoadingState(root)
     const requestedAt = new Date()
     const deadlineAt = new Date(requestedAt.getTime() + queryTimeoutMs).toISOString()
     const read = Promise.resolve().then(() => {
@@ -110,7 +110,7 @@ export function mountDashboard(root: HTMLElement, query: WorthDashboardQuery, op
       const capabilityId = capabilityButton.dataset.capabilityId
       if (capabilityId !== undefined && currentProjection !== undefined) {
         selectedCapabilityId = capabilityId
-        root.innerHTML = renderDashboardResult({ kind: "ready", projection: currentProjection }, selectedCapabilityId)
+        mountDashboardResult(root, { kind: "ready", projection: currentProjection }, selectedCapabilityId)
       }
       return
     }
@@ -118,7 +118,7 @@ export function mountDashboard(root: HTMLElement, query: WorthDashboardQuery, op
   }
 
   root.addEventListener("click", onClick)
-  root.innerHTML = renderLoadingState()
+  mountLoadingState(root)
   void refresh()
 
   return {

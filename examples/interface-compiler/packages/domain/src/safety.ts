@@ -64,7 +64,7 @@ export function classifySafetyBoundary(observation: SafetyBoundaryObservation): 
   if (signalIssues.length > 0) return invalid(...signalIssues)
 
   if (observation.signal.kind === "safe_to_continue") {
-    return valid({ kind: "continue", terminal: false })
+    return valid(Object.freeze({ kind: "continue" as const, terminal: false }))
   }
 
   const result: SafetyStopResult = {

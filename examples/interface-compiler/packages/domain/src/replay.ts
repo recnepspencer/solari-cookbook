@@ -115,18 +115,18 @@ export function createCandidateReplay(input: CandidateReplayInput): ValidationRe
   const issues = validateCandidateReplay(input)
   const result = issues.length > 0
     ? invalid(...issues)
-    : valid({
+    : valid(Object.freeze({
         id: input.id,
         capabilityId: input.capabilityId,
         version: input.version,
-        steps: [...input.steps],
+        steps: copyReplaySteps(input.steps),
         confidence: input.confidence,
         discoveredFromExperimentId: input.discoveredFromExperimentId,
         ...(input.supersedes === undefined ? {} : { supersedes: input.supersedes }),
         createdAt: input.createdAt,
         status: "candidate" as const,
         [candidateReplayBrand]: true as const,
-      })
+      }))
   if (result.ok) registerCandidateReplay(result.value)
   return result
 }
@@ -263,6 +263,23 @@ function replayCore(replay: ReplayVersionCore): ReplayVersionCore {
     ...(replay.supersedes === undefined ? {} : { supersedes: replay.supersedes }),
     createdAt: replay.createdAt,
   }
+}
+
+function copyReplaySteps(steps: readonly ReplayStep[]): readonly ReplayStep[] {
+  return Object.freeze(steps.map((step) => {
+    switch (step.type) {
+      case "click":
+      case "fill":
+      case "select":
+        return Object.freeze({ ...step, target: Object.freeze({ ...step.target }) })
+      case "assert":
+        return Object.freeze({ ...step, condition: Object.freeze({ ...step.condition }) })
+      case "navigate":
+      case "read":
+      case "wait":
+        return Object.freeze({ ...step })
+    }
+  }))
 }
 
 function validateReplayState(value: unknown, expectedStatus: ReplayVersion["status"]): boolean {

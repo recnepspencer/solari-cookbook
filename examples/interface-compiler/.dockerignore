@@ -1,0 +1,13 @@
+.git
+.local
+node_modules
+**/node_modules
+worth-runtime-host/target
+apps/dashboard/dist
+.env
+.env.*
+package-lock.json
+apps/dashboard/package-lock.json
+*.log
+benchmark-live*.*
+enron-*.log

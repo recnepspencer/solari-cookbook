@@ -21,7 +21,7 @@ export interface ExecutionMetrics {
   readonly outputTokens: number
   readonly browserObservations: number
   readonly browserActions: number
-  readonly estimatedModelCostUsd: number
+  readonly estimatedModelCostMicrocents: number
 }
 
 interface ExecutionCore {
@@ -160,7 +160,7 @@ export function validateExecutionMetrics(metrics: ExecutionMetrics): readonly Re
   for (const [field, value] of metricCounters(metrics)) {
     if (!isNonNegativeInteger(value)) issues.push(issue(field, `${field} must be a non-negative safe integer`))
   }
-  if (!isNonNegativeFiniteNumber(metrics.estimatedModelCostUsd)) issues.push(issue("estimatedModelCostUsd", "estimated model cost must be finite and non-negative"))
+  if (!isNonNegativeInteger(metrics.estimatedModelCostMicrocents)) issues.push(issue("estimatedModelCostMicrocents", "estimated model cost must be a non-negative safe integer"))
   return issues
 }
 

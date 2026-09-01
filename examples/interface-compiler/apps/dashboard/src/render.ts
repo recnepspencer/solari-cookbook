@@ -6,8 +6,6 @@ import type {
   ReplayFailure,
 } from "@interface-compiler/domain"
 import type {
-  BenchmarkMetric,
-  BenchmarkSideProjection,
   CapabilityEconomicsProjection,
   DashboardCapabilityProjection,
   DashboardReplayProjection,
@@ -33,6 +31,11 @@ export function renderDashboardResult(result: WorthDashboardResult, selectedCapa
   }
 }
 
+/** The sole browser-facing render boundary. Formatting stays pure above it. */
+export function mountDashboardResult(root: HTMLElement, result: WorthDashboardResult, selectedCapabilityId?: string): void {
+  root.replaceChildren(fragment(root, renderDashboardResult(result, selectedCapabilityId)))
+}
+
 export function renderLoadingState(): string {
   return `
     <main class="state-shell state-loading" aria-live="polite">
@@ -43,6 +46,16 @@ export function renderLoadingState(): string {
       </div>
     </main>
   `
+}
+
+export function mountLoadingState(root: HTMLElement): void {
+  root.replaceChildren(fragment(root, renderLoadingState()))
+}
+
+function fragment(root: HTMLElement, markup: string): DocumentFragment {
+  const range = root.ownerDocument.createRange()
+  range.selectNodeContents(root)
+  return range.createContextualFragment(markup)
 }
 
 export function renderDashboard(view: DashboardViewModel): string {
@@ -123,10 +136,6 @@ export function renderDashboard(view: DashboardViewModel): string {
           ${renderEconomics(view.selectedEconomics)}
         </section>
 
-        <section class="panel" aria-labelledby="benchmark-heading">
-          <div class="panel-heading"><div><p class="eyebrow">Comparison</p><h2 id="benchmark-heading">Benchmark</h2></div><span class="subtle">Measured execution projections</span></div>
-          ${renderBenchmark(view)}
-        </section>
       </div>
 
       <div class="dashboard-grid dashboard-grid-two">
@@ -311,7 +320,7 @@ function renderExecution(execution: ExecutionProjection): string {
         <span><strong>${escapeHtml(String(execution.metrics.inputTokens))}</strong> in tokens</span>
         <span><strong>${escapeHtml(String(execution.metrics.outputTokens))}</strong> out tokens</span>
         <span><strong>${execution.metrics.wallClockMs === undefined ? "—" : escapeHtml(formatDuration(execution.metrics.wallClockMs))}</strong> wall clock</span>
-        <span><strong>${escapeHtml(formatMoney(execution.metrics.estimatedModelCostUsd))}</strong> est. model cost</span>
+        <span><strong>${escapeHtml(formatMoney(execution.metrics.estimatedModelCostMicrocents))}</strong> est. model cost</span>
       </div>
       <details><summary>Browser metrics</summary><p class="subtle">${escapeHtml(String(execution.metrics.browserObservations))} observations · ${escapeHtml(String(execution.metrics.browserActions))} actions · started ${escapeHtml(formatTimestamp(execution.metrics.startedAt))}</p></details>
     </article>
@@ -341,15 +350,15 @@ function renderEconomics(economics: CapabilityEconomicsProjection | null): strin
   const metrics = economics.metrics
   const missing = partial && economics.missing.length > 0 ? `<div class="alert alert-warning"><strong>Partial economics:</strong> ${economics.missing.map((field) => `<code>${escapeHtml(field)}</code>`).join(", ")} not returned.</div>` : ""
   return `${missing}<div class="economics-grid">
-    ${economicsMetric("Compilation cost", metrics?.totalCompilationCostUsd)}
-    ${economicsMetric("Exploration cost", metrics?.explorationCostUsd)}
-    ${economicsMetric("Verification cost", metrics?.verificationCostUsd)}
-    ${economicsMetric("Direct cost / call", metrics?.directAverageCostUsd)}
-    ${economicsMetric("Compiled cost / call", metrics?.compiledAverageCostUsd)}
+    ${economicsMetric("Compilation cost", metrics?.totalCompilationCostMicrocents)}
+    ${economicsMetric("Exploration cost", metrics?.explorationCostMicrocents)}
+    ${economicsMetric("Verification cost", metrics?.verificationCostMicrocents)}
+    ${economicsMetric("Direct cost / call", metrics?.directAverageCostMicrocents)}
+    ${economicsMetric("Compiled cost / call", metrics?.compiledAverageCostMicrocents)}
     <div class="economics-item"><span>Break-even</span><strong>${metrics?.breakEvenCalls === undefined ? "Not available" : renderBreakEven(metrics.breakEvenCalls)}</strong></div>
-    ${economicsMetric("Lifetime direct cost avoided", economics.lifetime?.lifetimeDirectCostAvoidedUsd)}
-    ${economicsMetric("Lifetime compiled cost", economics.lifetime?.lifetimeCompiledCostUsd)}
-    <div class="economics-item"><span>Lifetime net savings</span><strong>${economics.lifetime === null ? "Not available" : formatMoney(economics.lifetime.lifetimeNetSavingsUsd)}</strong><small>${economics.lifetime === null ? "No lifetime projection" : `${escapeHtml(String(economics.lifetime.executions))} executions`}</small></div>
+    ${economicsMetric("Lifetime direct cost avoided", economics.lifetime?.lifetimeDirectCostAvoidedMicrocents)}
+    ${economicsMetric("Lifetime compiled cost", economics.lifetime?.lifetimeCompiledCostMicrocents)}
+    <div class="economics-item"><span>Lifetime net savings</span><strong>${economics.lifetime === null ? "Not available" : formatMoney(economics.lifetime.lifetimeNetSavingsMicrocents)}</strong><small>${economics.lifetime === null ? "No lifetime projection" : `${escapeHtml(String(economics.lifetime.executions))} executions`}</small></div>
   </div><p class="source-note">Values shown here are Worth-reported projections from ${escapeHtml(String(economics.measuredExecutionIds.length))} measured execution id${economics.measuredExecutionIds.length === 1 ? "" : "s"}.</p>`
 }
 
@@ -360,7 +369,7 @@ function economicsMetric(label: string, value: number | undefined): string {
 function renderBreakEven(breakEven: BreakEvenCalls): string {
   switch (breakEven.kind) {
     case "immediate":
-      return `Immediate · ${formatMoney(breakEven.savingsPerCallUsd)}/call saved`
+      return `Immediate · ${formatMoney(breakEven.savingsPerCallMicrocents)}/call saved`
     case "finite":
       return `${escapeHtml(String(breakEven.calls))} calls <small>(exact ${escapeHtml(formatNumber(breakEven.exactCalls))})</small>`
     case "never":
@@ -368,31 +377,6 @@ function renderBreakEven(breakEven: BreakEvenCalls): string {
     case "unavailable":
       return `Unavailable <small>(${escapeHtml(breakEven.reason.replaceAll("_", " "))})</small>`
   }
-}
-
-function renderBenchmark(view: DashboardViewModel): string {
-  return `<div class="benchmark-grid"><div class="benchmark-column"><div class="benchmark-heading"><h3>Direct</h3>${renderBenchmarkState(view.projection.benchmark.direct)}</div>${renderBenchmarkValues(view.projection.benchmark.direct)}</div><div class="benchmark-column"><div class="benchmark-heading"><h3>Compiled</h3>${renderBenchmarkState(view.projection.benchmark.compiled)}</div>${renderBenchmarkValues(view.projection.benchmark.compiled)}</div></div><p class="source-note">Numbers appear only when returned by Worth as measured execution projections.</p>`
-}
-
-function renderBenchmarkState(side: BenchmarkSideProjection): string {
-  const label = side.kind === "measured" ? "MEASURED" : side.kind === "partial" ? "PARTIAL" : "NO MEASURED RUNS"
-  return `<span class="status-badge status-${side.kind === "measured" ? "success" : side.kind === "partial" ? "warning" : "neutral"}">${label}</span>`
-}
-
-function renderBenchmarkValues(side: BenchmarkSideProjection): string {
-  if (side.kind === "missing") return `<p class="empty-state">${escapeHtml(side.reason === "no_measured_runs" ? "No measured runs returned." : "Runs are incomplete; metrics withheld.")}</p>`
-  const values = side.values
-  const fields: readonly [BenchmarkMetric, string, (value: number) => string][] = [
-    ["modelCalls", "Model calls", (value) => formatNumber(value)],
-    ["inputTokens", "Input tokens", (value) => formatNumber(value)],
-    ["outputTokens", "Output tokens", (value) => formatNumber(value)],
-    ["totalTokens", "Total tokens", (value) => formatNumber(value)],
-    ["browserObservations", "Browser observations", (value) => formatNumber(value)],
-    ["browserActions", "Browser actions", (value) => formatNumber(value)],
-    ["wallClockMs", "Wall clock", (value) => formatDuration(value)],
-    ["estimatedModelCostUsd", "Estimated model cost", (value) => formatMoney(value)],
-  ]
-  return `<dl class="benchmark-values">${fields.map(([field, label, formatter]) => `<div><dt>${escapeHtml(label)}</dt><dd>${values[field] === undefined ? `<span class="missing-value">Not measured</span>` : escapeHtml(formatter(values[field] as number))}</dd></div>`).join("")}</dl>${side.kind === "partial" ? `<p class="missing-note">Missing: ${side.missing.map((field) => escapeHtml(field)).join(", ")}</p>` : ""}`
 }
 
 function renderSessions(view: DashboardViewModel): string {
@@ -538,7 +522,7 @@ function unavailableMessage(reason: "not_configured" | "not_admitted" | "unsuppo
 }
 
 function formatMoney(value: number): string {
-  return Number.isFinite(value) ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value) : "Not available"
+  return Number.isSafeInteger(value) ? new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value / 100_000_000) : "Not available"
 }
 
 function formatPercent(value: number): string {

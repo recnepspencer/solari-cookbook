@@ -165,53 +165,6 @@ export type CapabilityEconomicsProjection =
       readonly measuredExecutionIds: readonly ExecutionId[]
     }
 
-export interface BenchmarkMeasurementValues {
-  readonly modelCalls: number
-  readonly inputTokens: number
-  readonly outputTokens: number
-  readonly totalTokens: number
-  readonly browserObservations: number
-  readonly browserActions: number
-  readonly wallClockMs: number
-  readonly estimatedModelCostUsd: number
-}
-
-export interface PartialBenchmarkMeasurementValues {
-  readonly modelCalls?: number
-  readonly inputTokens?: number
-  readonly outputTokens?: number
-  readonly totalTokens?: number
-  readonly browserObservations?: number
-  readonly browserActions?: number
-  readonly wallClockMs?: number
-  readonly estimatedModelCostUsd?: number
-}
-
-export type BenchmarkMetric = keyof BenchmarkMeasurementValues
-
-export type BenchmarkSideProjection =
-  | {
-      readonly kind: "measured"
-      readonly values: BenchmarkMeasurementValues
-      readonly executionIds: readonly ExecutionId[]
-    }
-  | {
-      readonly kind: "partial"
-      readonly values: PartialBenchmarkMeasurementValues
-      readonly missing: readonly BenchmarkMetric[]
-      readonly executionIds: readonly ExecutionId[]
-    }
-  | {
-      readonly kind: "missing"
-      readonly reason: "no_measured_runs" | "incomplete_runs"
-      readonly executionIds: readonly ExecutionId[]
-    }
-
-export interface BenchmarkProjection {
-  readonly direct: BenchmarkSideProjection
-  readonly compiled: BenchmarkSideProjection
-}
-
 export interface WorthDashboardProjection {
   readonly schemaVersion: typeof dashboardProjectionSchemaVersion
   readonly sourceRevision: number
@@ -224,7 +177,6 @@ export interface WorthDashboardProjection {
   readonly evidence: readonly DashboardEvidenceProjection[]
   readonly sessions: readonly SolariSessionProjection[]
   readonly economics: readonly CapabilityEconomicsProjection[]
-  readonly benchmark: BenchmarkProjection
 }
 
 export interface DashboardQueryContext {
@@ -250,88 +202,4 @@ export type WorthDashboardResult =
   | { readonly kind: "unavailable"; readonly reason: "not_configured" | "not_admitted" | "unsupported"; readonly message?: string }
   | { readonly kind: "failed"; readonly message: string; readonly retryable: boolean }
 
-export function isWorthDashboardReady(result: WorthDashboardResult): result is Extract<WorthDashboardResult, { readonly kind: "ready" }> {
-  return result.kind === "ready"
-}
-
-export function isSupportedWorthDashboardProjection(value: unknown): value is WorthDashboardProjection {
-  if (value === null || typeof value !== "object") return false
-  const candidate = value as Record<string, unknown>
-  if (candidate.schemaVersion !== dashboardProjectionSchemaVersion || !isRevision(candidate.sourceRevision) || typeof candidate.generatedAt !== "string") return false
-  if (!Array.isArray(candidate.capabilities) || !Array.isArray(candidate.replays) || !Array.isArray(candidate.executions) || !Array.isArray(candidate.evidence) || !Array.isArray(candidate.sessions) || !Array.isArray(candidate.economics)) return false
-  if (!isRecord(candidate.mode) || !isDashboardMode(candidate.mode.value) || !isRevision(candidate.mode.sourceRevision) || candidate.mode.sourceRevision > candidate.sourceRevision) return false
-  if (!candidate.evidence.every(isSupportedEvidenceProjection) || !hasUniqueCanonicalEvidenceIds(candidate.evidence) || !candidate.replays.every(isSupportedReplayProjection)) return false
-  return isRecord(candidate.benchmark) && "direct" in candidate.benchmark && "compiled" in candidate.benchmark
-}
-
-function isDashboardMode(value: unknown): value is DashboardMode {
-  return value === "direct" || value === "discovering" || value === "compiled" || value === "degraded" || value === "exploring" || value === "verifying"
-}
-
-function isRevision(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-}
-
-function isSupportedEvidenceProjection(value: unknown): value is DashboardEvidenceProjection {
-  if (!isRecord(value)) return false
-  if (value.status === "missing") return isNonEmptyText(value.id)
-  if (value.status !== "present" && value.status !== "failed") return false
-  return !("id" in value) && isRecord(value.evidence) && isNonEmptyText(value.evidence.id)
-}
-
-function hasUniqueCanonicalEvidenceIds(values: readonly unknown[]): boolean {
-  const ids = new Set<string>()
-  for (const value of values) {
-    if (!isRecord(value)) return false
-    const id = value.status === "missing" ? value.id : isRecord(value.evidence) ? value.evidence.id : undefined
-    if (!isNonEmptyText(id) || ids.has(id)) return false
-    ids.add(id)
-  }
-  return true
-}
-
-function isSupportedReplayProjection(value: unknown): value is DashboardReplayProjection {
-  if (!isRecord(value) || value.projectionKind !== "worth_replay") return false
-  if (!isNonEmptyText(value.id) || !isRevision(value.revision) || !isNonEmptyText(value.capabilityId) || !isRevision(value.version) || typeof value.confidence !== "number" || !Number.isFinite(value.confidence) || typeof value.createdAt !== "string") return false
-  if (!isSupportedVerificationProjection(value.verification)) return false
-  switch (value.status) {
-    case "candidate":
-      return true
-    case "verifying":
-      return true
-    case "active":
-      return Array.isArray(value.steps) && typeof value.verifiedAt === "string"
-    case "broken":
-      return isRecord(value.failure) && typeof value.brokenAt === "string"
-    case "superseded":
-      return isNonEmptyText(value.supersededBy) && typeof value.supersededAt === "string"
-    default:
-      return false
-  }
-}
-
-function isSupportedVerificationProjection(value: unknown): value is DashboardReplayVerificationProjection {
-  if (!isRecord(value) || !isDashboardVerificationPosture(value.posture)) return false
-  if (value.requiredSuccessfulRuns !== null && !isRevision(value.requiredSuccessfulRuns)) return false
-  if (!isRevision(value.successfulRuns) || !isRevision(value.failedRuns) || !Array.isArray(value.runs) || !Array.isArray(value.referencedEvidenceIds) || !Array.isArray(value.failedEvidenceIds) || !Array.isArray(value.missingEvidenceIds) || typeof value.explanation !== "string") return false
-  if (!value.referencedEvidenceIds.every(isNonEmptyText) || !value.failedEvidenceIds.every(isNonEmptyText) || !value.missingEvidenceIds.every(isNonEmptyText)) return false
-  return value.runs.every(isSupportedVerificationRunProjection)
-}
-
-function isSupportedVerificationRunProjection(value: unknown): value is DashboardVerificationRunProjection {
-  if (!isRecord(value) || !isNonEmptyText(value.id) || !isNonEmptyText(value.sessionId) || typeof value.freshSession !== "boolean" || !Array.isArray(value.evidenceIds) || !value.evidenceIds.every(isNonEmptyText)) return false
-  if (value.outcome === "success") return true
-  return value.outcome === "failure" && typeof value.failureMessage === "string"
-}
-
-function isDashboardVerificationPosture(value: unknown): value is DashboardVerificationPosture {
-  return value === "verified" || value === "provisional" || value === "failed" || value === "missing_evidence" || value === "inconsistent" || value === "superseded" || value === "not_started"
-}
-
-function isNonEmptyText(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object"
-}
+export function isWorthDashboardReady(result: WorthDashboardResult): result is Extract<WorthDashboardResult, { readonly kind: "ready" }> { return result.kind === "ready" }

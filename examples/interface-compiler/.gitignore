@@ -1,0 +1,7 @@
+/.local/
+/.env
+/benchmark-live*.err
+/benchmark-live*.out
+/enron-*.log
+/enron-*.err
+/enron-*.out

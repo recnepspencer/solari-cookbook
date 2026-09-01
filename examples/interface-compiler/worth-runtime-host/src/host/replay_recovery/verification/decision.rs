@@ -9,7 +9,7 @@ use crate::application::{
 };
 use crate::host::replay_recovery::{
     denied, stale,
-    verification_contract::{conflicts_with_retained_run, ordered},
+    validation::{conflicts_with_retained_run, ordered},
     InterfaceCompilerReplacementVerification, InterfaceCompilerReplayRecoveryEntity,
     InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
     RecordReplacementVerificationRequest, MAX_RECOVERY_JSON_BYTES,

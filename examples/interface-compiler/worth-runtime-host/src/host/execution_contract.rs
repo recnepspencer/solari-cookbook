@@ -63,7 +63,7 @@ pub struct InterfaceCompilerStartMetrics {
     pub output_tokens: u64,
     pub browser_observations: u64,
     pub browser_actions: u64,
-    pub estimated_model_cost_usd: f64,
+    pub estimated_model_cost_microcents: u64,
 }
 
 impl InterfaceCompilerStartMetrics {
@@ -75,7 +75,7 @@ impl InterfaceCompilerStartMetrics {
             output_tokens: 0,
             browser_observations: 0,
             browser_actions: 0,
-            estimated_model_cost_usd: 0.0,
+            estimated_model_cost_microcents: 0,
         }
     }
 }

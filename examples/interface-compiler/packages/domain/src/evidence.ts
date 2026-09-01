@@ -47,7 +47,7 @@ export type Evidence = EvidenceInput & { readonly [evidenceEntityBrand]: true }
 
 export function createEvidence(input: EvidenceInput): ValidationResult<Evidence> {
   const issues = validateEvidence(input)
-  return issues.length > 0 ? invalid(...issues) : valid({ ...input, [evidenceEntityBrand]: true as const })
+  return issues.length > 0 ? invalid(...issues) : valid(Object.freeze({ ...input, [evidenceEntityBrand]: true as const }))
 }
 
 export function validateEvidence(input: EvidenceInput): readonly ValidationIssue[] {

@@ -137,9 +137,9 @@ test("measured economics are displayed as projection values and not recalculated
 
   assert.equal(view.selectedEconomics?.kind, "measured")
   if (view.selectedEconomics?.kind !== "measured") return
-  assert.equal(view.selectedEconomics.metrics.totalCompilationCostUsd, 1)
+  assert.equal(view.selectedEconomics.metrics.totalCompilationCostMicrocents, 100_000_000)
   assert.equal(view.selectedEconomics.metrics.breakEvenCalls?.kind, "finite")
-  assert.equal(view.selectedEconomics.lifetime?.lifetimeNetSavingsUsd, 3)
+  assert.equal(view.selectedEconomics.lifetime?.lifetimeNetSavingsMicrocents, 300_000_000)
 })
 
 test("a missing replay verification projection stays unavailable", () => {

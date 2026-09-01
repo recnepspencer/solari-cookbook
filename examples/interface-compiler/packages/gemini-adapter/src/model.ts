@@ -1,11 +1,11 @@
 import {
-  calculateModelCostUsd,
+  calculateModelCostMicrocents,
   isJsonValue,
   validateJsonSchema,
   validateOperationContext,
   type Clock,
   type JsonSchema,
-  type ModelPricingUsdPerToken,
+  type ModelPricingMicrocentsPerToken,
   type OperationContext,
   type PartialEffectPosture,
   type ReasoningModel,
@@ -17,7 +17,7 @@ import type { GeminiTransport, GeminiTransportResult, GeminiUsageMetadata } from
 
 export interface GeminiReasoningModelOptions {
   readonly model: string
-  readonly pricing: ModelPricingUsdPerToken
+  readonly pricing: ModelPricingMicrocentsPerToken
   readonly transport: GeminiTransport
   readonly clock: Clock
 }
@@ -27,7 +27,7 @@ export type GeminiReasoningUsage = ReasoningUsage & { readonly thoughtsTokens: n
 /** Provider adapter that turns one structured Gemini response into a domain result. */
 export class GeminiReasoningModel implements ReasoningModel {
   private readonly model: string
-  private readonly pricing: ModelPricingUsdPerToken
+  private readonly pricing: ModelPricingMicrocentsPerToken
   private readonly transport: GeminiTransport
   private readonly clock: Clock
 
@@ -123,9 +123,9 @@ export class GeminiReasoningModel implements ReasoningModel {
     const thoughtsTokens = metadata.thoughtsTokenCount ?? 0
     if (!isSafeTokenCount(inputTokens) || !isSafeTokenCount(candidateTokens) || !isSafeTokenCount(thoughtsTokens)) return undefined
     if (!Number.isSafeInteger(candidateTokens + thoughtsTokens)) return undefined
-    const cost = calculateModelCostUsd({ inputTokens, outputTokens: candidateTokens + thoughtsTokens }, this.pricing)
+    const cost = calculateModelCostMicrocents({ inputTokens, outputTokens: candidateTokens + thoughtsTokens }, this.pricing)
     if (!cost.ok) return undefined
-    return { inputTokens, outputTokens: candidateTokens, thoughtsTokens, estimatedModelCostUsd: cost.value }
+    return { inputTokens, outputTokens: candidateTokens, thoughtsTokens, estimatedModelCostMicrocents: cost.value }
   }
 }
 

@@ -1,4 +1,5 @@
 import {
+  createSchema,
   type Clock,
   type EventPublicationResult,
   type Execution,
@@ -37,6 +38,8 @@ export interface OrchestratorPorts {
   readonly worth: OrchestratorWorthPort
   readonly solari: SolariPort
   readonly model?: ReasoningModel
+  /** A semantic-only caller for compiled capabilities; it never receives replay steps or observations. */
+  readonly consumerModel?: ReasoningModel
   readonly verifier?: SemanticVerifier
   readonly stepPolicy?: ExperimentStepPolicy
 }
@@ -172,6 +175,8 @@ export class ExperimentRunner {
       const replayStartedPublication = await emit("replay.started", { executionId, replayVersionId: plan.replay.id }, eventIdempotencyKey("replay.started", `${executionId}:${plan.replay.id}`))
       const replayStartedIntent = eventPublicationIntent(replayStartedPublication, { kind: "completed" })
       if (replayStartedIntent !== undefined) return this.finalizeWithoutSession(plan, executionId, executionRevision, startedAt, replayStartedIntent, controller, events, emit)
+      const consumerIntent = await this.invokeCompiledConsumer(plan, controller, emit, executionId)
+      if (consumerIntent !== undefined) return this.finalizeWithoutSession(plan, executionId, executionRevision, startedAt, consumerIntent, controller, events, emit)
     }
 
     const sessionGate = controller.check()
@@ -204,6 +209,61 @@ export class ExperimentRunner {
       cleanup = await closeSolariSession(sessionResult.lease, controller.context)
     }
     return this.finalize(plan, executionId, executionRevision, startedAt, intent, cleanup, controller, events, emit)
+  }
+
+  /**
+   * Records a consumer's semantic call without exposing the compiled browser
+   * implementation. WORTH remains the authority that admitted the capability
+   * and selected its active replay.
+   */
+  private async invokeCompiledConsumer(
+    plan: Extract<ExperimentPlan, { readonly kind: "compiled" }>,
+    controller: OperationController,
+    emit: EmitEvent,
+    executionId: ExecutionId,
+  ): Promise<ExperimentTerminal | undefined> {
+    const model = this.ports.consumerModel
+    if (model === undefined) return undefined
+    const gate = controller.reserveModelCall()
+    if (gate.kind === "stop") return { kind: "control_stop", stop: gate.stop }
+    const schema = createSchema<{ readonly toolName: string }>({
+      name: "compiled_semantic_tool_call",
+      json: {
+        type: "object",
+        additionalProperties: false,
+        required: ["toolName"],
+        properties: { toolName: { type: "string", const: plan.capability.name } },
+      },
+    })
+    if (!schema.ok) return { kind: "failure", message: "compiled semantic tool schema is invalid" }
+    const result = await model.structuredComplete({
+      role: "consumer",
+      objective: plan.request.objective,
+      input: plan.request.input,
+      semanticTool: {
+        name: plan.capability.name,
+        description: plan.capability.description,
+      },
+    }, schema.value, controller.context)
+    const usage = result.kind === "completed" ? result.completion.usage : result.kind === "failed" || result.kind === "cancelled" || result.kind === "timed_out" ? result.usage : undefined
+    if (usage !== undefined) {
+      const publication = await emit("model.called", {
+        executionId,
+        role: "consumer",
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        estimatedModelCostMicrocents: usage.estimatedModelCostMicrocents,
+      }, eventIdempotencyKey("model.called", `${executionId}:consumer`))
+      const publicationIntent = eventPublicationIntent(publication, result.kind === "completed" ? { kind: "completed" } : { kind: "unknown", recovery: "owner_reconciliation_required" })
+      if (publicationIntent !== undefined) return publicationIntent
+    }
+    switch (result.kind) {
+      case "completed": return result.completion.output.toolName === plan.capability.name ? undefined : { kind: "failure", message: "consumer selected a different semantic capability" }
+      case "denied": return { kind: "failure", message: "consumer model does not support the semantic tool schema" }
+      case "failed": return { kind: "failure", message: result.message, posture: result.effect }
+      case "cancelled": return { kind: "control_stop", stop: { kind: "cancelled", terminal: true, safePoint: result.effect.kind === "not_started" ? "before_effect" : "after_effect", posture: result.effect } }
+      case "timed_out": return { kind: "control_stop", stop: { kind: "deadline_exceeded", terminal: true, posture: result.effect } }
+    }
   }
 
   private async finalizeWithoutSession(
@@ -335,7 +395,7 @@ function initialExecutionMetrics(startedAt: string): ExecutionStart["metrics"] {
     outputTokens: 0,
     browserObservations: 0,
     browserActions: 0,
-    estimatedModelCostUsd: 0,
+    estimatedModelCostMicrocents: 0,
   }
 }
 

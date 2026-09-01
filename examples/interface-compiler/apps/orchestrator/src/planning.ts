@@ -141,9 +141,9 @@ export async function planCompiledExperiment(
       kind: "compiled",
       mode: "compiled",
       request: cloneRequest(input),
-      capability: cloneAndFreeze(capabilityResult.value),
-      replay: cloneAndFreeze(replayResult.value),
-      authority: cloneAndFreeze(authority),
+      capability: snapshotProjection(capabilityResult.value),
+      replay: snapshotProjection(replayResult.value),
+      authority: snapshotProjection(authority),
     }),
   }
 }
@@ -289,7 +289,8 @@ function isNonEmptyText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0
 }
 
-function cloneAndFreeze<T>(value: T): T {
+/** WORTH client mappers have already admitted the projection; retain a private snapshot for this plan. */
+function snapshotProjection<T>(value: T): T {
   return freezeNested(structuredClone(value))
 }
 

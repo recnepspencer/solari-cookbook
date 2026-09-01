@@ -15,11 +15,9 @@ use crate::application::{
 
 mod activation;
 mod candidate;
-mod candidate_contract;
 mod degradation;
-mod failure_contract;
+mod validation;
 mod verification;
-mod verification_contract;
 
 pub const REQUIRED_REPLACEMENT_VERIFICATION_RUNS: u64 = 3;
 pub(super) const JAVASCRIPT_MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
@@ -332,7 +330,7 @@ pub(super) fn valid_external_identity(value: &str) -> bool {
         && value.len() <= 200
         && value
             .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_' | b':'))
 }
 
 pub(super) fn valid_timestamp(value: &str) -> bool {
@@ -350,4 +348,21 @@ pub(super) fn recovery_binding(
     intent: &[u8],
 ) -> primary_graph::WorthQueryApplicationIdempotencyBinding {
     super::settlement_support::binding(kind, key, correlation, intent)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::valid_external_identity;
+
+    #[test]
+    fn accepts_the_colon_delimited_solari_session_identity_seen_in_live_evidence() {
+        assert!(valid_external_identity(
+            "ip-10-0-11-229:044b6e0a:cmth8hm1m0000000000000000:1780W-e6c9a11f"
+        ));
+    }
+
+    #[test]
+    fn rejects_session_identity_characters_outside_the_wire_allowlist() {
+        assert!(!valid_external_identity("solari session/with whitespace"));
+    }
 }

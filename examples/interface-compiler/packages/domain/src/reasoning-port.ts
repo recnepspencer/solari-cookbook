@@ -4,7 +4,7 @@ import type { OperationContext, PartialEffectPosture } from "./operation-context
 export interface ReasoningUsage {
   readonly inputTokens: number
   readonly outputTokens: number
-  readonly estimatedModelCostUsd: number
+  readonly estimatedModelCostMicrocents: number
 }
 
 export interface ReasoningCompletion<TOutput> {

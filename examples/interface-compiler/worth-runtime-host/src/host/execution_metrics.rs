@@ -15,7 +15,7 @@ pub(super) fn project_execution_metrics(
         serde_json::from_str(events_json).map_err(|_| "execution event journal is malformed")?;
     let mut counters = ExecutionCounters::from_start_metrics(object);
     for event in events {
-        counters.record(&event);
+        counters.record(&event)?;
     }
     counters.write_to(object)?;
     project_terminal_timing(projection, object)?;
@@ -28,7 +28,7 @@ struct ExecutionCounters {
     output_tokens: u64,
     browser_observations: u64,
     browser_actions: u64,
-    estimated_model_cost_usd: f64,
+    estimated_model_cost_microcents: u64,
 }
 
 impl ExecutionCounters {
@@ -45,28 +45,50 @@ impl ExecutionCounters {
             output_tokens: integer("outputTokens"),
             browser_observations: integer("browserObservations"),
             browser_actions: integer("browserActions"),
-            estimated_model_cost_usd: metrics
-                .get("estimatedModelCostUsd")
-                .and_then(|value| value.as_f64())
-                .unwrap_or(0.0),
+            estimated_model_cost_microcents: integer("estimatedModelCostMicrocents"),
         }
     }
 
-    fn record(&mut self, event: &serde_json::Value) {
+    fn record(&mut self, event: &serde_json::Value) -> Result<(), String> {
         match event.get("type").and_then(|value| value.as_str()) {
             Some("model.called") => {
-                self.model_calls += 1;
-                self.input_tokens += measured_integer(event, "inputTokens");
-                self.output_tokens += measured_integer(event, "outputTokens");
-                self.estimated_model_cost_usd += event
-                    .pointer("/payload/estimatedModelCostUsd")
-                    .and_then(|value| value.as_f64())
-                    .unwrap_or(0.0);
+                self.model_calls = self
+                    .model_calls
+                    .checked_add(1)
+                    .ok_or("model call count overflowed")?;
+                self.input_tokens = self
+                    .input_tokens
+                    .checked_add(measured_integer(event, "inputTokens"))
+                    .ok_or("input token count overflowed")?;
+                self.output_tokens = self
+                    .output_tokens
+                    .checked_add(measured_integer(event, "outputTokens"))
+                    .ok_or("output token count overflowed")?;
+                self.estimated_model_cost_microcents = self
+                    .estimated_model_cost_microcents
+                    .checked_add(
+                        event
+                            .pointer("/payload/estimatedModelCostMicrocents")
+                            .and_then(|value| value.as_u64())
+                            .unwrap_or(0),
+                    )
+                    .ok_or("estimated model cost overflowed")?;
             }
-            Some("browser.observed") => self.browser_observations += 1,
-            Some("browser.action") => self.browser_actions += 1,
+            Some("browser.observed") => {
+                self.browser_observations = self
+                    .browser_observations
+                    .checked_add(1)
+                    .ok_or("browser observation count overflowed")?
+            }
+            Some("browser.action") => {
+                self.browser_actions = self
+                    .browser_actions
+                    .checked_add(1)
+                    .ok_or("browser action count overflowed")?
+            }
             _ => {}
         }
+        Ok(())
     }
 
     fn write_to(
@@ -82,10 +104,8 @@ impl ExecutionCounters {
         );
         metrics.insert("browserActions".into(), self.browser_actions.into());
         metrics.insert(
-            "estimatedModelCostUsd".into(),
-            serde_json::Number::from_f64(self.estimated_model_cost_usd)
-                .ok_or("execution cost is not finite")?
-                .into(),
+            "estimatedModelCostMicrocents".into(),
+            self.estimated_model_cost_microcents.into(),
         );
         Ok(())
     }

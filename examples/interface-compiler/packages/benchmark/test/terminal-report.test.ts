@@ -36,7 +36,7 @@ function evidence(identity: string, kind: "execution" | "capability" | "replay" 
 function stopped(
   id: string,
   mode: "direct" | "compiled",
-  metrics: { readonly modelCalls: number; readonly inputTokens: number; readonly outputTokens: number; readonly browserObservations: number; readonly browserActions: number; readonly wallClockMs: number; readonly estimatedModelCostUsd: number },
+  metrics: { readonly modelCalls: number; readonly inputTokens: number; readonly outputTokens: number; readonly browserObservations: number; readonly browserActions: number; readonly wallClockMs: number; readonly estimatedModelCostMicrocents: number },
   stop: SafetyStopResult = classifiedStop({ kind: "order_placement" }),
 ): WorthSettledBenchmarkExecution {
   return {
@@ -76,7 +76,7 @@ function successful(id: string, mode: "exploratory" | "compiled", cost: number):
       mode,
       lifecycle: "success",
       revision: 2,
-      metrics: { startedAt: "2026-09-01T11:00:00.000Z", endedAt: "2026-09-01T11:00:01.000Z", wallClockMs: 1_000, modelCalls: 1, inputTokens: 11, outputTokens: 7, browserObservations: 1, browserActions: 1, estimatedModelCostUsd: cost },
+      metrics: { startedAt: "2026-09-01T11:00:00.000Z", endedAt: "2026-09-01T11:00:01.000Z", wallClockMs: 1_000, modelCalls: 1, inputTokens: 11, outputTokens: 7, browserObservations: 1, browserActions: 1, estimatedModelCostMicrocents: cost },
       outcome: { kind: "success" },
     },
     evidence: evidence(`query.${id}`),
@@ -86,8 +86,8 @@ function successful(id: string, mode: "exploratory" | "compiled", cost: number):
 function baseInput(): TerminalBenchmarkReportInput {
   return {
     task: { taskId: "walmart-tide-pods-boundary", applicationId: "application.walmart" as ApplicationId, objectiveFingerprint: "sha256:test-objective", modelId: "gemini-test" },
-    direct: stopped("execution.direct", "direct", { modelCalls: 3, inputTokens: 300, outputTokens: 90, browserObservations: 5, browserActions: 3, wallClockMs: 3_000, estimatedModelCostUsd: 0.3 }),
-    compiled: stopped("execution.compiled", "compiled", { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostUsd: 0.1 }),
+    direct: stopped("execution.direct", "direct", { modelCalls: 3, inputTokens: 300, outputTokens: 90, browserObservations: 5, browserActions: 3, wallClockMs: 3_000, estimatedModelCostMicrocents: 30000000 }),
+    compiled: stopped("execution.compiled", "compiled", { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostMicrocents: 10000000 }),
     compiledPlan: {
       capabilityId,
       replayVersionId,
@@ -102,10 +102,10 @@ test("copies every report metric from WORTH terminal projections and derives onl
   const report = createTerminalBenchmarkReport(baseInput())
   assert.equal(report.kind, "measured")
   if (report.kind !== "measured") throw new Error("expected measured terminal comparison")
-  assert.deepEqual(report.direct.metrics, { modelCalls: 3, inputTokens: 300, outputTokens: 90, browserObservations: 5, browserActions: 3, wallClockMs: 3_000, estimatedModelCostUsd: 0.3 })
-  assert.deepEqual(report.compiled.metrics, { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostUsd: 0.1 })
+  assert.deepEqual(report.direct.metrics, { modelCalls: 3, inputTokens: 300, outputTokens: 90, browserObservations: 5, browserActions: 3, wallClockMs: 3_000, estimatedModelCostMicrocents: 30000000 })
+  assert.deepEqual(report.compiled.metrics, { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostMicrocents: 10000000 })
   assert.equal(report.perRunSavings.inputTokens.absolute, 220)
-  assert.equal(report.perRunSavings.estimatedModelCostUsd.absolute, 0.19999999999999998)
+  assert.equal(report.perRunSavings.estimatedModelCostMicrocents.absolute, 20_000_000)
   assert.deepEqual(report.provenance.executionIds, ["execution.direct", "execution.compiled"])
 })
 
@@ -120,13 +120,13 @@ test("rejects synthetic seeded plan projections for compilation economics even w
   assert.deepEqual(report.economics.compilation, { kind: "not_measured", reason: "synthetic_seed_not_economic_evidence", rejectedSuppliedCompilation: true })
   assert.deepEqual(report.economics.breakEven, { kind: "not_measured", reason: "synthetic_seed_not_economic_evidence" })
   assert.deepEqual(report.provenance.executionIds, ["execution.direct", "execution.compiled"])
-  assert.equal("totalCostUsd" in report.economics.compilation, false)
+  assert.equal("totalCostMicrocents" in report.economics.compilation, false)
 })
 
 test("derives compilation cost and break-even only from exactly attributed WORTH terminal projections", () => {
   const input = baseInput()
-  const discovery = successful("execution.discovery", "exploratory", 0.4)
-  const verification = successful("execution.verification", "compiled", 0.2)
+  const discovery = successful("execution.discovery", "exploratory", 40_000_000)
+  const verification = successful("execution.verification", "compiled", 20_000_000)
   const report = createTerminalBenchmarkReport({
     ...input,
     compiledPlan: {
@@ -137,11 +137,11 @@ test("derives compilation cost and break-even only from exactly attributed WORTH
   })
   assert.equal(report.kind, "measured")
   if (report.kind !== "measured") throw new Error("expected measured report")
-  assert.deepEqual(report.economics.compilation, { kind: "measured", discoveryCostUsd: 0.4, verificationCostUsd: 0.2, totalCostUsd: 0.6000000000000001, discoveryExecutionIds: ["execution.discovery"], verificationExecutionIds: ["execution.verification"] })
+  assert.deepEqual(report.economics.compilation, { kind: "measured", discoveryCostMicrocents: 40000000, verificationCostMicrocents: 20000000, totalCostMicrocents: 60000000, discoveryExecutionIds: ["execution.discovery"], verificationExecutionIds: ["execution.verification"] })
   assert.equal(report.economics.breakEven.kind, "measured")
   if (report.economics.breakEven.kind === "measured") {
     assert.equal(report.economics.breakEven.value.kind, "finite")
-    if (report.economics.breakEven.value.kind === "finite") assert.equal(report.economics.breakEven.value.calls, 4)
+    if (report.economics.breakEven.value.kind === "finite") assert.equal(report.economics.breakEven.value.calls, 3)
   }
 })
 
@@ -149,7 +149,7 @@ test("fails closed on missing WORTH monetary data instead of substituting zero",
   const input = baseInput()
   const invalid = {
     ...input.direct,
-    projection: { ...input.direct.projection, metrics: { ...input.direct.projection.metrics, estimatedModelCostUsd: undefined } },
+    projection: { ...input.direct.projection, metrics: { ...input.direct.projection.metrics, estimatedModelCostMicrocents: undefined } },
   } as unknown as WorthSettledBenchmarkExecution
   const report = createTerminalBenchmarkReport({ ...input, direct: invalid })
   assert.equal(report.kind, "not_comparable")
@@ -158,8 +158,8 @@ test("fails closed on missing WORTH monetary data instead of substituting zero",
 
 test("fails closed when supplied compilation identities do not match measured WORTH provenance", () => {
   const input = baseInput()
-  const discovery = successful("execution.discovery", "exploratory", 0.4)
-  const verification = successful("execution.verification", "compiled", 0.2)
+  const discovery = successful("execution.discovery", "exploratory", 40_000_000)
+  const verification = successful("execution.verification", "compiled", 20_000_000)
   const report = createTerminalBenchmarkReport({
     ...input,
     compiledPlan: { ...input.compiledPlan, compilationProvenance: { kind: "measured", discoveryExecutionIds: ["execution.other" as ExecutionId], verificationExecutionIds: [verification.projection.executionId] } },
@@ -232,7 +232,7 @@ test("requires direct and compiled runs to reach the same classified boundary", 
   const compiled = stopped(
     "execution.compiled",
     "compiled",
-    { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostUsd: 0.1 },
+    { modelCalls: 1, inputTokens: 80, outputTokens: 20, browserObservations: 4, browserActions: 3, wallClockMs: 2_000, estimatedModelCostMicrocents: 10000000 },
     classifiedStop({ kind: "shipping_details_required" }),
   )
   const report = createTerminalBenchmarkReport({ ...input, compiled })
@@ -240,7 +240,7 @@ test("requires direct and compiled runs to reach the same classified boundary", 
   if (report.kind === "not_comparable") assert.equal(report.issues.some((entry) => entry.code === "boundary_mismatch"), true)
 })
 
-test("fails closed when derived savings overflow despite individually finite WORTH metrics", () => {
+test("fails closed when WORTH supplies a non-integer money metric", () => {
   const input = baseInput()
   const direct = stopped("execution.direct", "direct", {
     modelCalls: 3,
@@ -249,7 +249,7 @@ test("fails closed when derived savings overflow despite individually finite WOR
     browserObservations: 5,
     browserActions: 3,
     wallClockMs: 3_000,
-    estimatedModelCostUsd: Number.MIN_VALUE,
+    estimatedModelCostMicrocents: 0,
   })
   const compiled = stopped("execution.compiled", "compiled", {
     modelCalls: 1,
@@ -258,11 +258,11 @@ test("fails closed when derived savings overflow despite individually finite WOR
     browserObservations: 4,
     browserActions: 3,
     wallClockMs: 2_000,
-    estimatedModelCostUsd: Number.MAX_VALUE,
+    estimatedModelCostMicrocents: 0.5,
   })
   const report = createTerminalBenchmarkReport({ ...input, direct, compiled })
   assert.equal(report.kind, "not_comparable")
   if (report.kind === "not_comparable") {
-    assert.equal(report.issues.some((entry) => entry.path === "perRunSavings.estimatedModelCostUsd" && entry.code === "numeric_overflow"), true)
+    assert.equal(report.issues.some((entry) => entry.path === "compiled.projection.metrics" && entry.code === "invalid_terminal_projection"), true)
   }
 })

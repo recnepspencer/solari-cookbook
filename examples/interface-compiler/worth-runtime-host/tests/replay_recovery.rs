@@ -4,8 +4,8 @@ use interface_compiler_worth_runtime_host::host::*;
 use serde_json::json;
 
 const EXECUTION_ID: &str = "execution.replay-recovery-host";
-const REPLACEMENT_ID: &str = "replay.enron.trades.stage-trade.v2";
-const REPLACEMENT_EXPERIMENT_ID: &str = "experiment.recovery.enron-stage-trade";
+const REPLACEMENT_ID: &str = "replay.trades.ingest-incoming-trade.v2";
+const REPLACEMENT_EXPERIMENT_ID: &str = "experiment.recovery.ingest-incoming-trade";
 
 #[test]
 fn worth_owns_failure_degradation_exploration_verification_and_replacement_activation() {
@@ -25,7 +25,7 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
         });
         let (degraded_capability, broken_replay) = applied(degraded);
         assert_eq!(degraded_capability.id, DEMO_CAPABILITY_ID);
-        assert_eq!(degraded_capability.name, "TradesStageTrade");
+        assert_eq!(degraded_capability.name, "TradesIngestIncomingTrade");
         assert_eq!(degraded_capability.status, "degraded");
         assert_eq!(
             degraded_capability.active_replay_id.as_deref(),
@@ -432,9 +432,9 @@ fn replacement_candidate(capability_id: &str) -> InterfaceCompilerReplacementCan
         capability_id: capability_id.into(),
         version: 2,
         steps: vec![
-            json!({"type":"navigate","url":"https://interface-compiler.example/search"}),
-            json!({"type":"fill","target":{"semanticDescription":"catalog query","role":"searchbox"},"value":"laundry detergent"}),
-            json!({"type":"click","target":{"semanticDescription":"run catalog query","role":"button","name":"Search"}}),
+            json!({"type":"navigate","url":"https://interface-compiler.example/?page=mail"}),
+            json!({"type":"click","target":{"semanticDescription":"deliver incoming trade","role":"button","name":"Deliver new trade email"}}),
+            json!({"type":"click","target":{"semanticDescription":"post trade to Financials","role":"button","name":"Review CSV & post to Financials"}}),
         ],
         confidence: 0.875,
         discovered_from_experiment_id: REPLACEMENT_EXPERIMENT_ID.into(),

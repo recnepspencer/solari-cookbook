@@ -1,6 +1,6 @@
 import type { ApplicationId, CapabilityId, ReplayVersionId } from "./identity.js"
 import { isActiveReplay, isBrokenReplay, isCandidateReplay, validateReplayFailure, type ActiveReplay, type BrokenReplay, type CandidateReplay, type ReplayFailure } from "./replay.js"
-import { validateCondition, validateJsonSchema, type Condition, type JsonSchema } from "./schema.js"
+import { copyCondition, copyJsonSchema, validateCondition, validateJsonSchema, type Condition, type JsonSchema } from "./schema.js"
 import { invalid, isNonEmptyText, isRecord, issue, valid, type ValidationResult } from "./validation.js"
 
 const discoveringCapabilityBrand: unique symbol = Symbol("DiscoveringCapability")
@@ -79,8 +79,8 @@ export function createCapability(input: CapabilityDefinition): ValidationResult<
           ...capabilityCore(input),
           status: "discovering" as const,
           discovery: Object.freeze({ kind: "initial" as const }),
-          preconditions: Object.freeze([...input.preconditions]),
-          postconditions: Object.freeze([...input.postconditions]),
+          preconditions: Object.freeze(input.preconditions.map(copyCondition)),
+          postconditions: Object.freeze(input.postconditions.map(copyCondition)),
           [discoveringCapabilityBrand]: true as const,
         }),
       )
@@ -233,10 +233,10 @@ function capabilityCore(input: CapabilityDefinition): CapabilityCore {
     applicationId: input.applicationId,
     name: input.name,
     description: input.description,
-    inputSchema: input.inputSchema,
-    outputSchema: input.outputSchema,
-    preconditions: input.preconditions,
-    postconditions: input.postconditions,
+    inputSchema: copyJsonSchema(input.inputSchema),
+    outputSchema: copyJsonSchema(input.outputSchema),
+    preconditions: Object.freeze(input.preconditions.map(copyCondition)),
+    postconditions: Object.freeze(input.postconditions.map(copyCondition)),
   })
 }
 

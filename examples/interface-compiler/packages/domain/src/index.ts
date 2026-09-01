@@ -86,15 +86,15 @@ export type {
   CompilationMetrics,
   CompilationMetricsInput,
   LifetimeEconomics,
-  ModelPricingUsdPerToken,
+  ModelPricingMicrocentsPerToken,
   ModelUsage,
 } from "./economics.js"
 export {
   calculateBreakEvenCalls,
-  calculateCompilationCostUsd,
+  calculateCompilationCostMicrocents,
   calculateCompilationMetrics,
   calculateLifetimeEconomics,
-  calculateModelCostUsd,
+  calculateModelCostMicrocents,
 } from "./economics.js"
 
 export type {

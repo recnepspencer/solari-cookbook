@@ -42,8 +42,8 @@ test("ignores passive global sign-in navigation but stops when checkout is actio
   const passive = {
     id: "observation.passive",
     sessionId: "session.passive",
-    url: "https://www.walmart.com/search?q=Tide%20Pods",
-    title: "Tide Pods - Walmart.com",
+    url: "https://catalog.example.test/search?q=industrial%20valve",
+    title: "Industrial valve catalog",
     pageSummary: "Search results",
     interactables: [{ kind: "link", role: "link", name: "Sign In Account" }, { kind: "button", role: "button", name: "Add to cart" }],
     observedAt,
@@ -62,7 +62,7 @@ test("passive account chrome cannot mask another human-required boundary", () =>
   const pageBoundary = {
     id: "observation.shipping",
     sessionId: "session.shipping",
-    url: "https://www.walmart.com/cart",
+    url: "https://catalog.example.test/cart",
     title: "Account | Cart",
     pageSummary: "Shipping address required",
     interactables: [],
@@ -86,7 +86,7 @@ test("passive account chrome cannot mask another human-required boundary", () =>
 })
 
 test("allows only the bounded product-search fill and stops all other unknown fills before effects", () => {
-  const search = assessReplayStepSafety({ type: "fill", target: { semanticDescription: "Walmart product search", role: "searchbox" }, value: "Tide Pods" }, observedAt)
+  const search = assessReplayStepSafety({ type: "fill", target: { semanticDescription: "supplier product search", role: "searchbox" }, value: "industrial valve" }, observedAt)
   assert.equal(search.ok, true)
   if (search.ok) assert.equal(search.value.kind, "continue")
 
@@ -94,6 +94,22 @@ test("allows only the bounded product-search fill and stops all other unknown fi
   assert.equal(unknown.ok, true)
   if (!unknown.ok || unknown.value.kind !== "stop") throw new Error("expected unknown fill stop")
   assert.equal(unknown.value.result.reason, "personal_information_required")
+})
+
+test("allows declared non-personal wholesale trade fields while leaving unknown form fields fail-closed", () => {
+  const volume = assessReplayStepSafety({ type: "fill", target: { semanticDescription: "trade volume", role: "textbox", name: "Volume (MMBtu)" }, value: "50000" }, observedAt)
+  assert.equal(volume.ok, true)
+  if (volume.ok) assert.equal(volume.value.kind, "continue")
+
+  const counterparty = assessReplayStepSafety({ type: "select", target: { semanticDescription: "counterparty", role: "combobox", name: "Counterparty" }, value: "midwest-utility-17" }, observedAt)
+  assert.equal(counterparty.ok, true)
+  if (counterparty.ok) assert.equal(counterparty.value.kind, "continue")
+})
+
+test("does not confuse an operational email delivery with a request for personal data", () => {
+  assert.equal(detectSafetySignal(["Deliver new trade email"]).kind, "safe_to_continue")
+  assert.equal(detectSafetySignal(["Incoming trade email delivered"]).kind, "safe_to_continue")
+  assert.equal(detectSafetySignal(["Enter your email"]).kind, "personal_information_required")
 })
 
 test("checks a replay action before the Solari effect is invoked", () => {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { isSupportedWorthDashboardProjection } from "../src/dashboard-contract.js"
+import { isSupportedWorthDashboardProjection } from "../src/dashboard-decoder.js"
 import { fixtureProjection } from "./fixtures.js"
 
 test("projection admission rejects a duplicate dashboard-owned evidence identity", () => {
