@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
+import { execFile } from "node:child_process"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
+import { promisify } from "node:util"
 import type { ApplicationId, OperationContext } from "@interface-compiler/domain"
 import {
   createWorthApplicationReadAdapter,
@@ -11,6 +13,7 @@ import {
 
 const interfaceCompilerRoot = resolve(fileURLToPath(new URL("../../../", import.meta.url)))
 const hostManifest = resolve(interfaceCompilerRoot, "worth-runtime-host/Cargo.toml")
+const execFileAsync = promisify(execFile)
 
 function id(value: string): ApplicationId {
   return value as ApplicationId
@@ -33,6 +36,13 @@ function applicationResult(result: WorthApplicationReadResult): Extract<WorthApp
   assert.equal(result.kind, "found")
   return result
 }
+
+test.before(async function establishLiveRustHostArtifact() {
+  await execFileAsync("cargo", ["build", "--quiet", "--manifest-path", hostManifest, "--bin", "worth-runtime-host"], {
+    cwd: interfaceCompilerRoot,
+    windowsHide: true,
+  })
+})
 
 test("client crosses the process boundary and returns the WORTH application projection", async (testContext) => {
   const client = new InterfaceCompilerWorthClient({
