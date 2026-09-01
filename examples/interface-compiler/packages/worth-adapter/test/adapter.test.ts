@@ -22,7 +22,12 @@ import type {
   WorthSubmissionResult,
 } from "@interface-compiler/domain"
 import { createCandidateReplay } from "@interface-compiler/domain"
-import { createWorthAdapter, type WorthCompilationMetricsProjection, type WorthRuntimePort } from "../src/index.js"
+import {
+  createWorthAdapter,
+  type WorthCompilationMetricsProjection,
+  type WorthQueryHostFacadeBinding,
+  type WorthRuntimePort,
+} from "../src/index.js"
 
 function id<T extends string>(value: string): T {
   return value as T
@@ -75,12 +80,16 @@ function runtimePort(overrides: Partial<WorthRuntimePort> = {}): WorthRuntimePor
   }
 }
 
+function createAdapter(runtime: WorthRuntimePort = runtimePort()) {
+  return createWorthAdapter({ boundary: "worth-query-host::facade", runtime })
+}
+
 test("forwards Worth projections and context without keeping local state", async () => {
   const operationContext = context()
   const capabilityId = id<CapabilityId>("capability.adapter-test")
   let response: WorthReadResult<never> = { kind: "not_found", entity: "capability", entityId: capabilityId }
   const calls: { capabilityId?: CapabilityId; context?: OperationContext } = {}
-  const adapter = createWorthAdapter(
+  const adapter = createAdapter(
     runtimePort({
       readCapability: async (receivedId, receivedContext) => {
         calls.capabilityId = receivedId
@@ -124,7 +133,7 @@ test("forwards Worth-owned compilation metrics projections without calculating o
   }
   let receivedId: CapabilityId | undefined
   let receivedContext: OperationContext | undefined
-  const adapter = createWorthAdapter(
+  const adapter = createAdapter(
     runtimePort({
       readCompilationMetrics: async (receivedCapabilityId, receivedOperationContext) => {
         receivedId = receivedCapabilityId
@@ -143,7 +152,7 @@ test("forwards Worth-owned compilation metrics projections without calculating o
 
 test("submits lifecycle helpers as Worth commands rather than applying transitions locally", async () => {
   const commands: WorthCommand[] = []
-  const adapter = createWorthAdapter(
+  const adapter = createAdapter(
     runtimePort({
       submit: async (command) => {
         commands.push(command)
@@ -251,7 +260,7 @@ test("publishes events through Worth and preserves the returned publication resu
   const operationContext = context()
   let receivedEvent: InterfaceCompilerEvent | undefined
   let receivedContext: OperationContext | undefined
-  const adapter = createWorthAdapter(
+  const adapter = createAdapter(
     runtimePort({
       publishEvent: async (received, receivedOperationContext) => {
         receivedEvent = received
@@ -270,7 +279,27 @@ test("publishes events through Worth and preserves the returned publication resu
 
 test("rejects a missing runtime method at the adapter boundary", () => {
   assert.throws(
-    () => createWorthAdapter({} as WorthRuntimePort),
+    () =>
+      createWorthAdapter({
+        boundary: "worth-query-host::facade",
+        runtime: {} as unknown as WorthRuntimePort,
+      }),
     /Worth runtime port is missing readApplication\(\)/,
+  )
+})
+
+test("requires an explicit worth-query-host facade binding", async () => {
+  const operationContext = context()
+  const runtime = runtimePort()
+  const adapter = createWorthAdapter({
+    boundary: "worth-query-host::facade",
+    runtime,
+  })
+
+  assert.deepEqual(await adapter.submit({ kind: "resume_capability_exploration", capabilityId: id("capability.facade") }, operationContext), failedSubmission())
+  assert.throws(() => createWorthAdapter(undefined as unknown as WorthQueryHostFacadeBinding), /host-facade binding is required/)
+  assert.throws(
+    () => createWorthAdapter({ runtime } as unknown as WorthQueryHostFacadeBinding),
+    /must enter through worth-query-host::facade/,
   )
 })

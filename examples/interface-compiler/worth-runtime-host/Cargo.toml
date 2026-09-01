@@ -1,0 +1,9 @@
+[package]
+name = "interface-compiler-worth-runtime-host"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "worth-runtime-host"
+path = "src/main.rs"
