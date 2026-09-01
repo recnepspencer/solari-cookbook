@@ -4,6 +4,10 @@ use interface_compiler_worth_runtime_host::host::{
     DEMO_CREDENTIAL, DEMO_EXECUTION_ID, DEMO_EXECUTION_ID_TWO, DEMO_EXECUTION_NON_PENDING_ID,
     DEMO_EXECUTION_STARTED,
 };
+use interface_compiler_worth_runtime_host::protocol::{
+    handle_request, InterfaceCompilerHostRequest, InterfaceCompilerHostResponse,
+    INTERFACE_COMPILER_WORTH_PROTOCOL, START_EXECUTION_OPERATION,
+};
 
 #[test]
 fn start_execution_commits_through_worth_and_returns_the_typed_query_projection() {
@@ -113,6 +117,36 @@ fn independently_seeded_started_execution_is_rejected_without_committing() {
                     && current_lifecycle == DEMO_EXECUTION_STARTED
             ));
         }
+    });
+}
+
+#[test]
+fn process_protocol_maps_the_real_start_transition_and_lifecycle_rejection() {
+    run_on_host_stack(|| {
+        let host = InterfaceCompilerWorthHost::in_memory_demo().unwrap();
+        let request = |request_id: &str, execution_id: &str| InterfaceCompilerHostRequest {
+            protocol: INTERFACE_COMPILER_WORTH_PROTOCOL.to_string(),
+            request_id: request_id.to_string(),
+            operation: START_EXECUTION_OPERATION.to_string(),
+            application_id: None,
+            execution_id: Some(execution_id.to_string()),
+            credential: Some(DEMO_CREDENTIAL.to_string()),
+            deadline_ms: Some(DEFAULT_REQUEST_TIMEOUT.as_millis() as u64),
+        };
+
+        assert!(matches!(
+            handle_request(request("start-1", DEMO_EXECUTION_ID), &host),
+            InterfaceCompilerHostResponse::ExecutionTransitioned { execution, evidence, .. }
+                if execution.execution_id == DEMO_EXECUTION_ID
+                    && execution.lifecycle == DEMO_EXECUTION_STARTED
+                    && evidence.basis_released
+        ));
+        assert!(matches!(
+            handle_request(request("start-2", DEMO_EXECUTION_NON_PENDING_ID), &host),
+            InterfaceCompilerHostResponse::LifecycleNotPending { execution_id, current_lifecycle, .. }
+                if execution_id == DEMO_EXECUTION_NON_PENDING_ID
+                    && current_lifecycle == DEMO_EXECUTION_STARTED
+        ));
     });
 }
 

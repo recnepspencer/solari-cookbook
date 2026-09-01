@@ -1,8 +1,8 @@
 //! The explicit application-specific process boundary.
 //!
-//! This is a product transport for one read operation, not a generic WORTH
-//! wire protocol.  Only immutable query products and typed denial/unavailable
-//! outcomes cross it.  WORTH runtime-local proof, graph, and recovery handles
+//! This is a product transport for two application operations, not a generic
+//! WORTH wire protocol. Only published projections/evidence and typed terminal
+//! outcomes cross it. WORTH runtime-local proof, graph, and recovery handles
 //! never cross the boundary.
 
 use std::time::Duration;
@@ -14,8 +14,12 @@ use crate::host::{
     InterfaceCompilerApplicationReadRequest, InterfaceCompilerWorthHost, DEFAULT_REQUEST_TIMEOUT,
 };
 
+mod start_execution;
+pub use start_execution::{InterfaceCompilerHostCommitKind, InterfaceCompilerHostExecution};
+
 pub const INTERFACE_COMPILER_WORTH_PROTOCOL: &str = "interface-compiler.worth-host.v1";
-pub const LIVE_OPERATION: &str = "read_application";
+pub const READ_APPLICATION_OPERATION: &str = "read_application";
+pub const START_EXECUTION_OPERATION: &str = "start_execution";
 pub const MAX_PROCESS_LINE_BYTES: usize = 64 * 1024;
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +29,7 @@ pub struct InterfaceCompilerHostRequest {
     pub request_id: String,
     pub operation: String,
     pub application_id: Option<String>,
+    pub execution_id: Option<String>,
     pub credential: Option<String>,
     pub deadline_ms: Option<u64>,
 }
@@ -38,6 +43,10 @@ pub enum InterfaceCompilerHostDenialStage {
     EntityResolution,
     Query,
     Projection,
+    OperationAdmission,
+    DependencyProjection,
+    EffectProgram,
+    Commit,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -55,6 +64,7 @@ pub enum InterfaceCompilerHostInvalidRequestReason {
     EmptyRequestId,
     EmptyOperation,
     MissingApplicationId,
+    MissingExecutionId,
     MissingCredential,
     MalformedJson,
     InvalidUtf8,
@@ -105,6 +115,30 @@ pub enum InterfaceCompilerHostResponse {
         kind: String,
         message: String,
     },
+    ExecutionTransitioned {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        commit: InterfaceCompilerHostCommitKind,
+        execution: InterfaceCompilerHostExecution,
+        evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    LifecycleNotPending {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        execution_id: String,
+        current_lifecycle: String,
+    },
+    ExecutionDenied {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        execution_id: String,
+        stage: InterfaceCompilerHostDenialStage,
+        kind: String,
+        message: String,
+    },
     Unavailable {
         protocol: &'static str,
         request_id: String,
@@ -124,7 +158,7 @@ pub fn handle_request(
     request: InterfaceCompilerHostRequest,
     host: &InterfaceCompilerWorthHost,
 ) -> InterfaceCompilerHostResponse {
-    let request_id = request.request_id;
+    let request_id = request.request_id.clone();
     if request.protocol != INTERFACE_COMPILER_WORTH_PROTOCOL {
         return InterfaceCompilerHostResponse::Unavailable {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
@@ -150,13 +184,16 @@ pub fn handle_request(
             message: "operation must not be empty".to_string(),
         };
     }
-    if request.operation != LIVE_OPERATION {
+    if request.operation == START_EXECUTION_OPERATION {
+        return start_execution::handle_start_execution(request_id, request, host);
+    }
+    if request.operation != READ_APPLICATION_OPERATION {
         return InterfaceCompilerHostResponse::Unavailable {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
             operation: request.operation,
             reason: InterfaceCompilerHostUnavailableReason::Unsupported,
-            message: "this host exposes only the admitted application read".to_string(),
+            message: "this host exposes only read_application and start_execution".to_string(),
         };
     }
     let Some(application_id) = request.application_id else {
@@ -198,7 +235,7 @@ fn map_read_outcome(
         } => InterfaceCompilerHostResponse::Found {
             protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
             request_id,
-            operation: LIVE_OPERATION,
+            operation: READ_APPLICATION_OPERATION,
             application: InterfaceCompilerHostApplication {
                 projection_kind: "worth_application",
                 id: projection.id,
@@ -219,7 +256,7 @@ fn map_read_outcome(
             InterfaceCompilerHostResponse::NotFound {
                 protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
                 request_id,
-                operation: LIVE_OPERATION,
+                operation: READ_APPLICATION_OPERATION,
                 application_id,
             }
         }
@@ -231,7 +268,7 @@ fn map_read_outcome(
             InterfaceCompilerHostResponse::Denied {
                 protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
                 request_id,
-                operation: LIVE_OPERATION,
+                operation: READ_APPLICATION_OPERATION,
                 application_id,
                 stage,
                 kind,

@@ -12,10 +12,12 @@ pub mod protocol;
 pub use host::{
     InterfaceCompilerApplicationReadDenial, InterfaceCompilerApplicationReadEvidence,
     InterfaceCompilerApplicationReadInvalidRequest, InterfaceCompilerApplicationReadOutcome,
-    InterfaceCompilerApplicationReadRequest, InterfaceCompilerHostSetupError,
-    InterfaceCompilerWorthHost, DEMO_APPLICATION_REVISION,
+    InterfaceCompilerApplicationReadRequest, InterfaceCompilerExecutionCommitKind,
+    InterfaceCompilerExecutionQueryEvidence, InterfaceCompilerHostSetupError,
+    InterfaceCompilerStartExecutionDenialStage, InterfaceCompilerStartExecutionOutcome,
+    InterfaceCompilerStartExecutionRequest, InterfaceCompilerWorthHost, DEMO_APPLICATION_REVISION,
 };
 pub use protocol::{
     handle_request, InterfaceCompilerHostRequest, InterfaceCompilerHostResponse,
-    INTERFACE_COMPILER_WORTH_PROTOCOL,
+    INTERFACE_COMPILER_WORTH_PROTOCOL, READ_APPLICATION_OPERATION, START_EXECUTION_OPERATION,
 };
