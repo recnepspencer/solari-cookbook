@@ -32,6 +32,7 @@ import {
 } from "./planning.js"
 import type { SemanticVerifier, SemanticVerificationResult } from "./semantic-verifier.js"
 import type { WorthAuthority } from "@interface-compiler/domain"
+type WorthEvidenceReader = Pick<WorthAuthority, "readEvidence">
 
 export type ExperimentTerminal =
   | { readonly kind: "success"; readonly output?: JsonValue }
@@ -60,7 +61,7 @@ export async function runExperimentSession(
   controller: OperationController,
   model: ReasoningModel | undefined,
   verifier: SemanticVerifier | undefined,
-  worth: WorthAuthority,
+  worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
 ): Promise<ExperimentTerminal> {
@@ -81,7 +82,7 @@ async function runDirect(
   controller: OperationController,
   model: ReasoningModel | undefined,
   verifier: SemanticVerifier | undefined,
-  worth: WorthAuthority,
+  worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
 ): Promise<ExperimentTerminal> {
@@ -136,7 +137,7 @@ async function runCompiled(
   observation: Observation,
   controller: OperationController,
   verifier: SemanticVerifier | undefined,
-  worth: WorthAuthority,
+  worth: WorthEvidenceReader,
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
 ): Promise<ExperimentTerminal> {
@@ -266,7 +267,7 @@ function solariStepIntent(result: Exclude<SolariStepResult, { readonly kind: "co
 async function verifyOutcome(
   conditions: readonly Condition[] | undefined,
   verifier: SemanticVerifier | undefined,
-  worth: WorthAuthority,
+  worth: WorthEvidenceReader,
   observation: Observation,
   output: JsonValue | undefined,
   controller: OperationController,
@@ -345,7 +346,7 @@ async function postconditionFailure(
   result: Extract<SemanticVerificationResult, { readonly kind: "failed" }>,
   conditions: readonly Condition[],
   replayVersionId: ReplayVersionId,
-  worth: WorthAuthority,
+  worth: WorthEvidenceReader,
   controller: OperationController,
 ): Promise<PostconditionFailureResult> {
   if (validateCondition(result.condition).length > 0) return { kind: "invalid", message: "semantic verifier returned an invalid postcondition" }

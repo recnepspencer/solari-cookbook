@@ -6,6 +6,10 @@ import type {
   CapabilityId,
   CapabilityProjection,
   ExecutionId,
+  ExecutionCompletion,
+  EventPublicationResult,
+  InterfaceCompilerEvent,
+  IsoTimestamp,
   OperationContext,
   PartialEffectPosture,
 } from "@interface-compiler/domain"
@@ -13,6 +17,8 @@ import {
   INTERFACE_COMPILER_WORTH_PROTOCOL,
   INTERFACE_COMPILER_WORTH_READ_OPERATION,
   INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION,
+  INTERFACE_COMPILER_WORTH_COMPLETE_EXECUTION_OPERATION,
+  INTERFACE_COMPILER_WORTH_PUBLISH_DOMAIN_EVENT_OPERATION,
   INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION,
   INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION,
   parseHostResponse,
@@ -24,6 +30,7 @@ import {
   type HostUnavailableReason,
 } from "./worth-query-wire.js"
 import type { WorthExecutionQueryEvidence, WorthStartExecutionAdapter, WorthStartExecutionResult } from "./worth-start-execution.js"
+import type { WorthExecutionSettlementPort, WorthExecutionSettlementResult } from "./execution-settlement.js"
 import type { WorthApplicationReadAdapter, WorthApplicationReadResult } from "./worth-application-read.js"
 import { mapCompiledCapability, mapCompiledReplay, type CompiledPlanReadPort, type CompiledPlanReadResult } from "./compiled-plan-read.js"
 export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION } from "./worth-query-wire.js"
@@ -43,7 +50,7 @@ type PendingResult = HostResponse | "cancelled" | "timed_out" | undefined
 type PendingCompletion = (result: PendingResult) => void
 
 /** App-specific process transport; WORTH retains all runtime authority. */
-export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter, CompiledPlanReadPort {
+export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter, WorthStartExecutionAdapter, CompiledPlanReadPort, WorthExecutionSettlementPort {
   private readonly processCommand: WorthQueryProcessCommand
   private readonly credential: string
   private readonly pending = new Map<string, PendingCompletion>()
@@ -110,6 +117,20 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
     if (response === "cancelled" || response === "timed_out") return this.executionInterrupted(response, context, unknownMutationPosture())
     if (response === undefined) return this.executionUnavailable(executionId, "transport_unavailable", this.processFailure ?? "the WORTH host process is unavailable")
     return this.mapStartExecutionResponse(executionId, response)
+  }
+
+  public async completeExecution(executionId: ExecutionId, completion: ExecutionCompletion, endedAt: IsoTimestamp, expectedExecutionRevision: number, context: OperationContext): Promise<WorthExecutionSettlementResult> {
+    const budget=this.remainingRequestBudget(context);if(budget.kind==="cancelled"||budget.kind==="timed_out")return {kind:budget.kind,operationId:context.operationId,posture:{kind:"not_started"}};if(budget.kind==="invalid")return {kind:"denied",executionId,message:budget.message}
+    const status=completion.kind==="success"?"success":completion.kind==="safety_stop"?"stopped":"failure";const settlement={status,completion,endedAt} as const
+    const response=await this.send({protocol:INTERFACE_COMPILER_WORTH_PROTOCOL,request_id:this.nextRequestId(),operation:INTERFACE_COMPILER_WORTH_COMPLETE_EXECUTION_OPERATION,execution_id:executionId,expected_revision:expectedExecutionRevision,settlement,credential:this.credential,deadline_ms:budget.milliseconds},context,budget.milliseconds)
+    if(response==="cancelled"||response==="timed_out")return {kind:response,operationId:context.operationId,posture:unknownMutationPosture()};if(response===undefined)return {kind:"unavailable",executionId,message:this.processFailure??"the WORTH host process is unavailable"}
+    if(response.outcome==="execution_settled"&&response.execution.execution_id===executionId&&isTerminalLifecycle(response.execution.lifecycle))return {kind:"settled",commit:response.commit,projection:{projectionKind:"worth_execution_settlement",executionId,lifecycle:response.execution.lifecycle,revision:response.execution.revision},evidence:mapEvidence(response.evidence)}
+    if(response.outcome==="execution_stale"&&response.execution_id===executionId)return {kind:"stale",executionId,expectedRevision:response.expected_revision,actualRevision:response.actual_revision};if(response.outcome==="execution_lifecycle_invalid"&&response.execution_id===executionId)return {kind:"lifecycle_invalid",executionId,currentLifecycle:response.current_lifecycle};if(response.outcome==="execution_denied"&&response.execution_id===executionId)return {kind:"denied",executionId,message:response.message};return {kind:"unavailable",executionId,message:"the WORTH host returned a mismatched completion response"}
+  }
+
+  public async publish(event: InterfaceCompilerEvent, context: OperationContext): Promise<EventPublicationResult> {
+    const unknown={kind:"unknown" as const,recovery:"owner_reconciliation_required" as const};const budget=this.remainingRequestBudget(context);if(budget.kind==="cancelled")return {kind:"cancelled",eventId:event.eventId,effect:unknown};if(budget.kind==="timed_out")return {kind:"deferred",eventId:event.eventId,retry:"publisher_recovery_required",effect:unknown};if(budget.kind==="invalid")return {kind:"failed",eventId:event.eventId,message:budget.message,retryable:false,effect:unknown}
+    const response=await this.send({protocol:INTERFACE_COMPILER_WORTH_PROTOCOL,request_id:this.nextRequestId(),operation:INTERFACE_COMPILER_WORTH_PUBLISH_DOMAIN_EVENT_OPERATION,event,credential:this.credential,deadline_ms:budget.milliseconds},context,budget.milliseconds);if(response==="cancelled")return {kind:"cancelled",eventId:event.eventId,effect:unknown};if(response==="timed_out"||response===undefined)return {kind:"deferred",eventId:event.eventId,retry:"publisher_recovery_required",effect:unknown};if(response.outcome==="event_published"&&response.event_id===event.eventId)return {kind:response.commit==="committed"?"published":"duplicate",eventId:event.eventId,effect:{kind:"completed"}};return {kind:"failed",eventId:event.eventId,message:"WORTH denied or mismatched domain event publication",retryable:false,effect:unknown}
   }
 
   public readCapability(capabilityId: CapabilityId, context: OperationContext): Promise<CompiledPlanReadResult<CapabilityProjection>> {
@@ -378,6 +399,8 @@ function unknownMutationPosture(): PartialEffectPosture {
 function mapEvidence(evidence: HostEvidence): WorthExecutionQueryEvidence {
   return { queryName: evidence.query_name, queryIdentity: evidence.query_identity, basisVersion: evidence.basis_version, projectedRecordCount: evidence.projected_record_count, projectedFieldCount: evidence.projected_field_count, basisReleased: evidence.basis_released }
 }
+
+function isTerminalLifecycle(value: string): value is "success" | "failure" | "stopped" { return value === "success" || value === "failure" || value === "stopped" }
 
 
 function closeChildProcess(child: ChildProcessWithoutNullStreams): Promise<void> {

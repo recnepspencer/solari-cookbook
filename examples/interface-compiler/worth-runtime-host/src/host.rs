@@ -9,11 +9,13 @@ use crate::application::{
     application_id_parameter, Application, ApplicationBaseUrl, ApplicationIdentifier,
     ApplicationName, ApplicationReadQuery, ApplicationRevision, Capability,
     CapabilityActiveReplayIdentifier, CapabilityApplicationIdentifier, CapabilityDescription,
-    CapabilityIdentifier, CapabilityName, CapabilityRevision, CapabilityStatus, Execution,
-    ExecutionIdentifier, ExecutionLifecycle, InterfaceCompilerApplicationProjection,
-    InterfaceCompilerPrincipalBinding, InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier,
-    ReplayConfidenceMillis, ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus,
-    ReplayStepsJson, ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
+    CapabilityIdentifier, CapabilityName, CapabilityRevision, CapabilityStatus, EventJournal,
+    EventJournalEventsJson, EventJournalIdentifier, EventJournalRevision, Execution,
+    ExecutionIdentifier, ExecutionLifecycle, ExecutionRevision, ExecutionSettlementJson,
+    InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
+    InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier, ReplayConfidenceMillis,
+    ReplayCreatedAt, ReplayIdentifier, ReplayRevision, ReplayStatus, ReplayStepsJson,
+    ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
 };
 
 mod bootstrap;
@@ -22,6 +24,10 @@ pub use compiled_plan_read::*;
 mod execution;
 mod execution_contract;
 mod execution_idempotency;
+mod settlement;
+mod settlement_query;
+mod settlement_support;
+pub use settlement::*;
 mod synchronous_future;
 pub use execution_contract::*;
 use synchronous_future::block_on;
@@ -40,6 +46,7 @@ pub const DEMO_EXECUTION_ID_TWO: &str = "execution.demonstration-002";
 pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started";
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
+pub const DEMO_EVENT_JOURNAL_ID: &str = "event-journal.interface-compiler";
 pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"https://www.walmart.com/"},{"type":"fill","target":{"semanticDescription":"product search","role":"searchbox"},"value":"Tide Pods"},{"type":"click","target":{"semanticDescription":"submit product search","role":"button","name":"Search"}}]"#;
 pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":1,"runs":[{"id":"verification.search-products.1","capabilityId":"capability.walmart.search-products","replayVersionId":"replay.walmart.search-products.v1","sessionId":"solari.demo.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.search-products.1"],"completedAt":"2026-08-31T18:00:00.000Z"}]}"#;
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";

@@ -120,6 +120,8 @@ recovery protocol has been invented.
 | --- | --- | --- |
 | `readApplication` through `WorthApplicationReadAdapter` | Live | WORTH-installed application schema, admitted principal, bounded query, typed projection and receipt |
 | `startExecution` through `WorthStartExecutionAdapter` | Live | WORTH-installed operation admission, invariant projection, effect program, compare-and-commit, execution query projection and receipt |
+| `completeExecution` through `WorthExecutionSettlementPort` | Live for the seeded started demo execution | WORTH-installed completion operation, expected-revision/lifecycle denial, effect commit, authoritative execution projection and query receipt |
+| `publish` through `WorthExecutionSettlementPort` | Live for concrete Interface Compiler v1 events | WORTH-owned application journal, typed publication operation, idempotent retention, journal query and receipt |
 | `readCapability` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed capability entity, admitted bounded query, healthy projection and receipt |
 | `readActiveReplay` through `CompiledPlanReadPort` | Live for the seeded demonstration capability | WORTH-installed replay selected by the capability's projected active replay identity, admitted bounded query, active projection and receipt |
 | `readReplayLineage` | Unavailable | No WORTH replay-lineage projection/query is exposed by this host |
@@ -127,8 +129,7 @@ recovery protocol has been invented.
 | `readEvidence` | Unavailable | No WORTH evidence projection/query is exposed by this host |
 | `readExecution` | Unavailable | The post-transition execution query is not exposed as a standalone read operation |
 | `readCompilationMetrics` | Unavailable | No WORTH-owned economics projection/query is exposed by this host |
-| `submit` and all other lifecycle helpers | Unavailable | No other typed WORTH mutation/operation contract is exposed |
-| `publishEvent` | Unavailable | No typed WORTH event publication contract is installed |
+| `submit` and all other lifecycle helpers | Unavailable | No generic mutation protocol or other typed WORTH operation contract is exposed |
 | composite dashboard read | Unavailable | The dashboard still requires its complete read-only projection, which this slice does not fabricate |
 
 The existing `createWorthAdapter` remains the complete-port adapter. It still
@@ -146,12 +147,17 @@ through the narrow adapter, and asserts identity matching, receipt evidence,
 not-found, mismatch fail-closed, and unsupported-operation boundaries.
 
 Remaining work before the broad adapter can open includes approved typed WORTH
-contracts for replay lineage, experiment/evidence/execution/metrics
-projections, every other lifecycle/effect command, and event publication;
+contracts for replay lineage, experiment/evidence/arbitrary-execution/metrics
+projections and every other lifecycle/effect command;
 faithful process/client mappings for those contracts; and the corresponding
 currentness, idempotency, cancellation, effect-uncertainty, recovery, and
 evidence tests. Until each method is implemented through WORTH, it remains
 typed unavailable. No local emulation is permitted.
+
+The event journal and execution facts use WORTH's in-memory backing for this
+demo. They are not a Node ledger, generic event bus, durable recovery service,
+or authority for metrics/capabilities/replays. No Gemini or Solari request is
+made by this slice.
 
 Test-only WORTH fixtures and the existing TypeScript test doubles remain test
 evidence only. They do not provide production authority.

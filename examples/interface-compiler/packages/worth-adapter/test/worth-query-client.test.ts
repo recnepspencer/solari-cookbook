@@ -4,7 +4,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import test from "node:test"
 import { promisify } from "node:util"
-import type { ApplicationId, CapabilityId, ExecutionId, OperationContext } from "@interface-compiler/domain"
+import type { ApplicationId, CapabilityId, EventId, ExecutionId, InterfaceCompilerEvent, OperationContext } from "@interface-compiler/domain"
 import {
   createWorthApplicationReadAdapter,
   createCompiledPlanReadAdapter,
@@ -168,7 +168,7 @@ test("client starts a pending execution through the real WORTH host and preserve
     assert.deepEqual(result.projection, { projectionKind: "worth_execution", executionId: executionId("execution.demonstration-001"), lifecycle: "started" })
     assert.equal(result.evidence.queryName, "interface_compiler_execution_read")
     assert.equal(result.evidence.projectedRecordCount, 1)
-    assert.equal(result.evidence.projectedFieldCount, 2)
+    assert.equal(result.evidence.projectedFieldCount, 4)
     assert.equal(result.evidence.basisReleased, true)
   }
 })
@@ -210,7 +210,7 @@ test("real host binary preserves unsupported operations as correlated unavailabl
     request_id: "unsupported-binary-1",
     operation: "submit_lifecycle_command",
     reason: "unsupported",
-    message: "this host exposes only read_application, start_execution, read_capability, and read_active_replay",
+    message: "this host exposes only read_application, start_execution, complete_execution, publish_domain_event, read_capability, and read_active_replay",
   })
 })
 
@@ -253,4 +253,12 @@ test("start execution preserves cancellation, timeout, and request correlation p
   const correlated = await correlationClient.startExecution(executionId("execution.demonstration-002"), shortContext)
   await correlationClient.close()
   assert.deepEqual(correlated, { kind: "timed_out", operationId: shortContext.operationId, posture: { kind: "unknown", recovery: "owner_reconciliation_required" } })
+})
+
+test("client settles through the real host and publishes a retained concrete event", async (testContext) => {
+  const client=new InterfaceCompilerWorthClient({process:liveHostProcess(),credential:"interface-compiler-demo"});testContext.after(()=>client.close());const execution=executionId("execution.demonstration-started")
+  const settled=await client.completeExecution(execution,{kind:"success",output:{ok:true}},"2026-09-01T12:00:00.000Z",1,context("operation.live-settlement"));assert.equal(settled.kind,"settled");if(settled.kind==="settled"){assert.equal(settled.projection.revision,2);assert.equal(settled.projection.lifecycle,"success");assert.equal(settled.evidence.queryName,"interface_compiler_execution_read")}
+  const stale=await client.completeExecution(execution,{kind:"success"},"2026-09-01T12:00:01.000Z",0,context("operation.live-stale"));assert.equal(stale.kind,"stale")
+  const event={eventId:"event.live.1" as EventId,occurredAt:"2026-09-01T12:00:00.000Z",protocol:"interface-compiler.events",schemaVersion:1,idempotencyKey:"compiled.started:execution.demonstration-001",recovery:"replay_safe",integrity:{algorithm:"sha256",digest:"abc"},type:"compiled.started",payload:{executionId:execution,mode:"compiled"}} satisfies InterfaceCompilerEvent
+  assert.equal((await client.publish(event,context("operation.live-event"))).kind,"published");assert.equal((await client.publish(event,context("operation.live-event-retry"))).kind,"duplicate")
 })

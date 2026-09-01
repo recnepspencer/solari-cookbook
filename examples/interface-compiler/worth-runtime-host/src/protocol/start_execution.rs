@@ -20,6 +20,8 @@ pub struct InterfaceCompilerHostExecution {
     pub projection_kind: &'static str,
     pub execution_id: String,
     pub lifecycle: String,
+    pub revision: u64,
+    pub settlement: serde_json::Value,
 }
 
 #[derive(Clone, Copy, Debug, Serialize)]
@@ -86,6 +88,9 @@ fn map_outcome(
                 projection_kind: "worth_execution",
                 execution_id: projection.execution_id,
                 lifecycle: projection.lifecycle,
+                revision: projection.revision,
+                settlement: serde_json::from_str(&projection.settlement_json)
+                    .unwrap_or(serde_json::Value::Null),
             },
             evidence: InterfaceCompilerHostQueryEvidence {
                 query_name: evidence.query_name,
@@ -133,7 +138,7 @@ fn invalid_request(
     }
 }
 
-fn map_denial_stage(
+pub(super) fn map_denial_stage(
     stage: InterfaceCompilerStartExecutionDenialStage,
 ) -> InterfaceCompilerHostDenialStage {
     match stage {

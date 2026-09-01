@@ -35,7 +35,7 @@ fn start_execution_commits_through_worth_and_returns_the_typed_query_projection(
         assert_eq!(evidence.query_name, "interface_compiler_execution_read");
         assert!(!evidence.query_identity.is_empty());
         assert_eq!(evidence.projected_record_count, 1);
-        assert_eq!(evidence.projected_field_count, 2);
+        assert_eq!(evidence.projected_field_count, 4);
         assert!(evidence.basis_released);
 
         // No measured telemetry, tokens, costs, results, or fabricated metrics are
@@ -133,6 +133,9 @@ fn process_protocol_maps_the_real_start_transition_and_lifecycle_rejection() {
             capability_id: None,
             credential: Some(DEMO_CREDENTIAL.to_string()),
             deadline_ms: Some(DEFAULT_REQUEST_TIMEOUT.as_millis() as u64),
+            expected_revision: None,
+            settlement: None,
+            event: None,
         };
 
         assert!(matches!(

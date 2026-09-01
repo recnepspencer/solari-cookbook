@@ -82,7 +82,7 @@ impl InterfaceCompilerWorthHost {
         }
     }
 
-    fn authenticate_execution_principal(
+    pub(super) fn authenticate_execution_principal(
         &self,
         credential: &str,
         scope: &admission::authenticated_principal::WorthQueryRequestScope,
@@ -112,7 +112,7 @@ impl InterfaceCompilerWorthHost {
             })
     }
 
-    fn resolve_execution(
+    pub(super) fn resolve_execution(
         &self,
         execution_id: &str,
         scope: &admission::authenticated_principal::WorthQueryRequestScope,
@@ -256,7 +256,7 @@ impl InterfaceCompilerWorthHost {
         }
     }
 
-    fn query_execution(
+    pub(super) fn query_execution(
         &self,
         principal: &ExecutionPrincipal,
         execution: &ExecutionIdentity,

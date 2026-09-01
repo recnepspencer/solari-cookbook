@@ -7,7 +7,10 @@ and executes one bounded application query against WORTH's in-memory
 relational graph. Its Rust API additionally demonstrates exactly one typed
 `start_execution` transition through WORTH's admitted operation, projected
 dependencies, effect program, compare-and-commit, and typed execution query.
-That lifecycle-only projection deliberately contains no measured telemetry,
+The same application facade now admits `complete_execution` for the seeded
+started execution and `publish_domain_event` for the concrete Interface
+Compiler v1 event set. Both commit WORTH-owned facts and return a WORTH query
+projection/receipt. That lifecycle-only projection deliberately contains no measured telemetry,
 tokens, costs, results, or fabricated metrics.
 
 The host requires the complete matching checkout at:

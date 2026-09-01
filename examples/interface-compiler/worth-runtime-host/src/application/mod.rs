@@ -3,6 +3,7 @@
 mod application_read_query;
 mod compiled_plan_query;
 mod compiled_plan_schema;
+mod event_journal_query;
 mod execution_query;
 mod schema;
 
@@ -11,5 +12,6 @@ pub use compiled_plan_query::{
     active_replay_read_query_definition, capability_read_query_definition,
 };
 pub use compiled_plan_schema::*;
+pub use event_journal_query::{event_journal_id_parameter, event_journal_read_query_definition};
 pub use execution_query::execution_read_query_definition;
 pub use schema::*;
