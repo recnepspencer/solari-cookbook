@@ -50,6 +50,7 @@ export type RuntimeEventEmitter = <T extends InterfaceCompilerEventType>(type: T
 
 type ObservationOutcome =
   | { readonly kind: "observed"; readonly observation: Observation }
+  | { readonly kind: "fresh_session_off_origin"; readonly observation: Observation }
   | { readonly kind: "terminal"; readonly intent: ExperimentTerminal }
 
 type StepOutcome =
@@ -67,8 +68,25 @@ export async function runExperimentSession(
   executionId: ExecutionId,
   stepGuard?: ExperimentStepGuard,
 ): Promise<ExperimentTerminal> {
-  const firstObservation = await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
-  if (firstObservation.kind !== "observed") return firstObservation.intent
+  let firstObservation = await observe(session, controller, emit, executionId, plan.request.application.baseUrl, true)
+  if (firstObservation.kind === "fresh_session_off_origin") {
+    const initialNavigation: ReplayStep = { type: "navigate", url: plan.request.application.baseUrl }
+    const initialAdmission = admitStep(stepGuard, initialNavigation)
+    if (initialAdmission !== undefined) return initialAdmission
+    const initialAction = await executeStep(
+      session,
+      initialNavigation,
+      controller,
+      emit,
+      executionId,
+      eventIdempotencyKey("browser.action", `${executionId}:fresh-session-navigation`),
+    )
+    if (initialAction.kind !== "completed") return initialAction.intent
+    firstObservation = initialAction.observation === undefined
+      ? await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
+      : await assessObservation(initialAction.observation, emit, executionId, plan.request.application.baseUrl)
+  }
+  if (firstObservation.kind !== "observed") return observationIntent(firstObservation)
   let observation = firstObservation.observation
 
   if (plan.kind === "direct") {
@@ -131,7 +149,7 @@ async function runDirect(
     const nextObservation = action.observation === undefined
       ? await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
       : await assessObservation(action.observation, emit, executionId, plan.request.application.baseUrl)
-    if (nextObservation.kind !== "observed") return nextObservation.intent
+    if (nextObservation.kind !== "observed") return observationIntent(nextObservation)
     currentObservation = nextObservation.observation
   }
 }
@@ -159,7 +177,7 @@ async function runCompiled(
     const nextObservation = action.observation === undefined
       ? await observe(session, controller, emit, executionId, plan.request.application.baseUrl)
       : await assessObservation(action.observation, emit, executionId, plan.request.application.baseUrl)
-    if (nextObservation.kind !== "observed") return nextObservation.intent
+    if (nextObservation.kind !== "observed") return observationIntent(nextObservation)
     currentObservation = nextObservation.observation
   }
   return verifyOutcome(plan.request.expectedOutcome, verifier, worth, currentObservation, undefined, controller, emit, executionId, plan.replay.id)
@@ -181,12 +199,13 @@ async function observe(
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
   applicationBaseUrl: string,
+  allowFreshSessionOffOrigin = false,
 ): Promise<ObservationOutcome> {
   const gate = controller.check()
   if (gate.kind === "stop") return { kind: "terminal", intent: { kind: "control_stop", stop: gate.stop } }
   const result = await session.observe(controller.context)
   if (result.kind !== "observed") return { kind: "terminal", intent: solariObservationIntent(result) }
-  return assessObservation(result.observation, emit, executionId, applicationBaseUrl)
+  return assessObservation(result.observation, emit, executionId, applicationBaseUrl, allowFreshSessionOffOrigin)
 }
 
 async function assessObservation(
@@ -194,11 +213,15 @@ async function assessObservation(
   emit: RuntimeEventEmitter,
   executionId: ExecutionId,
   applicationBaseUrl: string,
+  allowFreshSessionOffOrigin = false,
 ): Promise<ObservationOutcome> {
   const publication = await emit("browser.observed", { executionId, sessionId: observation.sessionId, observationId: observation.id }, eventIdempotencyKey("browser.observed", `${observation.sessionId}:${observation.id}`))
   const publicationIntent = eventPublicationIntent(publication, { kind: "completed" })
   if (publicationIntent !== undefined) return { kind: "terminal", intent: publicationIntent }
   if (!sameApplicationOrigin(observation.url, applicationBaseUrl)) {
+    if (allowFreshSessionOffOrigin && isFreshSessionUrl(observation.url)) {
+      return { kind: "fresh_session_off_origin", observation }
+    }
     return { kind: "terminal", intent: { kind: "failure", message: "Solari observation left the admitted application origin" } }
   }
   const safety = assessObservationSafety(observation)
@@ -206,6 +229,21 @@ async function assessObservation(
   return safety.value.kind === "stop"
     ? { kind: "terminal", intent: { kind: "safety_stop", stop: safety.value.result } }
     : { kind: "observed", observation }
+}
+
+function isFreshSessionUrl(value: string): boolean {
+  try {
+    const url = new URL(value)
+    return url.protocol === "about:" && url.pathname === "blank"
+  } catch {
+    return false
+  }
+}
+
+function observationIntent(outcome: Exclude<ObservationOutcome, { readonly kind: "observed" }>): ExperimentTerminal {
+  return outcome.kind === "fresh_session_off_origin"
+    ? { kind: "failure", message: "fresh Solari page remained off-origin after bootstrap navigation" }
+    : outcome.intent
 }
 
 function sameApplicationOrigin(observationUrl: string, applicationBaseUrl: string): boolean {

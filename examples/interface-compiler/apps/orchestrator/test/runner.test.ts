@@ -541,6 +541,25 @@ test("an off-origin observation is recorded but never reaches Gemini or another 
   assert.equal(result.cleanup.kind, "closed")
 })
 
+test("a fresh blank Solari page navigates to the admitted origin before direct reasoning", async () => {
+  const runtime = new FakeWorthRuntime()
+  const blank = { ...safeObservation("observation.blank"), url: "about:blank" }
+  const solari = new ScriptedSolari(
+    [{ kind: "observed", observation: blank, effect: { kind: "completed" } }],
+    [{ kind: "completed", observation: safeObservation("observation.after-initial-navigation"), effect: { kind: "completed" } }],
+  )
+  const model = new FakeModel([
+    { kind: "completed", completion: { output: { kind: "stop", signal: { kind: "authentication_required", credential: "unknown" } }, usage: { inputTokens: 1, outputTokens: 1, estimatedModelCostUsd: 0.001 } }, effect: { kind: "completed" } },
+  ])
+  const result = await new ExperimentRunner(ports(bind(runtime), solari, model)).run(directPlan(), operationController().controller)
+
+  assert.equal(result.kind, "attempted")
+  if (result.kind !== "attempted") throw new Error("expected attempted run")
+  assert.equal(result.terminal.kind, "safety_stop")
+  assert.equal(model.calls, 1)
+  assert.deepEqual(solari.sessions[0]?.executedSteps, [{ type: "navigate", url: "https://shop.test" }])
+})
+
 test("direct planning and execution publish only actual model/browser telemetry to Worth", async () => {
   const runtime = new FakeWorthRuntime()
   const solari = new ScriptedSolari(
