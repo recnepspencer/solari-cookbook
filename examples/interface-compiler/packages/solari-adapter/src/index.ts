@@ -20,6 +20,7 @@ export type {
   SolariObservationResult,
   SolariPort,
   SolariSession,
+  SolariSessionLease,
   SolariSessionRequest,
   SolariSessionResult,
   SolariStepResult,
@@ -30,6 +31,7 @@ import type {
   OperationContext,
   ReplayStep,
   SolariSession,
+  SolariSessionLease,
   SolariSessionRequest,
   SolariSessionResult,
   SolariStepResult,
@@ -59,6 +61,6 @@ export function captureEvidence(browser: SolariSession, request: EvidenceCapture
   return browser.captureEvidence(request, context)
 }
 
-export function closeBrowser(browser: SolariSession, context: OperationContext): Promise<SolariCloseResult> {
-  return browser.close(context)
+export function closeBrowser(lease: SolariSessionLease, context: OperationContext): Promise<SolariCloseResult> {
+  return lease.release(context)
 }
