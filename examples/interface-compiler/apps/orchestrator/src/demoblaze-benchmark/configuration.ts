@@ -2,11 +2,11 @@ import { inspectGeminiEnvironment } from "@interface-compiler/gemini-adapter"
 import { readSolariConfig } from "@interface-compiler/solari-adapter"
 import type { ModelPricingUsdPerToken } from "@interface-compiler/domain"
 
-export const WALMART_NETWORK_OPT_IN = "INTERFACE_COMPILER_ALLOW_WALMART_NETWORK"
+export const DEMOBLAZE_NETWORK_OPT_IN = "INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK"
 const INPUT_PRICE = "GEMINI_INPUT_USD_PER_MILLION_TOKENS"
 const OUTPUT_PRICE = "GEMINI_OUTPUT_USD_PER_MILLION_TOKENS"
 
-export interface WalmartBenchmarkConfigurationInspection {
+export interface DemoblazeBenchmarkConfigurationInspection {
   readonly mode: "dry_run"
   readonly network: "disabled"
   readonly readyForReviewedExecution: boolean
@@ -21,12 +21,12 @@ export interface WalmartBenchmarkConfigurationInspection {
   readonly safeguards: readonly string[]
 }
 
-export type WalmartLiveConfiguration =
+export type DemoblazeLiveConfiguration =
   | { readonly kind: "configured"; readonly modelId: string; readonly pricing: ModelPricingUsdPerToken }
   | { readonly kind: "invalid"; readonly issues: readonly { readonly path: string; readonly message: string }[] }
 
 /** Reads configuration only. It never constructs an SDK client or starts a process. */
-export function inspectWalmartBenchmarkConfiguration(env: NodeJS.ProcessEnv): WalmartBenchmarkConfigurationInspection {
+export function inspectDemoblazeBenchmarkConfiguration(env: NodeJS.ProcessEnv): DemoblazeBenchmarkConfigurationInspection {
   const issues: { path: string; message: string }[] = []
   const gemini = inspectGeminiEnvironment(env)
   if (gemini.kind !== "configured") issues.push({ path: gemini.kind === "missing_api_key" ? "GEMINI_API_KEY" : "GEMINI_MODEL", message: `${gemini.kind === "missing_api_key" ? "GEMINI_API_KEY" : "GEMINI_MODEL"} must be configured` })
@@ -34,15 +34,15 @@ export function inspectWalmartBenchmarkConfiguration(env: NodeJS.ProcessEnv): Wa
   if (!solari.ok) issues.push(...solari.issues.map((entry) => ({ path: entry.path, message: entry.message })))
   const pricing = readPricing(env)
   if (pricing.kind === "invalid") issues.push(...pricing.issues)
-  const networkOptInPresent = env[WALMART_NETWORK_OPT_IN]?.trim().toLowerCase() === "true"
-  if (!networkOptInPresent) issues.push({ path: WALMART_NETWORK_OPT_IN, message: `${WALMART_NETWORK_OPT_IN}=true is required only for the reviewed live command` })
+  const networkOptInPresent = env[DEMOBLAZE_NETWORK_OPT_IN]?.trim().toLowerCase() === "true"
+  if (!networkOptInPresent) issues.push({ path: DEMOBLAZE_NETWORK_OPT_IN, message: `${DEMOBLAZE_NETWORK_OPT_IN}=true is required only for the reviewed live command` })
 
-  const adapters: WalmartBenchmarkConfigurationInspection["adapters"] = Object.freeze({
+  const adapters: DemoblazeBenchmarkConfigurationInspection["adapters"] = Object.freeze({
     gemini: gemini.kind === "configured" ? { kind: "configured", model: gemini.model } : { kind: "missing" },
     solari: solari.ok ? { kind: "configured" } : { kind: "invalid" },
     worth: { kind: "configured", storage: "in_memory", processStarted: false },
   })
-  const pricingStatus: WalmartBenchmarkConfigurationInspection["pricing"] = pricing.kind === "configured" ? { kind: "configured", source: "environment" } : { kind: "invalid" }
+  const pricingStatus: DemoblazeBenchmarkConfigurationInspection["pricing"] = pricing.kind === "configured" ? { kind: "configured", source: "environment" } : { kind: "invalid" }
   return Object.freeze({
     mode: "dry_run",
     network: "disabled",
@@ -61,8 +61,8 @@ export function inspectWalmartBenchmarkConfiguration(env: NodeJS.ProcessEnv): Wa
   })
 }
 
-export function readWalmartLiveConfiguration(env: NodeJS.ProcessEnv): WalmartLiveConfiguration {
-  const inspection = inspectWalmartBenchmarkConfiguration(env)
+export function readDemoblazeLiveConfiguration(env: NodeJS.ProcessEnv): DemoblazeLiveConfiguration {
+  const inspection = inspectDemoblazeBenchmarkConfiguration(env)
   const pricing = readPricing(env)
   const gemini = inspectGeminiEnvironment(env)
   if (!inspection.readyForReviewedExecution || pricing.kind !== "configured" || gemini.kind !== "configured") return { kind: "invalid", issues: inspection.issues }

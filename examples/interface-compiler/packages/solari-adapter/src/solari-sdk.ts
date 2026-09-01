@@ -13,6 +13,7 @@ export interface SolariDomElement {
   readonly tagName: string
   readonly textContent: string | null
   getAttribute(name: string): string | null
+  getClientRects?(): { readonly length: number }
 }
 
 export interface SolariSdkPage {

@@ -1,21 +1,21 @@
-import { inspectWalmartBenchmarkConfiguration, readWalmartLiveConfiguration } from "./configuration.js"
-import { createLiveWalmartRuntime, type LiveWalmartRuntimeResult } from "./live-runtime.js"
-import { runWalmartBenchmark } from "./harness.js"
+import { inspectDemoblazeBenchmarkConfiguration, readDemoblazeLiveConfiguration } from "./configuration.js"
+import { createLiveDemoblazeRuntime, type LiveDemoblazeRuntimeResult } from "./live-runtime.js"
+import { runDemoblazeBenchmark } from "./harness.js"
 import type { ExperimentRunResult } from "../runner.js"
 import type { WorthRuntimeSettlementResult } from "@interface-compiler/worth-adapter"
 
-export interface WalmartBenchmarkCliIo {
+export interface DemoblazeBenchmarkCliIo {
   readonly stdout: { write(value: string): unknown }
   readonly stderr: { write(value: string): unknown }
 }
 
-export type LiveWalmartRuntimeFactory = () => LiveWalmartRuntimeResult
+export type LiveDemoblazeRuntimeFactory = () => LiveDemoblazeRuntimeResult
 
-export async function runWalmartBenchmarkCli(
+export async function runDemoblazeBenchmarkCli(
   args: readonly string[],
   env: NodeJS.ProcessEnv,
-  io: WalmartBenchmarkCliIo,
-  liveFactory: LiveWalmartRuntimeFactory = () => createLiveWalmartRuntime(),
+  io: DemoblazeBenchmarkCliIo,
+  liveFactory: LiveDemoblazeRuntimeFactory = () => createLiveDemoblazeRuntime(),
 ): Promise<number> {
   const dryRun = args.includes("--dry-run")
   const execute = args.includes("--execute")
@@ -24,10 +24,10 @@ export async function runWalmartBenchmarkCli(
     return 2
   }
   if (!execute) {
-    io.stdout.write(`${JSON.stringify(inspectWalmartBenchmarkConfiguration(env), null, 2)}\n`)
+    io.stdout.write(`${JSON.stringify(inspectDemoblazeBenchmarkConfiguration(env), null, 2)}\n`)
     return 0
   }
-  const configuration = readWalmartLiveConfiguration(env)
+  const configuration = readDemoblazeLiveConfiguration(env)
   if (configuration.kind !== "configured") {
     io.stderr.write(`${JSON.stringify({ kind: "invalid_configuration", issues: configuration.issues }, null, 2)}\n`)
     return 2
@@ -38,7 +38,7 @@ export async function runWalmartBenchmarkCli(
     return 2
   }
   try {
-    const result = await runWalmartBenchmark(live.runtime, live.modelId)
+    const result = await runDemoblazeBenchmark(live.runtime, live.modelId)
     if (result.kind !== "completed") {
       io.stderr.write(`${JSON.stringify({
         kind: result.kind,

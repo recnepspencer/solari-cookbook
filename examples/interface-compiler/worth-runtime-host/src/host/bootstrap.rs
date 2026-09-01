@@ -167,11 +167,11 @@ impl InterfaceCompilerWorthHost {
                 )
                 .field(
                     CapabilityName::reference(),
-                    "TidePodsToCheckoutBoundary".to_string(),
+                    "SamsungGalaxyS6ToOrderBoundary".to_string(),
                 )
                 .field(
                     CapabilityDescription::reference(),
-                    "Synthetic demo seed for a bounded Walmart Tide Pods checkout-boundary task; not measured compilation evidence"
+                    "Synthetic demo seed for a bounded Demoblaze Samsung galaxy s6 order-boundary task; not measured compilation evidence"
                         .to_string(),
                 )
                 .field(CapabilityStatus::reference(), "healthy".to_string())

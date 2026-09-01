@@ -130,7 +130,7 @@ function validateComparisonExecution(
   if (mode === "direct" && projection.replayVersionId !== undefined) issues.push(issue(`${path}.projection.replayVersionId`, "replay_mismatch", "direct execution must not name a replay"))
   if (mode === "compiled" && projection.replayVersionId !== plan.replayVersionId) issues.push(issue(`${path}.projection.replayVersionId`, "replay_mismatch", "compiled execution must name the admitted replay"))
   if (projection.lifecycle !== "stopped" || projection.outcome.kind !== "safety_stop" || !validSafetyStop(projection.outcome.stop)) {
-    issues.push(issue(`${path}.projection.outcome`, "unsafe_terminal_outcome", "bounded Walmart comparison runs must terminate at a classified human-required safety boundary"))
+    issues.push(issue(`${path}.projection.outcome`, "unsafe_terminal_outcome", "bounded commerce comparison runs must terminate at a classified human-required safety boundary"))
   }
 }
 

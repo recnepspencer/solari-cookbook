@@ -2470,21 +2470,21 @@ workspace. Its public surface is the explicit `packages/domain/src/index.ts`
 facade. Domain costs accept measured run inputs and caller-supplied pricing;
 the foundation contains no sample measurements, credentials, or `.env` values.
 
-# Safe runnable Walmart benchmark slice
+# Safe runnable Demoblaze benchmark slice
 
-The current vertical slice adds a callable harness for one fixed Walmart task:
-find Tide Pods, add at most one suitable result, open the cart, and stop at the
-first checkout/account/authentication/personal-information/shipping/payment/
-order/credential/access boundary. A task-specific admission gate permits only
-the fixed public `Tide Pods` search input, HTTPS Walmart navigation, and at
-most one explicitly identified Tide Pods add-to-cart action. It never supplies
-personal/account/shipping/payment/credential data, authenticates, begins
-checkout, confirms an order, or purchases.
+The current vertical slice adds a callable harness for one fixed Demoblaze task:
+select Samsung galaxy s6, add exactly one to the cart, and stop at the first
+order/account/authentication/personal-information/shipping/payment/credential/
+access boundary. A stateful task-specific admission gate permits only public
+HTTPS Demoblaze navigation and the fixed Close (if an informational modal is
+present) → Phones (if needed) → Samsung galaxy s6 → Add to cart → Cart sequence.
+It never supplies form data, authenticates,
+clicks Place Order or Purchase, or purchases.
 
 From this directory, the default inspection is deterministic and no-network:
 
 ```text
-npm run benchmark:walmart:dry-run
+npm run benchmark:demoblaze:dry-run
 ```
 
 It validates configuration and reports safeguards without constructing a
@@ -2492,11 +2492,11 @@ Gemini client, Solari client, or WORTH process. The paid/network-capable command
 is deliberately separate:
 
 ```text
-npm run benchmark:walmart:run
+npm run benchmark:demoblaze:run
 ```
 
 That command refuses to compose live adapters unless `--execute` is present
-through the script and `INTERFACE_COMPILER_ALLOW_WALMART_NETWORK=true` is
+through the script and `INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK=true` is
 explicitly configured. See [the orchestrator README](apps/orchestrator/README.md)
 for the required credential and current-pricing environment variables.
 

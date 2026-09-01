@@ -67,7 +67,7 @@ import {
   type SemanticVerificationResult,
   type SemanticVerifier,
 } from "../src/index.js"
-import { createWalmartBenchmarkStepPolicy } from "../src/walmart-benchmark/step-policy.js"
+import { createDemoblazeBenchmarkStepPolicy } from "../src/demoblaze-benchmark/step-policy.js"
 
 const timestamp = "2026-08-31T12:00:00.000Z" as IsoTimestamp
 const application = validValue(createApplication({ id: id<ApplicationId>("application.shop"), name: "Shop", baseUrl: "https://shop.test" }))
@@ -593,7 +593,7 @@ test("direct planning and execution publish only actual model/browser telemetry 
   assert.equal(runtime.completed?.metrics.estimatedModelCostUsd, 0.012)
 })
 
-test("the Walmart step policy denies an arbitrary search value before the Solari effect", async () => {
+test("the fixed Demoblaze step policy denies arbitrary form input before the Solari effect", async () => {
   const runtime = new FakeWorthRuntime()
   const solari = new ScriptedSolari(
     [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
@@ -604,7 +604,7 @@ test("the Walmart step policy denies an arbitrary search value before the Solari
     completion: { output: { kind: "act", step: { type: "fill", target: { semanticDescription: "product search", role: "searchbox" }, value: "person@example.com" } }, usage: { inputTokens: 2, outputTokens: 1, estimatedModelCostUsd: 0.001 } },
     effect: { kind: "completed" },
   }])
-  const result = await new ExperimentRunner({ ...ports(bind(runtime), solari, model), stepPolicy: createWalmartBenchmarkStepPolicy() })
+  const result = await new ExperimentRunner({ ...ports(bind(runtime), solari, model), stepPolicy: createDemoblazeBenchmarkStepPolicy() })
     .run(directPlan(), operationController().controller)
 
   assert.equal(result.kind, "attempted")

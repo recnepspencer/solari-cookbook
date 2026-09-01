@@ -5,14 +5,14 @@ import { createCancellationSource, createOperationController, type OperationCont
 import { planCompiledExperiment, planDirectExperiment } from "../planning.js"
 import { ExperimentRunner, type ExperimentRunResult } from "../runner.js"
 import type { SemanticVerifier } from "../semantic-verifier.js"
-import { createWalmartBenchmarkTask, createWalmartExperimentRequest } from "./task.js"
-import { createWalmartBenchmarkStepPolicy } from "./step-policy.js"
+import { createDemoblazeBenchmarkTask, createDemoblazeExperimentRequest } from "./task.js"
+import { createDemoblazeBenchmarkStepPolicy } from "./step-policy.js"
 
 const RUN_WALL_CLOCK_MS = 180_000
 const MAX_MODEL_CALLS = 12
 const MAX_BROWSER_ACTIONS = 12
 
-export interface WalmartBenchmarkRuntime {
+export interface DemoblazeBenchmarkRuntime {
   readonly clock: Clock
   readonly ids: IdSource
   readonly worth: OrchestratorWorthPort
@@ -21,23 +21,23 @@ export interface WalmartBenchmarkRuntime {
   readonly verifier: SemanticVerifier
 }
 
-export type WalmartBenchmarkResult =
+export type DemoblazeBenchmarkResult =
   | { readonly kind: "completed"; readonly report: TerminalBenchmarkReport; readonly direct: ExperimentRunResult; readonly compiled: ExperimentRunResult }
   | { readonly kind: "not_completed"; readonly stage: "planning" | "direct" | "compiled"; readonly message: string; readonly direct?: ExperimentRunResult; readonly compiled?: ExperimentRunResult }
 
 /** Runs both modes with the same immutable task, model, budgets, and fresh-session runner contract. */
-export async function runWalmartBenchmark(runtime: WalmartBenchmarkRuntime, modelId: string): Promise<WalmartBenchmarkResult> {
-  const request = createWalmartExperimentRequest()
+export async function runDemoblazeBenchmark(runtime: DemoblazeBenchmarkRuntime, modelId: string): Promise<DemoblazeBenchmarkResult> {
+  const request = createDemoblazeExperimentRequest()
   const directPlanning = planDirectExperiment(request)
-  if (!directPlanning.ok) return { kind: "not_completed", stage: "planning", message: "the direct Walmart benchmark request is invalid" }
+  if (!directPlanning.ok) return { kind: "not_completed", stage: "planning", message: "the direct Demoblaze benchmark request is invalid" }
 
   const planningController = operationController(runtime)
   if (planningController === undefined) return { kind: "not_completed", stage: "planning", message: "the planning operation context could not be created" }
   const compiledPlanning = await planCompiledExperiment(request, runtime.worth, planningController.context)
-  if (compiledPlanning.kind !== "planned") return { kind: "not_completed", stage: "planning", message: `WORTH could not plan the compiled Walmart run (${compiledPlanning.kind === "unavailable" ? compiledPlanning.reason : "invalid_request"})` }
+  if (compiledPlanning.kind !== "planned") return { kind: "not_completed", stage: "planning", message: `WORTH could not plan the compiled Demoblaze run (${compiledPlanning.kind === "unavailable" ? compiledPlanning.reason : "invalid_request"})` }
   if (compiledPlanning.plan.authority.kind !== "worth_query") return { kind: "not_completed", stage: "planning", message: "compiled benchmark planning did not return live WORTH query evidence" }
 
-  const runner = new ExperimentRunner({ ...runtime, stepPolicy: createWalmartBenchmarkStepPolicy() })
+  const runner = new ExperimentRunner({ ...runtime, stepPolicy: createDemoblazeBenchmarkStepPolicy() })
   const directController = operationController(runtime)
   if (directController === undefined) return { kind: "not_completed", stage: "direct", message: "the direct operation context could not be created" }
   const direct = await runner.run(directPlanning.value, directController)
@@ -52,7 +52,7 @@ export async function runWalmartBenchmark(runtime: WalmartBenchmarkRuntime, mode
 
   const authority = compiledPlanning.plan.authority
   const report = createTerminalBenchmarkReport({
-    task: createWalmartBenchmarkTask(modelId),
+    task: createDemoblazeBenchmarkTask(modelId),
     direct: directSettlement,
     compiled: compiledSettlement,
     compiledPlan: {
@@ -68,7 +68,7 @@ export async function runWalmartBenchmark(runtime: WalmartBenchmarkRuntime, mode
   return { kind: "completed", report, direct, compiled }
 }
 
-function operationController(runtime: Pick<WalmartBenchmarkRuntime, "clock" | "ids">): OperationController | undefined {
+function operationController(runtime: Pick<DemoblazeBenchmarkRuntime, "clock" | "ids">): OperationController | undefined {
   let now: number
   let operationId: OperationContext["operationId"]
   try {

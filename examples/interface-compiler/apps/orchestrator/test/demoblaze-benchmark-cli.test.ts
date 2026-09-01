@@ -1,6 +1,6 @@
 import assert from "node:assert/strict"
 import test from "node:test"
-import { runWalmartBenchmarkCli } from "../src/walmart-benchmark/cli.js"
+import { runDemoblazeBenchmarkCli } from "../src/demoblaze-benchmark/cli.js"
 
 function configuredEnvironment(): NodeJS.ProcessEnv {
   return {
@@ -9,7 +9,7 @@ function configuredEnvironment(): NodeJS.ProcessEnv {
     GEMINI_INPUT_USD_PER_MILLION_TOKENS: "1.25",
     GEMINI_OUTPUT_USD_PER_MILLION_TOKENS: "5",
     SOLARI_API_KEY: "solari-secret-that-must-not-be-rendered",
-    INTERFACE_COMPILER_ALLOW_WALMART_NETWORK: "true",
+    INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK: "true",
   }
 }
 
@@ -17,7 +17,7 @@ test("dry-run never constructs live adapters or reveals credentials", async () =
   let liveFactoryCalls = 0
   let stdout = ""
   let stderr = ""
-  const code = await runWalmartBenchmarkCli(["--dry-run"], configuredEnvironment(), {
+  const code = await runDemoblazeBenchmarkCli(["--dry-run"], configuredEnvironment(), {
     stdout: { write: (value) => { stdout += value } },
     stderr: { write: (value) => { stderr += value } },
   }, () => {
@@ -39,7 +39,7 @@ test("dry-run never constructs live adapters or reveals credentials", async () =
 test("the default command is also no-network and reports missing configuration without constructing adapters", async () => {
   let liveFactoryCalls = 0
   let stdout = ""
-  const code = await runWalmartBenchmarkCli([], {}, {
+  const code = await runDemoblazeBenchmarkCli([], {}, {
     stdout: { write: (value) => { stdout += value } },
     stderr: { write: () => undefined },
   }, () => {
@@ -57,7 +57,7 @@ test("the default command is also no-network and reports missing configuration w
 test("only explicit --execute enters the live composition boundary", async () => {
   let liveFactoryCalls = 0
   let stderr = ""
-  const code = await runWalmartBenchmarkCli(["--execute"], configuredEnvironment(), {
+  const code = await runDemoblazeBenchmarkCli(["--execute"], configuredEnvironment(), {
     stdout: { write: () => undefined },
     stderr: { write: (value) => { stderr += value } },
   }, () => {
@@ -73,8 +73,8 @@ test("--execute fails before constructing live adapters when the network opt-in 
   let liveFactoryCalls = 0
   let stderr = ""
   const env = configuredEnvironment()
-  delete env.INTERFACE_COMPILER_ALLOW_WALMART_NETWORK
-  const code = await runWalmartBenchmarkCli(["--execute"], env, {
+  delete env.INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK
+  const code = await runDemoblazeBenchmarkCli(["--execute"], env, {
     stdout: { write: () => undefined },
     stderr: { write: (value) => { stderr += value } },
   }, () => {
@@ -86,14 +86,14 @@ test("--execute fails before constructing live adapters when the network opt-in 
   assert.equal(liveFactoryCalls, 0)
   const result = JSON.parse(stderr) as { kind: string; issues: readonly { path: string }[] }
   assert.equal(result.kind, "invalid_configuration")
-  assert.equal(result.issues.some((entry) => entry.path === "INTERFACE_COMPILER_ALLOW_WALMART_NETWORK"), true)
+  assert.equal(result.issues.some((entry) => entry.path === "INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK"), true)
 })
 
 test("--dry-run remains no-network when combined with --execute", async () => {
   let liveFactoryCalls = 0
   let stdout = ""
   let stderr = ""
-  const code = await runWalmartBenchmarkCli(["--dry-run", "--execute"], configuredEnvironment(), {
+  const code = await runDemoblazeBenchmarkCli(["--dry-run", "--execute"], configuredEnvironment(), {
     stdout: { write: (value) => { stdout += value } },
     stderr: { write: (value) => { stderr += value } },
   }, () => {

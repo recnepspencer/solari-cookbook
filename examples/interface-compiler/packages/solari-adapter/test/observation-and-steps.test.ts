@@ -37,6 +37,21 @@ test("observation and replay steps use the Playwright-compatible Solari page sur
   assert.deepEqual(closed, { kind: "closed", sessionId: "solari.session.test", effect: { kind: "completed" } })
 })
 
+test("observation omits inactive hidden controls so they cannot create a false safety boundary", async () => {
+  const world = createWorld()
+  world.browser.page.addElement({ tagName: "input", attributes: { name: "contact-name", hidden: "" } })
+  world.browser.page.addElement({ tagName: "input", attributes: { name: "credit-card", "aria-hidden": "true" } })
+  world.browser.page.addElement({ tagName: "button", textContent: "Add to cart", attributes: { role: "button" } })
+  const created = await world.port.createSession(sessionRequest(), context(world.clock))
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+
+  const observed = await created.lease.session.observe(context(world.clock))
+  assert.equal(observed.kind, "observed")
+  if (observed.kind !== "observed") throw new Error("expected an observation")
+  assert.deepEqual(observed.observation.interactables.map((item) => item.semanticGuess), ["Add to cart"])
+})
+
 test("navigation outside the application origin is denied before the page navigates and retains a recording receipt", async () => {
   const world = createWorld()
   const operationContext = context(world.clock)

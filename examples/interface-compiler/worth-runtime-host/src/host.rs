@@ -38,12 +38,12 @@ mod synchronous_future;
 pub use execution_contract::*;
 use synchronous_future::block_on;
 
-pub const DEMO_APPLICATION_ID: &str = "application.walmart";
+pub const DEMO_APPLICATION_ID: &str = "application.demoblaze";
 pub const DEMO_APPLICATION_REVISION: u64 = 7;
-pub const DEMO_APPLICATION_NAME: &str = "Walmart";
-pub const DEMO_APPLICATION_BASE_URL: &str = "https://www.walmart.com";
-pub const DEMO_CAPABILITY_ID: &str = "capability.walmart.tide-pods-to-checkout-boundary";
-pub const DEMO_REPLAY_ID: &str = "replay.walmart.tide-pods-to-checkout-boundary.v1";
+pub const DEMO_APPLICATION_NAME: &str = "Demoblaze";
+pub const DEMO_APPLICATION_BASE_URL: &str = "https://www.demoblaze.com";
+pub const DEMO_CAPABILITY_ID: &str = "capability.demoblaze.samsung-galaxy-s6-to-order-boundary";
+pub const DEMO_REPLAY_ID: &str = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1";
 pub const DEMO_CAPABILITY_REVISION: u64 = 3;
 pub const DEMO_REPLAY_REVISION: u64 = 5;
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
@@ -53,8 +53,8 @@ pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
 pub const DEMO_EVENT_JOURNAL_ID: &str = "event-journal.interface-compiler";
-pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"https://www.walmart.com/"},{"type":"fill","target":{"semanticDescription":"product search","role":"searchbox"},"value":"Tide Pods"},{"type":"click","target":{"semanticDescription":"submit product search","role":"button","name":"Search"}}]"#;
-pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":1,"runs":[{"id":"verification.tide-pods-to-checkout-boundary.1","capabilityId":"capability.walmart.tide-pods-to-checkout-boundary","replayVersionId":"replay.walmart.tide-pods-to-checkout-boundary.v1","sessionId":"solari.demo.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.tide-pods-to-checkout-boundary.1"],"completedAt":"2026-08-31T18:00:00.000Z"}]}"#;
+pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"https://www.demoblaze.com/"},{"type":"click","target":{"semanticDescription":"Samsung galaxy s6 product","role":"link","name":"Samsung galaxy s6"}},{"type":"click","target":{"semanticDescription":"Samsung galaxy s6 Add to cart","role":"link","name":"Add to cart"}},{"type":"click","target":{"semanticDescription":"Cart","role":"link","name":"Cart"}}]"#;
+pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":1,"runs":[{"id":"verification.samsung-galaxy-s6-to-order-boundary.1","capabilityId":"capability.demoblaze.samsung-galaxy-s6-to-order-boundary","replayVersionId":"replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1","sessionId":"solari.demo.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.samsung-galaxy-s6-to-order-boundary.1"],"completedAt":"2026-08-31T18:00:00.000Z"}]}"#;
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";

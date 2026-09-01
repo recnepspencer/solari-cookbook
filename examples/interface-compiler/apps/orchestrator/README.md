@@ -19,9 +19,9 @@ Tests inject fake ports and never make a Gemini request. Do not put credentials 
 
 Browser telemetry carries the execution identity alongside Solari session and observation/action identities. The worker keeps no metrics aggregate or session-to-execution map. A terminal event that cannot publish is returned as `finalization_blocked` after WORTH settlement, with the accepted settlement and terminal outcome preserved for reconciliation.
 
-## Safe Walmart benchmark
+## Safe Demoblaze benchmark
 
-The package exposes `runWalmartBenchmark` and a CLI composition that uses the
+The package exposes the benchmark harness and a CLI composition that uses the
 real configured Gemini and Solari adapters plus the app-specific live WORTH
 process client. Direct and compiled plans are both resolved before the first
 browser effect. The direct run must settle at a classified human-required
@@ -33,7 +33,7 @@ The default command is a no-network configuration inspection. It does not
 construct Gemini, Solari, or WORTH clients:
 
 ```text
-npm run benchmark:walmart:dry-run
+npm run benchmark:demoblaze:dry-run
 ```
 
 For a separately reviewed live run, provide credentials and current Gemini
@@ -45,19 +45,19 @@ $env:GEMINI_MODEL = "..."
 $env:GEMINI_INPUT_USD_PER_MILLION_TOKENS = "..."
 $env:GEMINI_OUTPUT_USD_PER_MILLION_TOKENS = "..."
 $env:SOLARI_API_KEY = "..."
-$env:INTERFACE_COMPILER_ALLOW_WALMART_NETWORK = "true"
-npm run benchmark:walmart:dry-run
-npm run benchmark:walmart:run
+$env:INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK = "true"
+npm run benchmark:demoblaze:dry-run
+npm run benchmark:demoblaze:run
 ```
 
-The task may search for Tide Pods, add at most one result, and open the cart.
-It stops before authentication, account creation, personal information,
-shipping, payment, checkout, order confirmation, credentials, or access
-control. A task-specific guard admits only the fixed public `Tide Pods` search
-input, public HTTPS Walmart navigation, and at most one add-to-cart action whose
-target explicitly identifies Tide Pods. It never supplies personal, account,
-shipping, payment, or credential data and never purchases. Every other unknown
-fill/select is stopped before the Solari effect.
+The task may select only `Samsung galaxy s6`, add one unit, and open the cart.
+It stops at the first order, authentication, personal-information, shipping,
+payment, credential, or access-control boundary. A task-specific stateful guard
+admits only public HTTPS Demoblaze navigation plus one informational-modal
+Close (if present), then the fixed sequence: Phones (if needed), Samsung galaxy
+s6, one Add to cart action, and Cart. It never
+supplies form data, clicks Place Order or Purchase, or purchases. Every fill
+and select is denied before the Solari effect.
 
 The report comes from the two WORTH terminal settlement projections. The
 checked-in capability/replay is explicitly `synthetic_seed`, so its compile

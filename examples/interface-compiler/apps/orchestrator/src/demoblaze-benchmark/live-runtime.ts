@@ -20,19 +20,19 @@ import { createGeminiReasoningModelFromEnvironment } from "@interface-compiler/g
 import { createSolariPortFromEnv } from "@interface-compiler/solari-adapter"
 import { InterfaceCompilerWorthClient } from "@interface-compiler/worth-adapter"
 import { createReasoningSemanticVerifier } from "../reasoning-semantic-verifier.js"
-import type { WalmartBenchmarkRuntime } from "./harness.js"
-import { readWalmartLiveConfiguration } from "./configuration.js"
+import type { DemoblazeBenchmarkRuntime } from "./harness.js"
+import { readDemoblazeLiveConfiguration } from "./configuration.js"
 
-export type LiveWalmartRuntimeResult =
-  | { readonly kind: "configured"; readonly modelId: string; readonly runtime: WalmartBenchmarkRuntime; close(): Promise<void> }
+export type LiveDemoblazeRuntimeResult =
+  | { readonly kind: "configured"; readonly modelId: string; readonly runtime: DemoblazeBenchmarkRuntime; close(): Promise<void> }
   | { readonly kind: "invalid"; readonly issues: readonly { readonly path: string; readonly message: string }[] }
 
 const systemClock: Clock = { now: () => new Date().toISOString() as IsoTimestamp }
 
 /** Composes only the real configured adapters. Calls occur later, when the harness runs. */
-export function createLiveWalmartRuntime(): LiveWalmartRuntimeResult {
+export function createLiveDemoblazeRuntime(): LiveDemoblazeRuntimeResult {
   const env = process.env
-  const configuration = readWalmartLiveConfiguration(env)
+  const configuration = readDemoblazeLiveConfiguration(env)
   if (configuration.kind !== "configured") return configuration
 
   const gemini = createGeminiReasoningModelFromEnvironment({ pricing: configuration.pricing, model: configuration.modelId, clock: systemClock })

@@ -31,9 +31,10 @@ async function readInteractables(page: SolariSdkPage): Promise<readonly Interact
     role: element.getAttribute("role"),
     name: element.getAttribute("aria-label") ?? element.getAttribute("name"),
     text: element.textContent,
+    visible: element.getAttribute("hidden") === null && element.getAttribute("aria-hidden") !== "true" && (element.getClientRects?.().length ?? 1) > 0,
   })))
 
-  return rows.map((row) => {
+  return rows.filter((row) => row.visible).map((row) => {
     const text = boundedText(row.text ?? "")
     const name = boundedText(row.name ?? "")
     const role = boundedText(row.role ?? "")
