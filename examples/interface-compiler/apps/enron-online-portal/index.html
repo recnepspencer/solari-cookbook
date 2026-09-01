@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enron Online — Gas Desk</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">enron<span>online</span></div>
+      <div class="tagline">Wholesale Energy Marketplace <em>— Gas Desk</em></div>
+      <div class="operator">OPERATOR: <strong>DEMO_TRADER</strong></div>
+    </header>
+    <main>
+      <aside>
+        <h2>Desk functions</h2>
+        <a class="selected" href="#ticket">New deal ticket</a>
+        <a href="#blotter">Intraday blotter</a>
+        <a href="#limits">Counterparty limits</a>
+        <a href="#risk">Risk work queue</a>
+        <hr />
+        <small>System notice: This demonstration desk does not book trades.</small>
+      </aside>
+      <section id="ticket">
+        <div class="crumb">MARKETS &gt; NATURAL GAS &gt; DEAL ENTRY</div>
+        <h1>New physical gas deal ticket</h1>
+        <p class="legacy-note">All fields marked <b>*</b> are required by the settlement mainframe.</p>
+        <fieldset>
+          <legend>Commercial terms</legend>
+          <label>Counterparty *
+            <select id="counterparty"><option value="">-- select counterparty --</option><option value="midwest-utility-17">Midwest Utility 17</option><option value="prairie-light-08">Prairie Light Cooperative</option></select>
+          </label>
+          <label>Market *
+            <select id="market"><option value="henry-hub-gas">Henry Hub Natural Gas</option><option value="pjm-west-power">PJM West Power</option></select>
+          </label>
+          <label>Delivery period *
+            <select id="delivery"><option value="next-month">Next Month</option></select>
+          </label>
+          <label>Side *
+            <select id="side"><option value="purchase">Purchase</option><option value="sale">Sale</option></select>
+          </label>
+          <label>Volume (MMBtu) * <input id="volume" inputmode="numeric" value="50000" /></label>
+          <label>Legacy deal code * <input id="deal-code" value="NG-HH-2026-10" /></label>
+        </fieldset>
+        <div class="actions">
+          <button id="stage-v1" type="button">Add deal ticket to blotter</button>
+          <button id="stage-v2" type="button" hidden>Stage market position</button>
+          <button id="clear" type="button">Clear ticket</button>
+        </div>
+        <div id="stage-result" class="result" aria-live="polite">No deal ticket is staged.</div>
+      </section>
+      <section id="risk" class="risk-panel">
+        <h2>Risk work queue</h2>
+        <p>Staged tickets require independent limit review before they may be booked.</p>
+        <button id="risk-button" type="button" disabled>Send ticket to risk approval</button>
+        <div id="risk-result" class="result">Waiting for a staged ticket.</div>
+      </section>
+    </main>
+    <footer>ENRON ONLINE / INTERNAL DEMONSTRATION / RELEASE <span id="release">v1</span></footer>
+    <script src="/app.js"></script>
+  </body>
+</html>

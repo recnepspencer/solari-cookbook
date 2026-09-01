@@ -9,8 +9,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "npm run test --workspace @interface-compiler/domain && npm run test --workspace @interface-compiler/worth-adapter && npm run test --workspace @interface-compiler/tool-publisher && npm run test --workspace @interface-compiler/solari-adapter && npm run test --workspace @interface-compiler/gemini-adapter && npm run test --workspace @interface-compiler/benchmark && npm run test --workspace @interface-compiler/orchestrator",
-    "benchmark:demoblaze:dry-run": "tsx apps/orchestrator/src/demoblaze-benchmark-cli.ts --dry-run",
-    "benchmark:demoblaze:run": "tsx apps/orchestrator/src/demoblaze-benchmark-cli.ts --execute"
+    "demo:enron:portal": "node apps/enron-online-portal/server.mjs",
+    "demo:enron:story": "tsx apps/orchestrator/src/enron-online-demo-cli.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

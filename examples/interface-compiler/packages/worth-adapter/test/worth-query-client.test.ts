@@ -68,14 +68,14 @@ test("client crosses the process boundary and returns the WORTH application proj
   const adapter = createWorthApplicationReadAdapter(client)
 
   const found = applicationResult(
-    await adapter.readApplication(id("application.demoblaze"), context("operation.client-found")),
+    await adapter.readApplication(id("application.enron-online"), context("operation.client-found")),
   )
   assert.deepEqual(found.value, {
     projectionKind: "worth_application",
-    id: id("application.demoblaze"),
-    revision: 7,
-    name: "Demoblaze",
-    baseUrl: "https://www.demoblaze.com",
+    id: id("application.enron-online"),
+    revision: 8,
+    name: "Enron Online",
+    baseUrl: "http://127.0.0.1:4310",
   })
   assert.equal(found.evidence.queryName, "interface_compiler_application_read")
   assert.ok(found.evidence.queryIdentity.length > 0)
@@ -95,7 +95,7 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
   const adapter = createCompiledPlanReadAdapter(client)
-  const id = capabilityId("capability.demoblaze.samsung-galaxy-s6-to-order-boundary")
+  const id = capabilityId("capability.enron.trades.stage-trade")
   const capability = await adapter.readCapability(id, context("operation.client-capability"))
   const replay = await adapter.readActiveReplay(id, context("operation.client-replay"))
   assert.equal(capability.kind, "found")
@@ -258,10 +258,10 @@ test("start execution preserves cancellation, timeout, and request correlation p
 })
 
 test("recovery mutations distinguish interruption before dispatch from an uncertain sent request", async () => {
-  const capability = capabilityId("capability.demoblaze.samsung-galaxy-s6-to-order-boundary")
-  const replay = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1" as ReplayVersionId
+  const capability = capabilityId("capability.enron.trades.stage-trade")
+  const replay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
   const execution = executionId("execution.recovery-interruption")
-  const request = { executionId: execution, capabilityId: capability, replayVersionId: replay, expectedExecutionRevision: 2, expectedCapabilityRevision: 3, expectedReplayRevision: 5 }
+  const request = { executionId: execution, capabilityId: capability, replayVersionId: replay, expectedExecutionRevision: 2, expectedCapabilityRevision: 4, expectedReplayRevision: 1 }
   const cancelledContext = context("operation.recovery-cancelled")
   const cancelledClient = new InterfaceCompilerWorthClient({ process: { command: "unused" }, credential: "interface-compiler-demo" })
   const cancelled = await cancelledClient.degradeReplay(request, {
@@ -278,8 +278,8 @@ test("recovery mutations distinguish interruption before dispatch from an uncert
 })
 
 test("adapter preserves typed unresolved and known-committed WORTH recovery outcomes", () => {
-  const capability = capabilityId("capability.demoblaze.samsung-galaxy-s6-to-order-boundary")
-  const replay = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1" as ReplayVersionId
+  const capability = capabilityId("capability.enron.trades.stage-trade")
+  const replay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
   const response = parseHostResponse(JSON.stringify({
     outcome: "replay_recovery_stopped",
     protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
@@ -319,9 +319,9 @@ test("client settles through the real host and publishes a retained concrete eve
 test("live recovery facade degrades a failed replay and activates a verified explored replacement", async (testContext) => {
   const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
   testContext.after(() => client.close())
-  const capability = capabilityId("capability.demoblaze.samsung-galaxy-s6-to-order-boundary")
-  const brokenReplay = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1" as ReplayVersionId
-  const replacement = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v2" as ReplayVersionId
+  const capability = capabilityId("capability.enron.trades.stage-trade")
+  const brokenReplay = "replay.enron.trades.stage-trade.v1" as ReplayVersionId
+  const replacement = "replay.enron.trades.stage-trade.v2" as ReplayVersionId
   const execution = executionId("execution.typescript-replay-recovery")
   const admitted = await client.admitExecution({
     id: execution,
@@ -337,7 +337,7 @@ test("live recovery facade degrades a failed replay and activates a verified exp
   assert.equal(settled.kind, "settled")
   if (settled.kind !== "settled") throw new Error("expected WORTH settlement")
 
-  const degraded = await client.degradeReplay({ executionId: execution, capabilityId: capability, replayVersionId: brokenReplay, expectedExecutionRevision: settled.projection.revision, expectedCapabilityRevision: 3, expectedReplayRevision: 5 }, context("operation.recovery-degrade"))
+  const degraded = await client.degradeReplay({ executionId: execution, capabilityId: capability, replayVersionId: brokenReplay, expectedExecutionRevision: settled.projection.revision, expectedCapabilityRevision: 4, expectedReplayRevision: 1 }, context("operation.recovery-degrade"))
   assert.equal(degraded.kind, "applied")
   if (degraded.kind !== "applied") throw new Error("expected WORTH degradation")
   assert.equal(degraded.capability.status, "degraded")
@@ -357,7 +357,7 @@ test("live recovery facade degrades a failed replay and activates a verified exp
     supersedes: brokenReplay,
     createdAt: "2026-09-01T12:01:00.000Z" as IsoTimestamp,
   }
-  const stale = await client.acceptReplacementCandidate({ capabilityId: capability, brokenReplayVersionId: brokenReplay, expectedCapabilityRevision: 3, expectedBrokenReplayRevision: degraded.replay.revision, candidate }, context("operation.recovery-stale"))
+  const stale = await client.acceptReplacementCandidate({ capabilityId: capability, brokenReplayVersionId: brokenReplay, expectedCapabilityRevision: 4, expectedBrokenReplayRevision: degraded.replay.revision, candidate }, context("operation.recovery-stale"))
   assert.equal(stale.kind, "stale")
 
   const accepted = await client.acceptReplacementCandidate({ capabilityId: capability, brokenReplayVersionId: brokenReplay, expectedCapabilityRevision: degraded.capability.revision, expectedBrokenReplayRevision: degraded.replay.revision, candidate }, context("operation.recovery-candidate"))
@@ -401,7 +401,7 @@ test("live narrow runtime port admits an arbitrary execution and returns WORTH-p
   testContext.after(() => client.close())
   const execution = executionId("execution.typescript-live-42")
   const startedAt = "2026-09-01T12:00:00.000Z" as IsoTimestamp
-  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.demoblaze.samsung-galaxy-s6-to-order-boundary"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
+  const admitted = await client.admitExecution({ id: execution, capabilityId: capabilityId("capability.enron.trades.stage-trade"), mode: "direct", metrics: { startedAt, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostUsd: 0 } }, context("operation.live-admit"))
   assert.equal(admitted.kind, "admitted")
   if (admitted.kind !== "admitted") throw new Error("expected admission")
   assert.equal(admitted.projection.executionId, execution)

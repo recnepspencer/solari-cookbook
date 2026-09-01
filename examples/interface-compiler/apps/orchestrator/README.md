@@ -19,50 +19,25 @@ Tests inject fake ports and never make a Gemini request. Do not put credentials 
 
 Browser telemetry carries the execution identity alongside Solari session and observation/action identities. The worker keeps no metrics aggregate or session-to-execution map. A terminal event that cannot publish is returned as `finalization_blocked` after WORTH settlement, with the accepted settlement and terminal outcome preserved for reconciliation.
 
-## Safe Demoblaze benchmark
+## Enron Online demo
 
-The package exposes the benchmark harness and a CLI composition that uses the
-real configured Gemini and Solari adapters plus the app-specific live WORTH
-process client. Direct and compiled plans are both resolved before the first
-browser effect. The direct run must settle at a classified human-required
-boundary and close its fresh Solari session before the compiled run may start.
-Both modes use the same immutable objective, application, capability, model,
-and resource limits.
-
-The default command is a no-network configuration inspection. It does not
-construct Gemini, Solari, or WORTH clients:
+The consumer surface is three semantic calls: resolve a contract, stage a
+trade, then request independent risk review. The implementation reads the
+local desk catalog and, for the two portal effects, can use a replay against the
+local legacy page. Neither selector text nor portal state is part of the public
+tool definition. WORTH owns the corresponding capability/replay lifecycle and
+the three fresh-session verification receipts.
 
 ```text
-npm run benchmark:demoblaze:dry-run
+npm run demo:enron:portal
+npm run demo:enron:story
 ```
 
-For a separately reviewed live run, provide credentials and current Gemini
-pricing through the environment, then use both explicit gates:
-
-```powershell
-$env:GEMINI_API_KEY = "..."
-$env:GEMINI_MODEL = "..."
-$env:GEMINI_INPUT_USD_PER_MILLION_TOKENS = "..."
-$env:GEMINI_OUTPUT_USD_PER_MILLION_TOKENS = "..."
-$env:SOLARI_API_KEY = "..."
-$env:INTERFACE_COMPILER_ALLOW_DEMOBLAZE_NETWORK = "true"
-npm run benchmark:demoblaze:dry-run
-npm run benchmark:demoblaze:run
-```
-
-The task may select only `Samsung galaxy s6`, add one unit, and open the cart.
-It stops at the first order, authentication, personal-information, shipping,
-payment, credential, or access-control boundary. A task-specific stateful guard
-admits only public HTTPS Demoblaze navigation plus one informational-modal
-Close (if present), then the fixed sequence: Phones (if needed), Samsung galaxy
-s6, one Add to cart action, and Cart. It never
-supplies form data, clicks Place Order or Purchase, or purchases. Every fill
-and select is denied before the Solari effect.
-
-The report comes from the two WORTH terminal settlement projections. The
-checked-in capability/replay is explicitly `synthetic_seed`, so its compile
-cost and break-even fields truthfully read `not_measured`; the seed is never
-treated as measured discovery or verification economics.
+The portal serves only `127.0.0.1:4310`. Append `?release=v2` to intentionally
+replace the old **Add deal ticket to blotter** action with **Stage market
+position**. This is the visual failure trigger for replay v1: the public
+`enron.trades_stage_trade` tool remains unchanged while WORTH recovery can
+degrade v1, verify v2 three times, and activate the replacement.
 
 ## Checks
 

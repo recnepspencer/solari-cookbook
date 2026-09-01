@@ -4,8 +4,9 @@ This is a real, deliberately narrow WORTH Query host. It installs and
 publishes a typed Interface Compiler application runtime through the public
 `worth-query-host::facade`, admits the demo credential and principal mapping,
 and executes bounded application queries against WORTH's in-memory relational
-graph. The installed application is Demoblaze, with one bounded Samsung galaxy s6
-capability and active replay. Its Rust API additionally demonstrates a typed
+graph. The installed application is the local Enron Online gas desk, with three
+semantic capabilities (`resolve-contract`, `stage-trade`, and
+`request-approval`) and active replays. Its Rust API additionally demonstrates a typed
 `start_execution` transition through WORTH's admitted operation, projected
 dependencies, effect program, compare-and-commit, and typed execution query.
 The same application facade now admits `complete_execution` for the seeded
@@ -39,7 +40,7 @@ Reads and admitted lifecycle/event commands all execute through WORTH.
 For example:
 
 ```json
-{"protocol":"interface-compiler.worth-host.v2","request_id":"demo-1","operation":"read_application","application_id":"application.demoblaze","credential":"interface-compiler-demo","deadline_ms":5000}
+{"protocol":"interface-compiler.worth-host.v2","request_id":"demo-1","operation":"read_application","application_id":"application.enron-online","credential":"interface-compiler-demo","deadline_ms":5000}
 ```
 
 The live response contains the WORTH-derived `worth_application` projection and

@@ -1,0 +1,4 @@
+contract_ref,market,delivery,delivery_hub,side,min_mmbtu,max_mmbtu,price_usd_per_mmbtu
+NG-HH-2026-10,henry-hub-gas,next-month,Henry Hub,purchase,25000,100000,3.18
+NG-HH-2026-10-S,henry-hub-gas,next-month,Henry Hub,sale,25000,100000,3.16
+PWR-PJM-2026-10,pjm-west-power,next-month,PJM West,purchase,10,500,54.25

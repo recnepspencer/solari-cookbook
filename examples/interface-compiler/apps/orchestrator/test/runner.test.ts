@@ -67,7 +67,6 @@ import {
   type SemanticVerificationResult,
   type SemanticVerifier,
 } from "../src/index.js"
-import { createDemoblazeBenchmarkStepPolicy } from "../src/demoblaze-benchmark/step-policy.js"
 
 const timestamp = "2026-08-31T12:00:00.000Z" as IsoTimestamp
 const application = validValue(createApplication({ id: id<ApplicationId>("application.shop"), name: "Shop", baseUrl: "https://shop.test" }))
@@ -591,28 +590,6 @@ test("direct planning and execution publish only actual model/browser telemetry 
   assert.equal(runtime.completed?.metrics.modelCalls, 2)
   assert.equal(runtime.completed?.metrics.browserActions, 1)
   assert.equal(runtime.completed?.metrics.estimatedModelCostUsd, 0.012)
-})
-
-test("the fixed Demoblaze step policy denies arbitrary form input before the Solari effect", async () => {
-  const runtime = new FakeWorthRuntime()
-  const solari = new ScriptedSolari(
-    [{ kind: "observed", observation: safeObservation("observation.initial"), effect: { kind: "completed" } }],
-    [{ kind: "completed", effect: { kind: "completed" } }],
-  )
-  const model = new FakeModel([{
-    kind: "completed",
-    completion: { output: { kind: "act", step: { type: "fill", target: { semanticDescription: "product search", role: "searchbox" }, value: "person@example.com" } }, usage: { inputTokens: 2, outputTokens: 1, estimatedModelCostUsd: 0.001 } },
-    effect: { kind: "completed" },
-  }])
-  const result = await new ExperimentRunner({ ...ports(bind(runtime), solari, model), stepPolicy: createDemoblazeBenchmarkStepPolicy() })
-    .run(directPlan(), operationController().controller)
-
-  assert.equal(result.kind, "attempted")
-  if (result.kind !== "attempted") throw new Error("expected attempted run")
-  assert.equal(result.terminal.kind, "failure")
-  assert.equal(solari.sessions[0]?.executedSteps.length, 0)
-  assert.equal(runtime.completed?.metrics.browserActions, 0)
-  assert.equal(runtime.completed?.metrics.modelCalls, 1)
 })
 
 test("compiled planning resolves Worth projections and executes without Gemini reasoning", async () => {

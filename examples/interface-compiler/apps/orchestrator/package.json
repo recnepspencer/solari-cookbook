@@ -14,6 +14,7 @@
     "@interface-compiler/domain": "file:../../packages/domain",
     "@interface-compiler/gemini-adapter": "file:../../packages/gemini-adapter",
     "@interface-compiler/solari-adapter": "file:../../packages/solari-adapter",
+    "@interface-compiler/tool-publisher": "file:../../packages/tool-publisher",
     "@interface-compiler/worth-adapter": "file:../../packages/worth-adapter"
   }
 }

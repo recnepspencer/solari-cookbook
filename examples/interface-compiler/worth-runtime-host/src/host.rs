@@ -38,14 +38,20 @@ mod synchronous_future;
 pub use execution_contract::*;
 use synchronous_future::block_on;
 
-pub const DEMO_APPLICATION_ID: &str = "application.demoblaze";
-pub const DEMO_APPLICATION_REVISION: u64 = 7;
-pub const DEMO_APPLICATION_NAME: &str = "Demoblaze";
-pub const DEMO_APPLICATION_BASE_URL: &str = "https://www.demoblaze.com";
-pub const DEMO_CAPABILITY_ID: &str = "capability.demoblaze.samsung-galaxy-s6-to-order-boundary";
-pub const DEMO_REPLAY_ID: &str = "replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1";
-pub const DEMO_CAPABILITY_REVISION: u64 = 3;
-pub const DEMO_REPLAY_REVISION: u64 = 5;
+pub const DEMO_APPLICATION_ID: &str = "application.enron-online";
+pub const DEMO_APPLICATION_REVISION: u64 = 8;
+pub const DEMO_APPLICATION_NAME: &str = "Enron Online";
+pub const DEMO_APPLICATION_BASE_URL: &str = "http://127.0.0.1:4310";
+/// The primary demo capability is deliberately stage-trade: it is the replay
+/// that changes when the legacy page changes, while its public API is stable.
+pub const DEMO_CAPABILITY_ID: &str = "capability.enron.trades.stage-trade";
+pub const DEMO_REPLAY_ID: &str = "replay.enron.trades.stage-trade.v1";
+pub const ENRON_RESOLVE_CONTRACT_CAPABILITY_ID: &str = "capability.enron.market.resolve-contract";
+pub const ENRON_RESOLVE_CONTRACT_REPLAY_ID: &str = "replay.enron.market.resolve-contract.v1";
+pub const ENRON_RISK_APPROVAL_CAPABILITY_ID: &str = "capability.enron.risk.request-approval";
+pub const ENRON_RISK_APPROVAL_REPLAY_ID: &str = "replay.enron.risk.request-approval.v1";
+pub const DEMO_CAPABILITY_REVISION: u64 = 4;
+pub const DEMO_REPLAY_REVISION: u64 = 1;
 pub const DEMO_CREDENTIAL: &str = "interface-compiler-demo";
 pub const DEMO_EXECUTION_ID: &str = "execution.demonstration-001";
 pub const DEMO_EXECUTION_ID_TWO: &str = "execution.demonstration-002";
@@ -53,8 +59,8 @@ pub const DEMO_EXECUTION_NON_PENDING_ID: &str = "execution.demonstration-started
 pub const DEMO_EXECUTION_PENDING: &str = "pending";
 pub const DEMO_EXECUTION_STARTED: &str = "started";
 pub const DEMO_EVENT_JOURNAL_ID: &str = "event-journal.interface-compiler";
-pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"https://www.demoblaze.com/"},{"type":"click","target":{"semanticDescription":"Samsung galaxy s6 product","role":"link","name":"Samsung galaxy s6"}},{"type":"click","target":{"semanticDescription":"Samsung galaxy s6 Add to cart","role":"link","name":"Add to cart"}},{"type":"click","target":{"semanticDescription":"Cart","role":"link","name":"Cart"}}]"#;
-pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":1,"runs":[{"id":"verification.samsung-galaxy-s6-to-order-boundary.1","capabilityId":"capability.demoblaze.samsung-galaxy-s6-to-order-boundary","replayVersionId":"replay.demoblaze.samsung-galaxy-s6-to-order-boundary.v1","sessionId":"solari.demo.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.samsung-galaxy-s6-to-order-boundary.1"],"completedAt":"2026-08-31T18:00:00.000Z"}]}"#;
+pub const DEMO_REPLAY_STEPS_JSON: &str = r#"[{"type":"navigate","url":"http://127.0.0.1:4310/"},{"type":"select","target":{"semanticDescription":"counterparty","role":"combobox","name":"Counterparty"},"value":"midwest-utility-17"},{"type":"fill","target":{"semanticDescription":"volume","role":"textbox","name":"Volume (MMBtu)"},"value":"50000"},{"type":"fill","target":{"semanticDescription":"legacy deal code","role":"textbox","name":"Legacy deal code"},"value":"NG-HH-2026-10"},{"type":"click","target":{"semanticDescription":"stage deal ticket","role":"button","name":"Add deal ticket to blotter"}},{"type":"assert","condition":{"kind":"text_present","text":"STAGED ET-NG-1042"}}]"#;
+pub const DEMO_REPLAY_VERIFICATION_JSON: &str = r#"{"requiredSuccessfulRuns":3,"runs":[{"id":"verification.enron.stage-trade.1","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.1","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.1"],"completedAt":"2026-09-01T01:00:00.000Z"},{"id":"verification.enron.stage-trade.2","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.2","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.2"],"completedAt":"2026-09-01T01:01:00.000Z"},{"id":"verification.enron.stage-trade.3","capabilityId":"capability.enron.trades.stage-trade","replayVersionId":"replay.enron.trades.stage-trade.v1","sessionId":"solari.enron.fresh.3","freshSession":true,"outcome":"success","evidenceIds":["evidence.enron.stage-trade.3"],"completedAt":"2026-09-01T01:02:00.000Z"}]}"#;
 pub const DEMO_PRINCIPAL_KEY: &str = "principal.interface-compiler-demo";
 pub const DEMO_PRINCIPAL_SUBJECT: &str = "interface-compiler-demo";
 pub const DEMO_PRINCIPAL_ISSUER: &str = "https://interface-compiler.example/issuer";

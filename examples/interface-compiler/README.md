@@ -2475,10 +2475,9 @@ the foundation contains no sample measurements, credentials, or `.env` values.
 
 # Active demo direction — Enron Online
 
-The next implementation slice replaces the temporary one-capability Demoblaze
-benchmark with the local Enron Online energy-trading demo above. Its consumer
-API is intentionally stable while the portal's replay implementation may
-change:
+The local Enron Online energy-trading demo now replaces the temporary external
+benchmark. Its consumer API is intentionally stable while the portal's replay
+implementation may change:
 
 ```ts
 const contract = await enron.market.resolveContract({
@@ -2488,8 +2487,8 @@ const contract = await enron.market.resolveContract({
   requestedMmbtu: 50_000,
 })
 
-const trade = await enron.trades.stageTrade({ contractRef: contract.ref })
-await enron.risk.requestApproval({ tradeRef: trade.ref })
+const trade = await enron.trades.stageTrade({ contractRef: contract.contractRef })
+await enron.risk.requestApproval({ tradeRef: trade.tradeRef })
 ```
 
 The decisive proof is a local portal release that breaks
@@ -2499,6 +2498,16 @@ verify v2; and the unchanged consumer call must succeed through v2. The
 dashboard displays only WORTH projections for those facts and measured direct
 versus compiled workflow cost.
 
-No implementation has been added for this direction yet. The current
-Demoblaze code is temporary and must be removed—not retained as a second
-ordinary demo path—when this slice is implemented.
+The checked-in portal is local-only and holds its current ticket state in the
+browser. `contract_catalog.csv`, `counterparty_limits.csv`, and the trader desk
+card provide the deliberately unglamorous source material that the semantic
+surface compiles behind `resolveContract`, `stageTrade`, and
+`requestApproval`. WORTH owns the seeded capability, replay, verification,
+lifecycle, and execution facts; the portal is never a consumer-facing API.
+
+Run the portal and the deterministic semantic story separately:
+
+```text
+npm run demo:enron:portal
+npm run demo:enron:story
+```
