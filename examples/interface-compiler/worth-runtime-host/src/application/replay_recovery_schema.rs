@@ -42,6 +42,33 @@ worth_query_field!(
 );
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisterVerificationEvidenceInput {
+    pub capability_id: String,
+    pub replay_version_id: String,
+    pub expected_capability_revision: u64,
+    pub expected_replay_revision: u64,
+    pub evidence_json: String,
+}
+worth_query_portable_type!(RegisterVerificationEvidenceInput => "interface-compiler.worth.register-verification-evidence.input.v1");
+worth_query_operation!(pub RegisterVerificationEvidence(RegisterVerificationEvidenceInput) in InterfaceCompilerSchema);
+worth_query_operation_reads!(RegisterVerificationEvidence => [
+    CapabilityIdentifier,
+    CapabilityRevision,
+    CapabilityStatus,
+    CapabilityActiveReplayIdentifier,
+    CapabilityCandidateReplayIdentifier,
+    ReplayIdentifier,
+    ReplayRevision,
+    ReplayCapabilityIdentifier,
+    ReplayStatus,
+    ReplayVerificationJson
+]);
+worth_query_operation_writes!(RegisterVerificationEvidence => [
+    ReplayRevision,
+    ReplayVerificationJson
+]);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DegradeReplayInput {
     pub execution_id: String,
     pub capability_id: String,
@@ -69,6 +96,7 @@ worth_query_operation_reads!(DegradeReplay => [
     ReplayRevision,
     ReplayCapabilityIdentifier,
     ReplayStatus,
+    ReplayVerificationJson,
     ReplayFailureJson,
     ReplayBrokenAt
 ]);
@@ -113,7 +141,10 @@ impl declaration::application_schema::OperationCreates<AcceptReplacementCandidat
 worth_query_operation_writes!(AcceptReplacementCandidate => [
     CapabilityRevision,
     CapabilityStatus,
+    CapabilityActiveReplayIdentifier,
     CapabilityCandidateReplayIdentifier,
+    CapabilityBrokenReplayIdentifier,
+    CapabilityFailureJson,
     ReplayIdentifier,
     ReplayRevision,
     ReplayCapabilityIdentifier,
@@ -144,17 +175,30 @@ worth_query_operation_reads!(RecordReplacementVerification => [
     CapabilityIdentifier,
     CapabilityRevision,
     CapabilityStatus,
+    CapabilityActiveReplayIdentifier,
     CapabilityCandidateReplayIdentifier,
+    CapabilityBrokenReplayIdentifier,
+    CapabilityFailureJson,
     ReplayIdentifier,
     ReplayRevision,
     ReplayCapabilityIdentifier,
     ReplayStatus,
     ReplayCreatedAt,
-    ReplayVerificationJson
+    ReplayVerificationJson,
+    ReplayFailureJson,
+    ReplayBrokenAt
 ]);
 worth_query_operation_writes!(RecordReplacementVerification => [
+    CapabilityRevision,
+    CapabilityStatus,
+    CapabilityCandidateReplayIdentifier,
+    CapabilityBrokenReplayIdentifier,
+    CapabilityFailureJson,
     ReplayRevision,
-    ReplayVerificationJson
+    ReplayStatus,
+    ReplayVerificationJson,
+    ReplayFailureJson,
+    ReplayBrokenAt
 ]);
 
 #[derive(Clone, Debug, Eq, PartialEq)]

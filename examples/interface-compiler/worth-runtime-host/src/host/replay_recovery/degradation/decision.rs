@@ -7,12 +7,13 @@ use crate::application::{
     ExecutionCapabilityIdentifier, ExecutionIdentifier, ExecutionLifecycle,
     ExecutionReplayIdentifier, ExecutionRevision, ExecutionSettlementJson, InterfaceCompilerSchema,
     ReplayBrokenAt, ReplayCapabilityIdentifier, ReplayFailureJson, ReplayIdentifier,
-    ReplayRevision, ReplayStatus,
+    ReplayRevision, ReplayStatus, ReplayVerificationJson,
 };
 use crate::host::replay_recovery::{
     denied, stale, validation::replay_failure_from_settlement, DegradeReplayRequest,
-    InterfaceCompilerReplayRecoveryEntity, InterfaceCompilerReplayRecoveryOutcome,
-    InterfaceCompilerReplayRecoveryStage, MAX_RECOVERY_JSON_BYTES,
+    InterfaceCompilerReplacementVerification, InterfaceCompilerReplayRecoveryEntity,
+    InterfaceCompilerReplayRecoveryOutcome, InterfaceCompilerReplayRecoveryStage,
+    MAX_RECOVERY_JSON_BYTES,
 };
 use crate::host::InterfaceCompilerWorthHost;
 
@@ -46,6 +47,7 @@ struct DegradationDecision {
     replay_revision: Option<u64>,
     replay_capability: Option<String>,
     replay_status: Option<String>,
+    replay_verification: Option<String>,
     replay_failure: Option<String>,
     replay_broken_at: Option<String>,
 }
@@ -135,6 +137,10 @@ pub(super) fn admit_degradation(
                     .decision_field(&replay, ReplayStatus::reference())
                     .ok()
                     .flatten(),
+                replay_verification: reader
+                    .decision_field(&replay, ReplayVerificationJson::reference())
+                    .ok()
+                    .flatten(),
                 replay_failure: reader
                     .decision_field(&replay, ReplayFailureJson::reference())
                     .ok()
@@ -167,6 +173,14 @@ pub(super) fn admit_degradation(
         return Err(denied(
             InterfaceCompilerReplayRecoveryStage::OperationAdmission,
             "the execution, capability, and replay do not form the current healthy lineage",
+        ));
+    }
+    if failure.get("kind").and_then(serde_json::Value::as_str) == Some("postcondition_failed")
+        && !decision.authorizes_postcondition_evidence(request, &failure)
+    {
+        return Err(denied(
+            InterfaceCompilerReplayRecoveryStage::OperationAdmission,
+            "the failed postcondition is not backed by WORTH-retained Solari evidence",
         ));
     }
     let failure_json =
@@ -202,6 +216,34 @@ fn checked_next_revision(
 }
 
 impl DegradationDecision {
+    fn authorizes_postcondition_evidence(
+        &self,
+        request: &DegradeReplayRequest,
+        failure: &serde_json::Value,
+    ) -> bool {
+        let Some(requested_ids) = failure
+            .get("evidenceIds")
+            .and_then(serde_json::Value::as_array)
+        else {
+            return false;
+        };
+        let Some(verification) = self.replay_verification.as_deref().and_then(|value| {
+            serde_json::from_str::<InterfaceCompilerReplacementVerification>(value).ok()
+        }) else {
+            return false;
+        };
+        !requested_ids.is_empty()
+            && requested_ids.iter().all(|requested| {
+                requested.as_str().is_some_and(|evidence_id| {
+                    verification.evidence.iter().any(|evidence| {
+                        evidence.evidence_id == evidence_id
+                            && evidence.replay_version_id == request.replay_version_id
+                            && evidence.kind == "session_receipt"
+                    })
+                })
+            })
+    }
+
     fn validate_expected_revisions(
         &self,
         request: &DegradeReplayRequest,

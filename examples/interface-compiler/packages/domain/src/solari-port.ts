@@ -32,6 +32,7 @@ export type SolariObservationResult =
 
 export type EvidenceCaptureRequest =
   | { readonly kind: "session_recording" }
+  | { readonly kind: "session_receipt" }
   | { readonly kind: "screenshot"; readonly observationId: ObservationId }
   | { readonly kind: "snapshot"; readonly observationId: ObservationId }
 
@@ -62,7 +63,7 @@ export type SolariSessionResult =
 export interface SolariSession {
   readonly sessionId: SessionId
   observe(context: OperationContext): Promise<SolariObservationResult>
-  executeStep(step: ReplayStep, context: OperationContext): Promise<SolariStepResult>
+  executeStep(step: ReplayStep, context: OperationContext, stepIndex?: number): Promise<SolariStepResult>
   captureEvidence(request: EvidenceCaptureRequest, context: OperationContext): Promise<SolariEvidenceResult>
 }
 

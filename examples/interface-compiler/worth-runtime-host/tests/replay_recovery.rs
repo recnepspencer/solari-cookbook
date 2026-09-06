@@ -25,7 +25,7 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
         });
         let (degraded_capability, broken_replay) = applied(degraded);
         assert_eq!(degraded_capability.id, DEMO_CAPABILITY_ID);
-        assert_eq!(degraded_capability.name, "TradesIngestIncomingTrade");
+        assert_eq!(degraded_capability.name, "ingestIncomingTrade");
         assert_eq!(degraded_capability.status, "degraded");
         assert_eq!(
             degraded_capability.active_replay_id.as_deref(),
@@ -41,6 +41,23 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
         );
         assert_eq!(broken_replay.status, "broken");
         assert_eq!(broken_replay.revision, DEMO_REPLAY_REVISION + 1);
+        assert!(matches!(
+            host.read_recovery_projection(
+                InterfaceCompilerCompiledReadRequest::new(
+                    DEMO_CAPABILITY_ID,
+                    DEMO_CREDENTIAL,
+                    Duration::from_secs(1),
+                ),
+            ),
+            InterfaceCompilerRecoveryProjectionReadOutcome::Found {
+                capability,
+                capability_evidence,
+                replay,
+                replay_evidence,
+            } if capability.status == "degraded"
+                && replay.status == "broken"
+                && capability_evidence.basis_version == replay_evidence.basis_version
+        ));
         assert_eq!(
             broken_replay.broken_at.as_deref(),
             Some("2026-09-01T12:00:04.000Z")
@@ -52,6 +69,19 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
                 Duration::from_secs(1),
             )),
             InterfaceCompilerActiveReplayReadOutcome::Denied { .. }
+        ));
+        assert!(matches!(
+            host.admit_execution(InterfaceCompilerStartExecutionRequest::admission(
+                "execution.recovery-exploration",
+                DEMO_CAPABILITY_ID,
+                None,
+                "direct",
+                InterfaceCompilerStartMetrics::zero("2026-09-01T12:00:05.000Z"),
+                DEMO_CREDENTIAL,
+                Duration::from_secs(2),
+            )),
+            InterfaceCompilerStartExecutionOutcome::Transitioned { projection, .. }
+                if projection.mode == "direct" && projection.replay_version_id.is_empty()
         ));
 
         let accepted = host.accept_replacement_candidate(AcceptReplacementCandidateRequest {
@@ -72,6 +102,23 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
             Some(REPLACEMENT_ID)
         );
         assert_eq!(verifying_replay.status, "verifying");
+        assert!(matches!(
+            host.read_recovery_projection(
+                InterfaceCompilerCompiledReadRequest::new(
+                    DEMO_CAPABILITY_ID,
+                    DEMO_CREDENTIAL,
+                    Duration::from_secs(1),
+                ),
+            ),
+            InterfaceCompilerRecoveryProjectionReadOutcome::Found {
+                capability,
+                capability_evidence,
+                replay,
+                replay_evidence,
+            } if capability.status == "verifying"
+                && replay.status == "verifying"
+                && capability_evidence.basis_version == replay_evidence.basis_version
+        ));
         assert_eq!(
             verifying_replay.supersedes_id.as_deref(),
             Some(DEMO_REPLAY_ID)
@@ -79,13 +126,20 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
         assert_ne!(verifying_replay.steps_json, broken_replay.steps_json);
 
         for index in 1..=3 {
+            let run = verification_run(index);
+            let (_, replay_with_evidence) = applied(register_evidence(
+                &host,
+                verifying_capability.revision,
+                verifying_replay.revision,
+                &run,
+            ));
             let recorded =
                 host.record_replacement_verification(RecordReplacementVerificationRequest {
                     capability_id: DEMO_CAPABILITY_ID.into(),
                     replay_version_id: REPLACEMENT_ID.into(),
                     expected_capability_revision: verifying_capability.revision,
-                    expected_replay_revision: verifying_replay.revision,
-                    run: verification_run(index),
+                    expected_replay_revision: replay_with_evidence.revision,
+                    run,
                     credential: DEMO_CREDENTIAL.into(),
                     timeout: Duration::from_secs(2),
                 });
@@ -141,6 +195,182 @@ fn worth_owns_failure_degradation_exploration_verification_and_replacement_activ
             InterfaceCompilerReplayReadOutcome::Found { projection, .. }
                 if projection.status == "broken"
         ));
+    });
+}
+
+#[test]
+fn failed_candidate_verification_returns_the_capability_to_degraded_discovery() {
+    run_on_host_stack(|| {
+        let host = InterfaceCompilerWorthHost::in_memory_demo().expect("WORTH demo host");
+        let (settled_revision, _) = settle_replay_failure(&host, "execution.failed-candidate");
+        let (degraded_capability, broken_replay) =
+            applied(host.degrade_replay(DegradeReplayRequest {
+                execution_id: "execution.failed-candidate".into(),
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                replay_version_id: DEMO_REPLAY_ID.into(),
+                expected_execution_revision: settled_revision,
+                expected_capability_revision: DEMO_CAPABILITY_REVISION,
+                expected_replay_revision: DEMO_REPLAY_REVISION,
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            }));
+        let (verifying_capability, verifying_replay) = applied(host.accept_replacement_candidate(
+            AcceptReplacementCandidateRequest {
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                broken_replay_version_id: DEMO_REPLAY_ID.into(),
+                expected_capability_revision: degraded_capability.revision,
+                expected_broken_replay_revision: broken_replay.revision,
+                candidate: replacement_candidate(DEMO_CAPABILITY_ID),
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            },
+        ));
+        let failed_run = InterfaceCompilerReplacementVerificationRun {
+            id: "verification.replacement.failed".into(),
+            capability_id: DEMO_CAPABILITY_ID.into(),
+            replay_version_id: REPLACEMENT_ID.into(),
+            session_id: "solari.session.replacement.failed".into(),
+            fresh_session: true,
+            outcome: InterfaceCompilerVerificationOutcome::Failure,
+            failure_message: Some("candidate missed the business postcondition".into()),
+            evidence_ids: vec!["evidence.replacement.failed".into()],
+            completed_at: "2026-09-01T12:02:00.000Z".into(),
+        };
+        let (_, replay_with_evidence) = applied(register_evidence(
+            &host,
+            verifying_capability.revision,
+            verifying_replay.revision,
+            &failed_run,
+        ));
+        let (degraded_again, failed_candidate) = applied(host.record_replacement_verification(
+            RecordReplacementVerificationRequest {
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                replay_version_id: REPLACEMENT_ID.into(),
+                expected_capability_revision: verifying_capability.revision,
+                expected_replay_revision: replay_with_evidence.revision,
+                run: failed_run,
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            },
+        ));
+        assert_eq!(degraded_again.status, "degraded");
+        assert_eq!(
+            degraded_again.active_replay_id.as_deref(),
+            Some(DEMO_REPLAY_ID)
+        );
+        assert_eq!(
+            degraded_again.broken_replay_id.as_deref(),
+            Some(REPLACEMENT_ID)
+        );
+        assert!(degraded_again.candidate_replay_id.is_none());
+        assert_eq!(failed_candidate.status, "broken");
+        assert!(failed_candidate
+            .failure_json
+            .as_deref()
+            .is_some_and(|failure| failure.contains("verification_failed")));
+
+        let successor_id = "replay.trades.ingest-incoming-trade.v3";
+        let mut successor = replacement_candidate(DEMO_CAPABILITY_ID);
+        successor.replay_version_id = successor_id.into();
+        successor.version = 3;
+        successor.supersedes = REPLACEMENT_ID.into();
+        successor.created_at = "2026-09-01T12:03:00.000Z".into();
+        let (verifying_again, successor_replay) = applied(host.accept_replacement_candidate(
+            AcceptReplacementCandidateRequest {
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                broken_replay_version_id: REPLACEMENT_ID.into(),
+                expected_capability_revision: degraded_again.revision,
+                expected_broken_replay_revision: failed_candidate.revision,
+                candidate: successor,
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            },
+        ));
+        assert_eq!(verifying_again.status, "verifying");
+        assert_eq!(successor_replay.id, successor_id);
+        assert_eq!(
+            successor_replay.supersedes_id.as_deref(),
+            Some(REPLACEMENT_ID)
+        );
+    });
+}
+
+#[test]
+fn failed_postcondition_requires_a_worth_retained_active_replay_receipt() {
+    run_on_host_stack(|| {
+        let host = InterfaceCompilerWorthHost::in_memory_demo().expect("WORTH demo host");
+        let execution_id = "execution.semantic-drift";
+        let started_revision = admit_compiled(&host, execution_id);
+        let evidence_id = "evidence.semantic-drift.session-receipt";
+        let settled = host.complete_execution(CompleteExecutionRequest {
+            execution_id: execution_id.into(),
+            expected_revision: started_revision,
+            settlement: json!({
+                "status": "failure",
+                "completion": {
+                    "kind": "failure",
+                    "reason": "replay_failed",
+                    "message": "the business receipt did not appear",
+                    "replayFailure": {
+                        "kind": "postcondition_failed",
+                        "condition": { "kind": "text_present", "text": "Posted to Financials" },
+                        "message": "the business receipt did not appear",
+                        "evidenceIds": [evidence_id]
+                    }
+                },
+                "endedAt": "2026-09-01T12:00:04.000Z"
+            }),
+            credential: DEMO_CREDENTIAL.into(),
+            timeout: Duration::from_secs(2),
+        });
+        let settled_revision = match settled {
+            SettlementOutcome::Applied { projection, .. } => projection.revision,
+            other => panic!("semantic failure should settle: {other:?}"),
+        };
+        let degradation = |expected_replay_revision| DegradeReplayRequest {
+            execution_id: execution_id.into(),
+            capability_id: DEMO_CAPABILITY_ID.into(),
+            replay_version_id: DEMO_REPLAY_ID.into(),
+            expected_execution_revision: settled_revision,
+            expected_capability_revision: DEMO_CAPABILITY_REVISION,
+            expected_replay_revision,
+            credential: DEMO_CREDENTIAL.into(),
+            timeout: Duration::from_secs(2),
+        };
+
+        assert!(matches!(
+            host.degrade_replay(degradation(DEMO_REPLAY_REVISION)),
+            InterfaceCompilerReplayRecoveryOutcome::Denied {
+                stage: InterfaceCompilerReplayRecoveryStage::OperationAdmission,
+                ..
+            }
+        ));
+
+        let (healthy, active) = applied(host.register_verification_evidence(
+            RegisterVerificationEvidenceRequest {
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                replay_version_id: DEMO_REPLAY_ID.into(),
+                expected_capability_revision: DEMO_CAPABILITY_REVISION,
+                expected_replay_revision: DEMO_REPLAY_REVISION,
+                evidence: InterfaceCompilerVerificationEvidence {
+                    evidence_id: evidence_id.into(),
+                    replay_version_id: DEMO_REPLAY_ID.into(),
+                    session_id: "solari.session.semantic-drift".into(),
+                    kind: "session_receipt".into(),
+                    external_ref: "solari-session:solari.session.semantic-drift".into(),
+                    captured_at: "2026-09-01T12:00:03.000Z".into(),
+                },
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            },
+        ));
+        assert_eq!(healthy.status, "healthy");
+        assert_eq!(active.status, "active");
+        assert_eq!(active.revision, DEMO_REPLAY_REVISION + 1);
+
+        let (degraded, broken) = applied(host.degrade_replay(degradation(active.revision)));
+        assert_eq!(degraded.status, "degraded");
+        assert_eq!(broken.status, "broken");
     });
 }
 
@@ -236,13 +466,35 @@ fn recovery_denies_nonterminal_foreign_duplicate_insufficient_and_stale_inputs()
                 ..
             }
         ));
+        let first_run = verification_run(1);
+        assert!(matches!(
+            host.record_replacement_verification(RecordReplacementVerificationRequest {
+                capability_id: DEMO_CAPABILITY_ID.into(),
+                replay_version_id: REPLACEMENT_ID.into(),
+                expected_capability_revision: verifying_capability.revision,
+                expected_replay_revision: verifying_replay.revision,
+                run: first_run.clone(),
+                credential: DEMO_CREDENTIAL.into(),
+                timeout: Duration::from_secs(2),
+            }),
+            InterfaceCompilerReplayRecoveryOutcome::Denied {
+                stage: InterfaceCompilerReplayRecoveryStage::OperationAdmission,
+                ..
+            }
+        ));
+        let (_, replay_with_evidence) = applied(register_evidence(
+            &host,
+            verifying_capability.revision,
+            verifying_replay.revision,
+            &first_run,
+        ));
         let (_, replay_after_run) = applied(host.record_replacement_verification(
             RecordReplacementVerificationRequest {
                 capability_id: DEMO_CAPABILITY_ID.into(),
                 replay_version_id: REPLACEMENT_ID.into(),
                 expected_capability_revision: verifying_capability.revision,
-                expected_replay_revision: verifying_replay.revision,
-                run: verification_run(1),
+                expected_replay_revision: replay_with_evidence.revision,
+                run: first_run,
                 credential: DEMO_CREDENTIAL.into(),
                 timeout: Duration::from_secs(2),
             },
@@ -455,6 +707,30 @@ fn verification_run(index: u64) -> InterfaceCompilerReplacementVerificationRun {
         evidence_ids: vec![format!("evidence.replacement.{index}")],
         completed_at: format!("2026-09-01T12:0{}:00.000Z", index + 1),
     }
+}
+
+fn register_evidence(
+    host: &InterfaceCompilerWorthHost,
+    capability_revision: u64,
+    replay_revision: u64,
+    run: &InterfaceCompilerReplacementVerificationRun,
+) -> InterfaceCompilerReplayRecoveryOutcome {
+    host.register_verification_evidence(RegisterVerificationEvidenceRequest {
+        capability_id: run.capability_id.clone(),
+        replay_version_id: run.replay_version_id.clone(),
+        expected_capability_revision: capability_revision,
+        expected_replay_revision: replay_revision,
+        evidence: InterfaceCompilerVerificationEvidence {
+            evidence_id: run.evidence_ids[0].clone(),
+            replay_version_id: run.replay_version_id.clone(),
+            session_id: run.session_id.clone(),
+            kind: "session_receipt".into(),
+            external_ref: format!("solari-session:{}", run.session_id),
+            captured_at: run.completed_at.clone(),
+        },
+        credential: DEMO_CREDENTIAL.into(),
+        timeout: Duration::from_secs(2),
+    })
 }
 
 fn applied(

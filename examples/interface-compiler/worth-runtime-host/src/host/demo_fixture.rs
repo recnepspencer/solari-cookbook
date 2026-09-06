@@ -4,6 +4,11 @@ pub(super) struct DemoReplaySeed {
     pub capability_id: &'static str,
     pub capability_name: &'static str,
     pub capability_description: &'static str,
+    pub capability_input_schema_json: &'static str,
+    pub capability_output_schema_json: &'static str,
+    pub capability_preconditions_json: &'static str,
+    pub capability_postconditions_json: &'static str,
+    pub capability_publication_json: &'static str,
     pub replay_id: &'static str,
     pub steps_json: String,
     pub verification_json: &'static str,
@@ -12,11 +17,22 @@ pub(super) struct DemoReplaySeed {
 pub(super) fn replays_for_base_url(base_url: &str) -> [DemoReplaySeed; 1] {
     [DemoReplaySeed {
         capability_id: super::DEMO_CAPABILITY_ID,
-        capability_name: "TradesIngestIncomingTrade",
-        capability_description: "Ingest a delivered trade email into Financials and verify its receipt.",
+        capability_name: "ingestIncomingTrade",
+        capability_description:
+            "Ingest a delivered trade message into Financials and verify its receipt.",
+        capability_input_schema_json: r#"{"type":"object","properties":{"messageId":{"type":"string","minLength":1}},"required":["messageId"],"additionalProperties":false}"#,
+        capability_output_schema_json: r#"{"type":"object","properties":{"status":{"type":"string","enum":["posted","duplicate"]},"tradeId":{"type":"string","minLength":1},"financialReceiptId":{"type":"string","minLength":1},"sourceMessageId":{"type":"string","minLength":1},"idempotencyKey":{"type":"string","minLength":1}},"required":["status","tradeId","financialReceiptId","sourceMessageId","idempotencyKey"],"additionalProperties":false}"#,
+        capability_preconditions_json: r#"[{"kind":"text_present","text":"EMAIL RECEIVED"}]"#,
+        capability_postconditions_json: r#"[{"kind":"text_present","text":"verified Financials receipt FIN-1042"}]"#,
+        capability_publication_json: r#"{"audience":"gemini_consumer","disclosure":"semantic_only"}"#,
         replay_id: super::DEMO_REPLAY_ID,
-        steps_json: replace_portal_origin(include_str!("../../fixtures/enron-online/ingest-incoming-trade.steps.json"), base_url),
-        verification_json: include_str!("../../fixtures/enron-online/ingest-incoming-trade.verification.json"),
+        steps_json: replace_portal_origin(
+            include_str!("../../fixtures/enron-online/ingest-incoming-trade.steps.json"),
+            base_url,
+        ),
+        verification_json: include_str!(
+            "../../fixtures/enron-online/ingest-incoming-trade.verification.json"
+        ),
     }]
 }
 

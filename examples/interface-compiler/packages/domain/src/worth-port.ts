@@ -22,6 +22,11 @@ interface CapabilityProjectionCore {
   readonly applicationId: ApplicationId
   readonly name: string
   readonly description: string
+  readonly inputSchema: CapabilityDefinition["inputSchema"]
+  readonly outputSchema: CapabilityDefinition["outputSchema"]
+  readonly preconditions: CapabilityDefinition["preconditions"]
+  readonly postconditions: CapabilityDefinition["postconditions"]
+  readonly publication: { readonly audience: "gemini_consumer"; readonly disclosure: "semantic_only" }
 }
 
 export type CapabilityProjection =

@@ -39,7 +39,7 @@ fn seeded_capability_and_active_replay_are_matching_worth_query_projections() {
         capability.active_replay_id.as_deref()
     );
     assert_eq!(replay.capability_id, capability.id);
-    assert_eq!(capability_evidence.projected_field_count, 10);
+    assert_eq!(capability_evidence.projected_field_count, 15);
     assert_eq!(replay_evidence.projected_field_count, 14);
     assert!(capability_evidence.basis_released && replay_evidence.basis_released);
 }
@@ -77,6 +77,8 @@ fn configured_portal_origin_changes_only_private_replay_implementation() {
     let InterfaceCompilerActiveReplayReadOutcome::Found { projection, .. } = replay else {
         panic!("configured replay should be projected")
     };
-    assert!(projection.steps_json.contains("https://demo.example.test/?page=mail"));
+    assert!(projection
+        .steps_json
+        .contains("https://demo.example.test/?page=mail"));
     assert!(!projection.steps_json.contains("127.0.0.1:4310"));
 }

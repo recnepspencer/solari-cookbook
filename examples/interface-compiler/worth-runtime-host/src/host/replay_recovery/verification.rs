@@ -7,8 +7,8 @@ use super::{
     RecordReplacementVerificationRequest,
 };
 use crate::application::{
-    InterfaceCompilerSchema, RecordReplacementVerification, RecordReplacementVerificationInput,
-    Replay, ReplayIdentifier,
+    CapabilityIdentifier, InterfaceCompilerSchema, RecordReplacementVerification,
+    RecordReplacementVerificationInput, Replay, ReplayIdentifier,
 };
 use crate::host::InterfaceCompilerWorthHost;
 
@@ -65,6 +65,20 @@ impl InterfaceCompilerWorthHost {
                 )
             }
         };
+        let capability = match self.application.resolve_entity(
+            CapabilityIdentifier::reference(),
+            request.capability_id.clone(),
+            &scope,
+            primary_graph::WorthQueryPrincipalResolutionMode::Ordinary,
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                return denied(
+                    InterfaceCompilerReplayRecoveryStage::EntityResolution,
+                    format!("candidate capability resolution denied: {error:?}"),
+                )
+            }
+        };
         let operation = match self
             .application
             .installed_schema()
@@ -97,6 +111,6 @@ impl InterfaceCompilerWorthHost {
             Ok(value) => value,
             Err(outcome) => return outcome,
         };
-        mutation::commit_verification(self, &request, &replay, admission, admitted)
+        mutation::commit_verification(self, &request, &capability, &replay, admission, admitted)
     }
 }

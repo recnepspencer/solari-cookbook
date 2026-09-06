@@ -190,6 +190,51 @@ export function isJsonValue(value: unknown): value is JsonValue {
   return visit(value)
 }
 
+/** Validates a JSON value against the deliberately small schema language owned by this domain. */
+export function matchesJsonSchema(value: unknown, schema: JsonSchema): value is JsonValue {
+  if (schema.enum !== undefined && !schema.enum.some((candidate) => sameJson(candidate, value))) return false
+  if (schema.const !== undefined && !sameJson(schema.const, value)) return false
+  switch (schema.type) {
+    case undefined: return isJsonValue(value)
+    case "string": {
+      if (typeof value !== "string") return false
+      if (schema.minLength !== undefined && value.length < schema.minLength) return false
+      if (schema.maxLength !== undefined && value.length > schema.maxLength) return false
+      if (schema.pattern === undefined) return true
+      try { return new RegExp(schema.pattern).test(value) } catch { return false }
+    }
+    case "number": return typeof value === "number" && Number.isFinite(value) && (schema.minimum === undefined || value >= schema.minimum) && (schema.maximum === undefined || value <= schema.maximum)
+    case "integer": return typeof value === "number" && Number.isSafeInteger(value) && (schema.minimum === undefined || value >= schema.minimum) && (schema.maximum === undefined || value <= schema.maximum)
+    case "boolean": return typeof value === "boolean"
+    case "null": return value === null
+    case "array": return Array.isArray(value) && (schema.minItems === undefined || value.length >= schema.minItems) && (schema.maxItems === undefined || value.length <= schema.maxItems) && (schema.items === undefined || value.every((entry) => matchesJsonSchema(entry, schema.items as JsonSchema)))
+    case "object": return matchesObjectSchema(value, schema)
+  }
+}
+
+function matchesObjectSchema(value: unknown, schema: JsonObjectSchema): boolean {
+  if (!isPlainRecord(value)) return false
+  if (schema.required?.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) return false
+  const properties = schema.properties ?? {}
+  for (const [key, propertyValue] of Object.entries(value)) {
+    const propertySchema = properties[key]
+    if (propertySchema !== undefined && !matchesJsonSchema(propertyValue, propertySchema)) return false
+    if (propertySchema === undefined && schema.additionalProperties === false) return false
+    if (propertySchema === undefined && schema.additionalProperties !== undefined && typeof schema.additionalProperties !== "boolean" && !matchesJsonSchema(propertyValue, schema.additionalProperties)) return false
+  }
+  return true
+}
+
+function sameJson(left: JsonValue, right: unknown): boolean {
+  return isJsonValue(right) && stableJson(left) === stableJson(right)
+}
+
+function stableJson(value: JsonValue): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`
+  return `{${Object.entries(value).sort(([left], [right]) => left.localeCompare(right)).map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`).join(",")}}`
+}
+
 export function validateJsonSchema(schema: unknown, path = "schema"): readonly ValidationIssue[] {
   const issues: ValidationIssue[] = []
   const seen = new WeakSet<object>()

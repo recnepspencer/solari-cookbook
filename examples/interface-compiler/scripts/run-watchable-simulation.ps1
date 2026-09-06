@@ -32,13 +32,10 @@ function Test-EnvironmentValue([string] $Name) {
 }
 
 function Wait-ForPublicPortal([string] $PortalOrigin) {
+  $probe = 'fetch(`${process.env.PORTAL_ORIGIN}/api/state`, { signal: AbortSignal.timeout(5000) }).then((response) => { if (!response.ok) process.exit(1) }).catch(() => process.exit(1))'
   for ($attempt = 0; $attempt -lt 30; $attempt += 1) {
-    try {
-      $response = Invoke-WebRequest -UseBasicParsing -Uri "$PortalOrigin/api/state" -TimeoutSec 5
-      if ($response.StatusCode -eq 200) { return }
-    } catch {
-      # A quick tunnel can advertise its hostname before the edge has routed it.
-    }
+    & docker run --rm --dns 1.1.1.1 --env "PORTAL_ORIGIN=$PortalOrigin" interface-compiler-portal:latest node --input-type=module --eval $probe 2>$null
+    if ($LASTEXITCODE -eq 0) { return }
     Start-Sleep -Seconds 1
   }
   throw 'Cloudflare published a tunnel URL but it did not become publicly reachable. Inspect `docker compose logs tunnel`, then rerun this script.'
@@ -49,6 +46,7 @@ if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
   throw "Missing '$environmentFile'. Create it from env.example and add your provider credentials."
 }
 Test-EnvironmentValue 'SOLARI_API_KEY'
+Test-EnvironmentValue 'GEMINI_API_KEY'
 
 $previousRelease = $env:ENRON_ONLINE_RELEASE
 try {

@@ -37,10 +37,45 @@ test("observation and replay steps use the Playwright-compatible Solari page sur
   assert.deepEqual(closed, { kind: "closed", sessionId: "solari.session.test", effect: { kind: "completed" } })
 })
 
-test("observation omits inactive hidden controls so they cannot create a false safety boundary", async () => {
+for (const type of ["click", "fill", "select"] as const) test(`an absent ${type} target is rejected before dispatch with a not-started receipt`, async () => {
+  const world = createWorld()
+  const operationContext = context(world.clock)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+  const result = await executeStepAt(created.lease.session, 1, { type, target: { semanticDescription: "missing control", role: "button" }, value: "value" }, operationContext)
+  assert.equal(result.kind, "failed")
+  if (result.kind !== "failed") throw new Error("expected missing target")
+  assert.deepEqual(result.effect, { kind: "not_started" })
+  assert.equal(result.failure.message, "Solari could not resolve the replay target")
+  assert.equal(result.failure.evidenceIds.length, 1)
+  assert.equal(world.browser.page.locatorValue.clickCalls, 0)
+  assert.deepEqual(world.browser.page.locatorValue.fillValues, [])
+  assert.deepEqual(world.browser.page.locatorValue.selectValues, [])
+  await created.lease.release(operationContext)
+})
+
+test("a present target whose click fails retains an uncertain effect", async () => {
+  const world = createWorld()
+  world.browser.page.addElement({ tagName: "button", textContent: "Post" })
+  world.browser.page.locatorValue.clickBehavior = async () => { throw new Error("response lost after dispatch") }
+  const operationContext = context(world.clock)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+  const result = await executeStepAt(created.lease.session, 1, { type: "click", target: { semanticDescription: "Post", role: "button" } }, operationContext)
+  assert.equal(result.kind, "failed")
+  assert.deepEqual(result.effect, { kind: "unknown", recovery: "owner_reconciliation_required" })
+  assert.equal(world.browser.page.locatorValue.clickCalls, 1)
+  await created.lease.release(operationContext)
+})
+
+test("observation omits hidden and disabled controls so they cannot create a false safety boundary", async () => {
   const world = createWorld()
   world.browser.page.addElement({ tagName: "input", attributes: { name: "contact-name", hidden: "" } })
   world.browser.page.addElement({ tagName: "input", attributes: { name: "credit-card", "aria-hidden": "true" } })
+  world.browser.page.addElement({ tagName: "button", textContent: "Review shipment", attributes: { role: "button", disabled: "" } })
+  world.browser.page.addElement({ tagName: "input", attributes: { name: "approval-code", "aria-disabled": "true" } })
   world.browser.page.addElement({ tagName: "button", textContent: "Add to cart", attributes: { role: "button" } })
   const created = await world.port.createSession(sessionRequest(), context(world.clock))
   assert.equal(created.kind, "created")
@@ -52,7 +87,22 @@ test("observation omits inactive hidden controls so they cannot create a false s
   assert.deepEqual(observed.observation.interactables.map((item) => item.semanticGuess), ["Add to cart"])
 })
 
-test("navigation outside the application origin is denied before the page navigates and retains a recording receipt", async () => {
+test("observation preserves a complete digest-bearing business receipt", async () => {
+  const world = createWorld()
+  const receipt = `POSTED FT-1042 / verified Financials receipt FIN-1042 / source msg.enron-mailroom.2026-10-1042 / idempotency msg.enron-mailroom.2026-10-1042:${"a".repeat(64)}`
+  assert.ok(receipt.length > 200)
+  world.browser.page.addElement({ tagName: "div", textContent: receipt, attributes: { role: "status" } })
+  const created = await world.port.createSession(sessionRequest(), context(world.clock))
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+
+  const observed = await created.lease.session.observe(context(world.clock))
+  assert.equal(observed.kind, "observed")
+  if (observed.kind !== "observed") throw new Error("expected an observation")
+  assert.equal(observed.observation.interactables[0]?.text, receipt)
+})
+
+test("navigation outside the application origin is denied before the page navigates and retains a Solari session receipt", async () => {
   const world = createWorld()
   const operationContext = context(world.clock)
   const created = await world.port.createSession(sessionRequest(), operationContext)
@@ -67,6 +117,9 @@ test("navigation outside the application origin is denied before the page naviga
   assert.equal(result.failure.message, "Solari navigation left the application origin")
   assert.equal(result.failure.evidenceIds.length, 1)
   assert.deepEqual(world.browser.page.gotoValues, [])
+  assert.equal(world.browser.closeCalls, 0)
+  assert.equal(world.client.closeCalls, 0)
+  await created.lease.release(operationContext)
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
 })
@@ -137,6 +190,28 @@ test("session recording evidence is an SDK replay URL receipt and unsupported ar
   })
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
+})
+
+test("session receipt evidence identifies the Solari session without waiting for recording upload", async () => {
+  const world = createWorld()
+  const operationContext = context(world.clock)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+
+  const receipt = await created.lease.session.captureEvidence({ kind: "session_receipt" }, operationContext)
+  assert.deepEqual(receipt, {
+    kind: "captured",
+    reference: {
+      evidenceId: "evidence.1",
+      kind: "session_receipt",
+      externalRef: "solari-session:solari.session.test",
+    },
+    effect: { kind: "completed" },
+  })
+  assert.deepEqual(await created.lease.session.captureEvidence({ kind: "session_receipt" }, operationContext), receipt)
+  assert.equal(world.browser.closeCalls, 0)
+  assert.equal(world.client.closeCalls, 0)
 })
 
 test("recording receipt follows the SDK's asynchronous post-release replay availability", async () => {

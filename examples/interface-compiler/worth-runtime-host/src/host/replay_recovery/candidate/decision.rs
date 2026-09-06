@@ -176,7 +176,7 @@ impl CandidateDecision {
             .is_some_and(|(broken_at, created_at)| created_at >= broken_at);
         self.capability_id.as_deref() == Some(request.capability_id.as_str())
             && self.capability_status.as_deref() == Some("degraded")
-            && self.active_replay.as_deref() == Some(request.broken_replay_version_id.as_str())
+            && self.active_replay.is_some()
             && self.candidate_replay.is_none()
             && self.broken_replay_id.as_deref() == Some(request.broken_replay_version_id.as_str())
             && self.capability_failure.is_some()

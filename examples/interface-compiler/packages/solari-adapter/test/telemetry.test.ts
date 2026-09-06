@@ -4,6 +4,7 @@ import { context, createWorld, executeStepAt, sessionRequest } from "./fake-sola
 
 test("telemetry records only redacted operation facts when an SDK call fails", async () => {
   const world = createWorld()
+  world.browser.page.addElement({ tagName: "input", attributes: { id: "password" } })
   const operationContext = context(world.clock)
   const created = await world.port.createSession(sessionRequest(), operationContext)
   assert.equal(created.kind, "created")

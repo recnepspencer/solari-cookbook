@@ -1,10 +1,10 @@
 import {
   calculateModelCostMicrocents,
   isJsonValue,
+  matchesJsonSchema,
   validateJsonSchema,
   validateOperationContext,
   type Clock,
-  type JsonSchema,
   type ModelPricingMicrocentsPerToken,
   type OperationContext,
   type PartialEffectPosture,
@@ -205,57 +205,4 @@ function createRequestController(context: OperationContext, clock: Clock): { rea
 
 function isSafeTokenCount(value: number | undefined): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-}
-
-function matchesJsonSchema(value: unknown, schema: JsonSchema): boolean {
-  if (schema.enum !== undefined && !schema.enum.some((candidate) => stableJsonStringify(candidate) === stableJsonStringify(value))) return false
-  if (schema.const !== undefined && stableJsonStringify(schema.const) !== stableJsonStringify(value)) return false
-  switch (schema.type) {
-    case undefined:
-      return true
-    case "string":
-      if (typeof value !== "string") return false
-      if (schema.minLength !== undefined && value.length < schema.minLength) return false
-      if (schema.maxLength !== undefined && value.length > schema.maxLength) return false
-      if (schema.pattern === undefined) return true
-      try {
-        return new RegExp(schema.pattern).test(value)
-      } catch {
-        return false
-      }
-    case "number":
-      return typeof value === "number" && Number.isFinite(value) &&
-        (schema.minimum === undefined || value >= schema.minimum) &&
-        (schema.maximum === undefined || value <= schema.maximum)
-    case "integer":
-      return typeof value === "number" && Number.isSafeInteger(value) &&
-        (schema.minimum === undefined || value >= schema.minimum) &&
-        (schema.maximum === undefined || value <= schema.maximum)
-    case "boolean":
-      return typeof value === "boolean"
-    case "null":
-      return value === null
-    case "array":
-      return Array.isArray(value) &&
-        (schema.minItems === undefined || value.length >= schema.minItems) &&
-        (schema.maxItems === undefined || value.length <= schema.maxItems) &&
-        (schema.items === undefined || value.every((entry) => matchesJsonSchema(entry, schema.items as JsonSchema)))
-    case "object":
-      return matchesObjectSchema(value, schema)
-  }
-}
-
-function matchesObjectSchema(value: unknown, schema: Extract<JsonSchema, { readonly type: "object" }>): boolean {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) return false
-  const object = value as Record<string, unknown>
-  if (schema.required?.some((key) => !Object.prototype.hasOwnProperty.call(object, key))) return false
-  const properties = schema.properties ?? {}
-  for (const [key, propertyValue] of Object.entries(object)) {
-    const propertySchema = properties[key]
-    if (propertySchema !== undefined && !matchesJsonSchema(propertyValue, propertySchema)) return false
-    if (propertySchema === undefined && schema.additionalProperties === false) return false
-    if (propertySchema === undefined && schema.additionalProperties !== undefined && schema.additionalProperties !== true &&
-      schema.additionalProperties !== false && !matchesJsonSchema(propertyValue, schema.additionalProperties)) return false
-  }
-  return true
 }

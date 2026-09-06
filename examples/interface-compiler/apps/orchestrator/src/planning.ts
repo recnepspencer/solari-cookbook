@@ -33,6 +33,7 @@ export interface ExperimentRequest {
   readonly experimentId: ExperimentId
   readonly objective: string
   readonly input?: JsonValue
+  readonly preconditions?: readonly Condition[]
   readonly expectedOutcome?: readonly Condition[]
 }
 
@@ -41,6 +42,11 @@ export interface DirectExperimentPlan {
   readonly mode: "direct"
   readonly request: ExperimentRequest
   readonly decisionSchema: Schema<DirectDecision>
+  readonly continueAfterUnverifiedCompletion?: true
+}
+
+export interface DirectPlanningOptions {
+  readonly continueAfterUnverifiedCompletion?: boolean
 }
 
 type HealthyCapabilityProjection = Extract<CapabilityProjection, { readonly status: "healthy" }>
@@ -94,7 +100,7 @@ type CompiledUnavailableReason =
   | "worth_timed_out"
   | "worth_failed"
 
-export function planDirectExperiment(input: ExperimentRequest): ValidationResult<DirectExperimentPlan> {
+export function planDirectExperiment(input: ExperimentRequest, options: DirectPlanningOptions = {}): ValidationResult<DirectExperimentPlan> {
   const requestIssues = validateExperimentRequest(input)
   const schemaResult = createDirectDecisionSchema()
   if (requestIssues.length > 0) return { ok: false, issues: requestIssues }
@@ -106,6 +112,7 @@ export function planDirectExperiment(input: ExperimentRequest): ValidationResult
       mode: "direct",
       request: cloneRequest(input),
       decisionSchema: freezeNested(schemaResult.value),
+      ...(options.continueAfterUnverifiedCompletion === true ? { continueAfterUnverifiedCompletion: true as const } : {}),
     }),
   }
 }
@@ -140,7 +147,11 @@ export async function planCompiledExperiment(
     plan: Object.freeze({
       kind: "compiled",
       mode: "compiled",
-      request: cloneRequest(input),
+      request: cloneRequest({
+        ...input,
+        preconditions: capabilityResult.value.preconditions,
+        expectedOutcome: capabilityResult.value.postconditions,
+      }),
       capability: snapshotProjection(capabilityResult.value),
       replay: snapshotProjection(replayResult.value),
       authority: snapshotProjection(authority),
@@ -261,6 +272,11 @@ function validateExperimentRequest(input: ExperimentRequest): ValidationIssue[] 
     issues.push({ path: "expectedOutcome", message: "expected outcome must be an array" })
   } else if (Array.isArray(input.expectedOutcome)) {
     input.expectedOutcome.forEach((condition, index) => issues.push(...validateCondition(condition, `expectedOutcome[${index}]`)))
+  }
+  if (input.preconditions !== undefined && !Array.isArray(input.preconditions)) {
+    issues.push({ path: "preconditions", message: "preconditions must be an array" })
+  } else if (Array.isArray(input.preconditions)) {
+    input.preconditions.forEach((condition, index) => issues.push(...validateCondition(condition, `preconditions[${index}]`)))
   }
   return issues
 }

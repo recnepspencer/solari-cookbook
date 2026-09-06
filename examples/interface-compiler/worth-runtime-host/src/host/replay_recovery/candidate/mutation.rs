@@ -72,6 +72,7 @@ pub(super) fn commit_candidate(
         serde_json::to_string(&request.candidate.steps).expect("validated replay steps serialize");
     let verification_json = serde_json::to_string(&InterfaceCompilerReplacementVerification {
         required_successful_runs: REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
+        evidence: Vec::new(),
         runs: Vec::new(),
     })
     .expect("replacement verification state serializes");
@@ -183,7 +184,7 @@ pub(super) fn commit_candidate(
         program,
         recovery_binding(
             b"accept-replacement",
-            &request.capability_id,
+            &request.candidate.replay_version_id,
             &request.candidate.replay_version_id,
             serialized_candidate.as_bytes(),
         ),

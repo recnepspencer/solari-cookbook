@@ -1,6 +1,6 @@
 import {
-  createSchema,
   type Clock,
+  type EvidenceReference,
   type EventPublicationResult,
   type Execution,
   type ExecutionCompletion,
@@ -9,10 +9,10 @@ import {
   type IsoTimestamp,
   type IdSource,
   type OperationContext,
-  type PartialEffectPosture,
   type ReasoningModel,
   type SolariCloseResult,
   type SolariPort,
+  type SolariSession,
   type SolariSessionResult,
 } from "@interface-compiler/domain"
 import type { ReplayRecoveryResult, WorthExecutionAdmissionResult, WorthRuntimeSettlementResult } from "@interface-compiler/worth-adapter"
@@ -21,6 +21,7 @@ import { admitPlan } from "./admission.js"
 import { eventIdempotencyKey, publishRuntimeEvent } from "./event-publishing.js"
 import { closeSolariSession } from "./session-cleanup.js"
 import { type OperationController, type RuntimeStop } from "./operation.js"
+import { budgetStop, cancelledStop, deadlineStop, effectSafePoint } from "./session-control.js"
 import {
   eventPublicationIntent,
   runExperimentSession,
@@ -38,8 +39,6 @@ export interface OrchestratorPorts {
   readonly worth: OrchestratorWorthPort
   readonly solari: SolariPort
   readonly model?: ReasoningModel
-  /** A semantic-only caller for compiled capabilities; it never receives replay steps or observations. */
-  readonly consumerModel?: ReasoningModel
   readonly verifier?: SemanticVerifier
   readonly stepPolicy?: ExperimentStepPolicy
 }
@@ -89,6 +88,12 @@ export type ExperimentRunResult =
 export type RuntimeCleanup = SolariCloseResult | { readonly kind: "not_created" }
 
 type EmitEvent = RuntimeEventEmitter
+
+interface SemanticFailureEvidence {
+  readonly reference: EvidenceReference
+  readonly sessionId: SolariSession["sessionId"]
+  readonly capturedAt: IsoTimestamp
+}
 
 export class ExperimentRunner {
   public constructor(private readonly ports: OrchestratorPorts) {}
@@ -175,8 +180,6 @@ export class ExperimentRunner {
       const replayStartedPublication = await emit("replay.started", { executionId, replayVersionId: plan.replay.id }, eventIdempotencyKey("replay.started", `${executionId}:${plan.replay.id}`))
       const replayStartedIntent = eventPublicationIntent(replayStartedPublication, { kind: "completed" })
       if (replayStartedIntent !== undefined) return this.finalizeWithoutSession(plan, executionId, executionRevision, startedAt, replayStartedIntent, controller, events, emit)
-      const consumerIntent = await this.invokeCompiledConsumer(plan, controller, emit, executionId)
-      if (consumerIntent !== undefined) return this.finalizeWithoutSession(plan, executionId, executionRevision, startedAt, consumerIntent, controller, events, emit)
     }
 
     const sessionGate = controller.check()
@@ -198,72 +201,23 @@ export class ExperimentRunner {
       return this.finalizeWithoutSession(plan, executionId, executionRevision, startedAt, intent, controller, events, emit)
     }
     let intent: ExperimentTerminal
+    let semanticFailureEvidence: SemanticFailureEvidence | undefined
     let cleanup: SolariCloseResult
     try {
       intent = plan.kind === "direct"
-        ? await runExperimentSession(plan, sessionResult.lease.session, controller, this.ports.model, this.ports.verifier, this.ports.worth, emit, executionId, stepGuard)
-        : await runExperimentSession(plan, sessionResult.lease.session, controller, undefined, this.ports.verifier, this.ports.worth, emit, executionId, stepGuard)
+        ? await runExperimentSession(plan, sessionResult.lease.session, controller, this.ports.model, this.ports.verifier, emit, executionId, stepGuard)
+        : await runExperimentSession(plan, sessionResult.lease.session, controller, undefined, this.ports.verifier, emit, executionId, stepGuard)
+      if (plan.kind === "compiled" && intent.kind === "failure" && intent.classification === "semantic_drift" && intent.failedCondition !== undefined && intent.replayFailure === undefined) {
+        const prepared = await captureSemanticFailureEvidence(intent, intent.failedCondition, sessionResult.lease.session, this.ports.clock, controller)
+        intent = prepared.intent
+        semanticFailureEvidence = prepared.evidence
+      }
     } catch {
       intent = { kind: "failure", message: "orchestrator stopped after an unexpected boundary error", posture: { kind: "unknown", recovery: "owner_reconciliation_required" } }
     } finally {
       cleanup = await closeSolariSession(sessionResult.lease, controller.context)
     }
-    return this.finalize(plan, executionId, executionRevision, startedAt, intent, cleanup, controller, events, emit)
-  }
-
-  /**
-   * Records a consumer's semantic call without exposing the compiled browser
-   * implementation. WORTH remains the authority that admitted the capability
-   * and selected its active replay.
-   */
-  private async invokeCompiledConsumer(
-    plan: Extract<ExperimentPlan, { readonly kind: "compiled" }>,
-    controller: OperationController,
-    emit: EmitEvent,
-    executionId: ExecutionId,
-  ): Promise<ExperimentTerminal | undefined> {
-    const model = this.ports.consumerModel
-    if (model === undefined) return undefined
-    const gate = controller.reserveModelCall()
-    if (gate.kind === "stop") return { kind: "control_stop", stop: gate.stop }
-    const schema = createSchema<{ readonly toolName: string }>({
-      name: "compiled_semantic_tool_call",
-      json: {
-        type: "object",
-        additionalProperties: false,
-        required: ["toolName"],
-        properties: { toolName: { type: "string", const: plan.capability.name } },
-      },
-    })
-    if (!schema.ok) return { kind: "failure", message: "compiled semantic tool schema is invalid" }
-    const result = await model.structuredComplete({
-      role: "consumer",
-      objective: plan.request.objective,
-      input: plan.request.input,
-      semanticTool: {
-        name: plan.capability.name,
-        description: plan.capability.description,
-      },
-    }, schema.value, controller.context)
-    const usage = result.kind === "completed" ? result.completion.usage : result.kind === "failed" || result.kind === "cancelled" || result.kind === "timed_out" ? result.usage : undefined
-    if (usage !== undefined) {
-      const publication = await emit("model.called", {
-        executionId,
-        role: "consumer",
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        estimatedModelCostMicrocents: usage.estimatedModelCostMicrocents,
-      }, eventIdempotencyKey("model.called", `${executionId}:consumer`))
-      const publicationIntent = eventPublicationIntent(publication, result.kind === "completed" ? { kind: "completed" } : { kind: "unknown", recovery: "owner_reconciliation_required" })
-      if (publicationIntent !== undefined) return publicationIntent
-    }
-    switch (result.kind) {
-      case "completed": return result.completion.output.toolName === plan.capability.name ? undefined : { kind: "failure", message: "consumer selected a different semantic capability" }
-      case "denied": return { kind: "failure", message: "consumer model does not support the semantic tool schema" }
-      case "failed": return { kind: "failure", message: result.message, posture: result.effect }
-      case "cancelled": return { kind: "control_stop", stop: { kind: "cancelled", terminal: true, safePoint: result.effect.kind === "not_started" ? "before_effect" : "after_effect", posture: result.effect } }
-      case "timed_out": return { kind: "control_stop", stop: { kind: "deadline_exceeded", terminal: true, posture: result.effect } }
-    }
+    return this.finalize(plan, executionId, executionRevision, startedAt, intent, cleanup, controller, events, emit, semanticFailureEvidence)
   }
 
   private async finalizeWithoutSession(
@@ -290,6 +244,7 @@ export class ExperimentRunner {
     controller: OperationController,
     events: EventPublicationResult[],
     emit: EmitEvent,
+    semanticFailureEvidence?: SemanticFailureEvidence,
   ): Promise<ExperimentRunResult> {
     let endedAt: string
     try {
@@ -312,7 +267,7 @@ export class ExperimentRunner {
         kind: "finalization_blocked",
         executionId,
         reason: "worth_submission_failed",
-        message: "Worth could not settle the delegated execution",
+        message: worthSettlementFailureMessage(settlement),
         authority: settlement,
         terminal: settledIntent,
         settlement,
@@ -322,6 +277,26 @@ export class ExperimentRunner {
     }
     let recovery: ReplayRecoveryResult | undefined
     if (plan.kind === "compiled" && settledIntent.kind === "failure" && settledIntent.replayFailure !== undefined) {
+      let expectedReplayRevision = plan.replay.revision
+      if (semanticFailureEvidence !== undefined && settledIntent.replayFailure.kind === "postcondition_failed" && settledIntent.replayFailure.evidenceIds.includes(semanticFailureEvidence.reference.evidenceId)) {
+        try {
+          recovery = await this.ports.worth.registerVerificationEvidence({
+            capabilityId: plan.capability.id,
+            replayVersionId: plan.replay.id,
+            expectedCapabilityRevision: plan.capability.revision,
+            expectedReplayRevision,
+            sessionId: semanticFailureEvidence.sessionId,
+            evidence: semanticFailureEvidence.reference,
+            capturedAt: semanticFailureEvidence.capturedAt,
+          }, controller.context)
+        } catch {
+          return { kind: "finalization_blocked", executionId, reason: "replay_recovery_failed", message: "WORTH did not return an evidence-registration result", authority: settlement, terminal: settledIntent, settlement, events, cleanup }
+        }
+        if (recovery.kind !== "applied" || recovery.capability.status !== "healthy" || recovery.capability.id !== plan.capability.id || recovery.capability.activeReplayVersionId !== plan.replay.id || recovery.replay.status !== "active" || recovery.replay.id !== plan.replay.id || recovery.replay.capabilityId !== plan.capability.id) {
+          return { kind: "finalization_blocked", executionId, reason: "replay_recovery_failed", message: "WORTH did not retain the semantic-failure receipt on the active replay", authority: settlement, terminal: settledIntent, settlement, recovery, events, cleanup }
+        }
+        expectedReplayRevision = recovery.replay.revision
+      }
       try {
         recovery = await this.ports.worth.degradeReplay({
           executionId,
@@ -329,7 +304,7 @@ export class ExperimentRunner {
           replayVersionId: plan.replay.id,
           expectedExecutionRevision: settlement.projection.revision,
           expectedCapabilityRevision: plan.capability.revision,
-          expectedReplayRevision: plan.replay.revision,
+          expectedReplayRevision,
         }, controller.context)
       } catch {
         return { kind: "finalization_blocked", executionId, reason: "replay_recovery_failed", message: "WORTH did not return a replay degradation result", authority: settlement, terminal: settledIntent, settlement, events, cleanup }
@@ -366,6 +341,14 @@ export class ExperimentRunner {
       cleanup,
     }
   }
+}
+
+function worthSettlementFailureMessage(result: WorthRuntimeSettlementResult): string {
+  if (result.kind === "denied" || result.kind === "unavailable" || result.kind === "lifecycle_invalid") {
+    return `Worth could not settle the delegated execution: ${result.message}`
+  }
+  if (result.kind === "stale") return `Worth could not settle the delegated execution: expected revision ${result.expectedRevision}, observed ${result.actualRevision}`
+  return `Worth could not settle the delegated execution: ${result.kind}`
 }
 
 async function settleDelegatedExecution(
@@ -433,7 +416,42 @@ function cleanupFailureIntent(intent: ExperimentTerminal): ExperimentTerminal {
     kind: "failure",
     message,
     posture: { kind: "unknown", recovery: "owner_reconciliation_required" },
-    ...(intent.kind === "failure" && intent.replayFailure === undefined ? {} : intent.kind === "failure" ? { replayFailure: intent.replayFailure } : {}),
+  }
+}
+
+async function captureSemanticFailureEvidence(
+  intent: Extract<ExperimentTerminal, { readonly kind: "failure" }>,
+  failedCondition: NonNullable<Extract<ExperimentTerminal, { readonly kind: "failure" }>["failedCondition"]>,
+  session: SolariSession,
+  clock: Clock,
+  controller: OperationController,
+): Promise<{ readonly intent: ExperimentTerminal; readonly evidence?: SemanticFailureEvidence }> {
+  let captured: Awaited<ReturnType<SolariSession["captureEvidence"]>>
+  try {
+    captured = await session.captureEvidence({ kind: "session_receipt" }, controller.context)
+  } catch {
+    return { intent: { kind: "failure", message: `${intent.message}; Solari did not return semantic-failure evidence`, posture: { kind: "unknown", recovery: "owner_reconciliation_required" } } }
+  }
+  if (captured.kind === "cancelled") return { intent: { kind: "control_stop", stop: cancelledStop(effectSafePoint(captured.effect), captured.effect) } }
+  if (captured.kind === "timed_out") return { intent: { kind: "control_stop", stop: deadlineStop(captured.effect) } }
+  if (captured.kind === "failed") return { intent: { kind: "failure", message: `${intent.message}; Solari could not capture semantic-failure evidence: ${captured.message}`, posture: captured.effect } }
+  let capturedAt: IsoTimestamp
+  try {
+    capturedAt = clock.now() as IsoTimestamp
+  } catch {
+    return { intent: { kind: "failure", message: `${intent.message}; semantic-failure evidence has no trustworthy capture time`, posture: { kind: "unknown", recovery: "owner_reconciliation_required" } } }
+  }
+  return {
+    intent: {
+      ...intent,
+      replayFailure: {
+        kind: "postcondition_failed",
+        condition: failedCondition,
+        message: intent.message,
+        evidenceIds: [captured.reference.evidenceId],
+      },
+    },
+    evidence: { reference: captured.reference, sessionId: session.sessionId, capturedAt },
   }
 }
 
@@ -458,22 +476,6 @@ function solariSessionCreationIntent(result: Exclude<SolariSessionResult, { read
   }
 }
 
-function budgetStop(resource: "model_calls" | "browser_actions", controller: OperationController): RuntimeStop {
-  const limit = resource === "model_calls" ? controller.context.budget.maxModelCalls : controller.context.budget.maxBrowserActions
-  return { kind: "budget_exhausted", terminal: true, resource, limit: limit ?? controller.snapshot()[resource === "model_calls" ? "modelCalls" : "browserActions"], posture: { kind: "not_started" } }
-}
-
-function cancelledStop(safePoint: "before_effect" | "after_effect", posture: PartialEffectPosture = safePoint === "after_effect" ? { kind: "unknown", recovery: "owner_reconciliation_required" } : { kind: "not_started" }): RuntimeStop {
-  return { kind: "cancelled", terminal: true, safePoint, posture }
-}
-
-function deadlineStop(posture: PartialEffectPosture = { kind: "not_started" }): RuntimeStop {
-  return { kind: "deadline_exceeded", terminal: true, posture }
-}
-
-function effectSafePoint(effect: PartialEffectPosture): "before_effect" | "after_effect" {
-  return effect.kind === "not_started" ? "before_effect" : "after_effect"
-}
 function describeRuntimeStop(stop: RuntimeStop): string {
   switch (stop.kind) {
     case "cancelled": return "execution cancelled before completion"

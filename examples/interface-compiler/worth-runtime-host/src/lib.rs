@@ -20,8 +20,9 @@ pub use host::{
     InterfaceCompilerReplayRecoveryEntity, InterfaceCompilerReplayRecoveryOutcome,
     InterfaceCompilerReplayRecoveryStage, InterfaceCompilerStartExecutionDenialStage,
     InterfaceCompilerStartExecutionOutcome, InterfaceCompilerStartExecutionRequest,
-    InterfaceCompilerVerificationOutcome, InterfaceCompilerWorthHost, PublishDomainEventRequest,
-    RecordReplacementVerificationRequest, SettlementOutcome, DEMO_APPLICATION_REVISION,
+    InterfaceCompilerVerificationEvidence, InterfaceCompilerVerificationOutcome,
+    InterfaceCompilerWorthHost, PublishDomainEventRequest, RecordReplacementVerificationRequest,
+    RegisterVerificationEvidenceRequest, SettlementOutcome, DEMO_APPLICATION_REVISION,
     DEMO_CREDENTIAL, DEMO_EXECUTION_ID, DEMO_EXECUTION_ID_TWO,
     REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
 };
@@ -31,5 +32,6 @@ pub use protocol::{
     ADMIT_EXECUTION_OPERATION, COMPLETE_EXECUTION_OPERATION, DEGRADE_REPLAY_OPERATION,
     INTERFACE_COMPILER_WORTH_PROTOCOL, PUBLISH_DOMAIN_EVENT_OPERATION,
     READ_ACTIVE_REPLAY_OPERATION, READ_APPLICATION_OPERATION, READ_CAPABILITY_OPERATION,
-    RECORD_REPLACEMENT_VERIFICATION_OPERATION, START_EXECUTION_OPERATION,
+    READ_RECOVERY_PROJECTION_OPERATION, RECORD_REPLACEMENT_VERIFICATION_OPERATION,
+    REGISTER_VERIFICATION_EVIDENCE_OPERATION, START_EXECUTION_OPERATION,
 };

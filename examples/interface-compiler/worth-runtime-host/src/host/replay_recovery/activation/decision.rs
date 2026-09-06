@@ -222,7 +222,10 @@ impl ActivationDecision {
         self.capability_id.as_deref() == Some(request.capability_id.as_str())
             && self.capability_status.as_deref() == Some("verifying")
             && self.candidate_replay.as_deref() == Some(request.replay_version_id.as_str())
-            && self.active_replay.as_deref() == Some(broken_replay)
+            && self
+                .active_replay
+                .as_deref()
+                .is_some_and(|active| active != request.replay_version_id)
             && self.capability_failure.is_some()
             && self.replay_id.as_deref() == Some(request.replay_version_id.as_str())
             && self.replay_capability.as_deref() == Some(request.capability_id.as_str())

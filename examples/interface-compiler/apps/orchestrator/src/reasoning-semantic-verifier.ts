@@ -9,22 +9,23 @@ type VerificationDecision =
 export function createReasoningSemanticVerifier(model: ReasoningModel): SemanticVerifier {
   const schema = verificationDecisionSchema()
   return {
+    modelUsage: "required",
     verify: async (request, context) => {
       const result = await model.structuredComplete(verificationPrompt(request), schema, context)
       switch (result.kind) {
         case "completed": {
           const decision = result.completion.output
           if (decision.kind === "verified") return { kind: "verified", ...(decision.output === undefined ? {} : { output: decision.output }), usage: result.completion.usage, effect: result.effect }
-          if (!Number.isSafeInteger(decision.conditionIndex) || decision.conditionIndex < 0 || typeof decision.message !== "string" || decision.message.trim().length === 0 || typeof decision.retryable !== "boolean") {
-            return providerFailure(request.conditions, "semantic verifier returned an invalid failure decision", false, result.completion.usage, result.effect)
+          if (!Number.isSafeInteger(decision.conditionIndex) || decision.conditionIndex < 0 || decision.conditionIndex >= request.conditions.length || typeof decision.message !== "string" || decision.message.trim().length === 0 || typeof decision.retryable !== "boolean") {
+            return providerFailure("semantic verifier returned an invalid failure decision", false, result.completion.usage, result.effect)
           }
           const condition = conditionAt(request.conditions, decision.conditionIndex)
           return { kind: "failed", condition, message: decision.message, retryable: decision.retryable, evidenceIds: [], usage: result.completion.usage, effect: result.effect }
         }
         case "cancelled": return { kind: "cancelled", ...(result.usage === undefined ? {} : { usage: result.usage }), effect: result.effect }
         case "timed_out": return { kind: "timed_out", ...(result.usage === undefined ? {} : { usage: result.usage }), effect: result.effect }
-        case "denied": return providerFailure(request.conditions, "semantic verification was denied by the reasoning boundary", false, undefined, result.effect)
-        case "failed": return providerFailure(request.conditions, result.message, result.retryable, result.usage, result.effect)
+        case "denied": return providerFailure("semantic verification was denied by the reasoning boundary", false, undefined, result.effect)
+        case "failed": return providerFailure(result.message, result.retryable, result.usage, result.effect)
       }
     },
   }
@@ -65,15 +66,14 @@ function verificationPrompt(request: SemanticVerificationRequest): JsonValue {
 }
 
 function conditionAt(conditions: readonly Condition[], index: number): Condition {
-  return Number.isSafeInteger(index) && index >= 0 && index < conditions.length ? conditions[index] as Condition : conditions[0] as Condition
+  return conditions[index] as Condition
 }
 
 function providerFailure(
-  conditions: readonly Condition[],
   message: string,
   retryable: boolean,
   usage: SemanticVerificationResult["usage"],
-  effect: Extract<SemanticVerificationResult, { readonly kind: "failed" }>["effect"],
+  effect: Extract<SemanticVerificationResult, { readonly kind: "provider_failed" }>["effect"],
 ): SemanticVerificationResult {
-  return { kind: "failed", condition: conditions[0] as Condition, message, retryable, evidenceIds: [], ...(usage === undefined ? {} : { usage }), effect }
+  return { kind: "provider_failed", message, retryable, ...(usage === undefined ? {} : { usage }), effect }
 }

@@ -16,12 +16,12 @@ docker compose --profile portal up --build
 
 Open `http://127.0.0.1:4310/?page=mail`. Deliver the source message, use the Financials action, then repeat it to see the duplicate outcome. The portal is intentionally in-memory.
 
-For the live recovery drill, copy `env.example` to ignored `.env` and set `SOLARI_API_KEY`. Then run:
+For the live recovery drill, copy `env.example` to ignored `.env` and set `SOLARI_API_KEY` and `GEMINI_API_KEY`. The default model is `gemini-3.7-flash`. Then run:
 
 ```powershell
 pwsh -File .\scripts\run-watchable-simulation.ps1 -Scenario recovery
 ```
 
-The launcher starts the portal plus a temporary public tunnel, opens the Mailroom locally, and runs stale v1 → WORTH degradation → three fresh Solari v2 verifications → activation → successful rerun. It uses Solari but does not require Gemini.
+The launcher starts the portal plus a temporary public tunnel, opens the Mailroom locally, and runs stale v1 → diagnosed UI drift → WORTH degradation → Gemini/Solari discovery → three fresh Solari v2 verifications → activation → successful rerun.
 
 Run deterministic verification with `npm test`, `npm run typecheck`, and `cargo test --manifest-path worth-runtime-host/Cargo.toml`.

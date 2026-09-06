@@ -25,7 +25,7 @@ impl InterfaceCompilerWorthHost {
             InterfaceCompilerHostSetupError::from_stage("declare application schema", error)
         })?;
         let package = domain::WorthQueryPortableDomainPackage::new(
-            domain::WorthQueryPortableDomainIdentity::new("interface_compiler_host", 1, 0),
+            domain::WorthQueryPortableDomainIdentity::new("interface_compiler_host", 1, 1),
         )
         .application_schema(declaration.clone())
         .validate()
@@ -185,6 +185,26 @@ impl InterfaceCompilerWorthHost {
                     .field(
                         CapabilityDescription::reference(),
                         capability_description.to_string(),
+                    )
+                    .field(
+                        CapabilityInputSchemaJson::reference(),
+                        seed.capability_input_schema_json.to_string(),
+                    )
+                    .field(
+                        CapabilityOutputSchemaJson::reference(),
+                        seed.capability_output_schema_json.to_string(),
+                    )
+                    .field(
+                        CapabilityPreconditionsJson::reference(),
+                        seed.capability_preconditions_json.to_string(),
+                    )
+                    .field(
+                        CapabilityPostconditionsJson::reference(),
+                        seed.capability_postconditions_json.to_string(),
+                    )
+                    .field(
+                        CapabilityPublicationJson::reference(),
+                        seed.capability_publication_json.to_string(),
                     )
                     .field(CapabilityStatus::reference(), "healthy".to_string())
                     .field(

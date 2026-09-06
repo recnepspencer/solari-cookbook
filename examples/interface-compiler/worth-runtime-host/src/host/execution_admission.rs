@@ -156,12 +156,22 @@ impl InterfaceCompilerWorthHost {
                 )
             })?
             .into_parts();
-        if capability_id.as_deref() != Some(request.capability_id.as_str())
-            || status.as_deref() != Some("healthy")
-        {
+        if capability_id.as_deref() != Some(request.capability_id.as_str()) {
             return Err(denied(
                 InterfaceCompilerStartExecutionDenialStage::OperationAdmission,
-                "capability is unknown or ineligible",
+                "capability is unknown",
+            ));
+        }
+        let capability_status = status.as_deref().unwrap_or_default();
+        let eligible = match request.mode.as_str() {
+            "compiled" => capability_status == "healthy",
+            "direct" => matches!(capability_status, "healthy" | "degraded"),
+            _ => false,
+        };
+        if !eligible {
+            return Err(denied(
+                InterfaceCompilerStartExecutionDenialStage::OperationAdmission,
+                "capability lifecycle does not admit this execution mode",
             ));
         }
         if request.mode == "compiled"

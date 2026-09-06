@@ -7,8 +7,9 @@ use crate::host::{
     AcceptReplacementCandidateRequest, ActivateReplacementRequest, DegradeReplayRequest,
     InterfaceCompilerExecutionCommitKind, InterfaceCompilerReplacementCandidate,
     InterfaceCompilerReplacementVerificationRun, InterfaceCompilerReplayRecoveryOutcome,
-    InterfaceCompilerReplayRecoveryStage, InterfaceCompilerWorthHost,
-    RecordReplacementVerificationRequest, DEFAULT_REQUEST_TIMEOUT,
+    InterfaceCompilerReplayRecoveryStage, InterfaceCompilerVerificationEvidence,
+    InterfaceCompilerWorthHost, RecordReplacementVerificationRequest,
+    RegisterVerificationEvidenceRequest, DEFAULT_REQUEST_TIMEOUT,
 };
 
 pub(super) fn handle_replay_recovery(
@@ -34,6 +35,9 @@ pub(super) fn handle_replay_recovery(
         ACCEPT_REPLACEMENT_CANDIDATE_OPERATION => {
             accept_candidate(request, credential, timeout, host)
         }
+        REGISTER_VERIFICATION_EVIDENCE_OPERATION => {
+            register_evidence(request, credential, timeout, host)
+        }
         RECORD_REPLACEMENT_VERIFICATION_OPERATION => {
             record_verification(request, credential, timeout, host)
         }
@@ -41,6 +45,40 @@ pub(super) fn handle_replay_recovery(
         _ => unreachable!("operation_name admits only recovery operations"),
     };
     map_outcome(request_id, operation, outcome)
+}
+
+fn register_evidence(
+    request: InterfaceCompilerHostRequest,
+    credential: String,
+    timeout: Duration,
+    host: &InterfaceCompilerWorthHost,
+) -> InterfaceCompilerReplayRecoveryOutcome {
+    let Some(capability_id) = request.capability_id else {
+        return malformed("register_verification_evidence requires capability_id");
+    };
+    let Some(replay_version_id) = request.replay_version_id else {
+        return malformed("register_verification_evidence requires replay_version_id");
+    };
+    let Some(expected_capability_revision) = request.expected_capability_revision else {
+        return malformed("register_verification_evidence requires expected_capability_revision");
+    };
+    let Some(expected_replay_revision) = request.expected_replay_revision else {
+        return malformed("register_verification_evidence requires expected_replay_revision");
+    };
+    let Some(evidence) = request.verification_evidence.and_then(|value| {
+        serde_json::from_value::<InterfaceCompilerVerificationEvidence>(value).ok()
+    }) else {
+        return malformed("register_verification_evidence requires valid verification_evidence");
+    };
+    host.register_verification_evidence(RegisterVerificationEvidenceRequest {
+        capability_id,
+        replay_version_id,
+        expected_capability_revision,
+        expected_replay_revision,
+        evidence,
+        credential,
+        timeout,
+    })
 }
 
 fn degrade(
@@ -303,6 +341,7 @@ fn operation_name(value: &str) -> Option<&'static str> {
     match value {
         DEGRADE_REPLAY_OPERATION => Some(DEGRADE_REPLAY_OPERATION),
         ACCEPT_REPLACEMENT_CANDIDATE_OPERATION => Some(ACCEPT_REPLACEMENT_CANDIDATE_OPERATION),
+        REGISTER_VERIFICATION_EVIDENCE_OPERATION => Some(REGISTER_VERIFICATION_EVIDENCE_OPERATION),
         RECORD_REPLACEMENT_VERIFICATION_OPERATION => {
             Some(RECORD_REPLACEMENT_VERIFICATION_OPERATION)
         }

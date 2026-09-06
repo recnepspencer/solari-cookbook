@@ -9,8 +9,9 @@ use std::collections::HashSet;
 use super::{
     valid_external_identity, valid_identity, valid_timestamp, valid_wire_revision,
     AcceptReplacementCandidateRequest, InterfaceCompilerReplacementVerification,
-    InterfaceCompilerReplacementVerificationRun, InterfaceCompilerVerificationOutcome,
-    MAX_RECOVERY_JSON_BYTES, REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
+    InterfaceCompilerReplacementVerificationRun, InterfaceCompilerVerificationEvidence,
+    InterfaceCompilerVerificationOutcome, MAX_RECOVERY_JSON_BYTES,
+    REQUIRED_REPLACEMENT_VERIFICATION_RUNS,
 };
 
 pub(super) fn valid_candidate_request(request: &AcceptReplacementCandidateRequest) -> bool {
@@ -32,6 +33,31 @@ pub(super) fn valid_candidate_request(request: &AcceptReplacementCandidateReques
         && !request.candidate.steps.is_empty()
         && request.candidate.steps.iter().all(valid_replay_step)
         && candidate_json(request).len() <= MAX_RECOVERY_JSON_BYTES
+}
+
+pub(super) fn valid_verification_evidence(
+    evidence: &InterfaceCompilerVerificationEvidence,
+) -> bool {
+    valid_identity(&evidence.evidence_id, "evidence.")
+        && valid_identity(&evidence.replay_version_id, "replay.")
+        && valid_external_identity(&evidence.session_id)
+        && evidence.kind == "session_receipt"
+        && evidence.external_ref == format!("solari-session:{}", evidence.session_id)
+        && valid_timestamp(&evidence.captured_at)
+}
+
+pub(super) fn run_evidence_is_registered(
+    verification: &InterfaceCompilerReplacementVerification,
+    run: &InterfaceCompilerReplacementVerificationRun,
+) -> bool {
+    run.evidence_ids.iter().all(|evidence_id| {
+        verification.evidence.iter().any(|evidence| {
+            evidence.evidence_id == *evidence_id
+                && evidence.replay_version_id == run.replay_version_id
+                && evidence.session_id == run.session_id
+                && evidence.kind == "session_receipt"
+        })
+    })
 }
 
 pub(super) fn candidate_json(request: &AcceptReplacementCandidateRequest) -> String {

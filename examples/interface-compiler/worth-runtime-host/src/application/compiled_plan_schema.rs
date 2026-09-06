@@ -17,6 +17,11 @@ pub struct CapabilityRevisionSlot;
 pub struct CapabilityApplicationIdSlot;
 pub struct CapabilityNameSlot;
 pub struct CapabilityDescriptionSlot;
+pub struct CapabilityInputSchemaJsonSlot;
+pub struct CapabilityOutputSchemaJsonSlot;
+pub struct CapabilityPreconditionsJsonSlot;
+pub struct CapabilityPostconditionsJsonSlot;
+pub struct CapabilityPublicationJsonSlot;
 pub struct CapabilityStatusSlot;
 pub struct CapabilityActiveReplayIdSlot;
 pub struct CapabilityCandidateReplayIdSlot;
@@ -59,6 +64,26 @@ portable_slot!(
 portable_slot!(
     CapabilityDescriptionSlot,
     "interface-compiler.worth.capability-read.description.v1"
+);
+portable_slot!(
+    CapabilityInputSchemaJsonSlot,
+    "interface-compiler.worth.capability-read.input-schema-json.v1"
+);
+portable_slot!(
+    CapabilityOutputSchemaJsonSlot,
+    "interface-compiler.worth.capability-read.output-schema-json.v1"
+);
+portable_slot!(
+    CapabilityPreconditionsJsonSlot,
+    "interface-compiler.worth.capability-read.preconditions-json.v1"
+);
+portable_slot!(
+    CapabilityPostconditionsJsonSlot,
+    "interface-compiler.worth.capability-read.postconditions-json.v1"
+);
+portable_slot!(
+    CapabilityPublicationJsonSlot,
+    "interface-compiler.worth.capability-read.publication-json.v1"
 );
 portable_slot!(
     CapabilityStatusSlot,
@@ -144,6 +169,11 @@ pub struct InterfaceCompilerCapabilityProjection {
     pub application_id: String,
     pub name: String,
     pub description: String,
+    pub input_schema_json: String,
+    pub output_schema_json: String,
+    pub preconditions_json: String,
+    pub postconditions_json: String,
+    pub publication_json: String,
     pub status: String,
     pub active_replay_id: Option<String>,
     pub candidate_replay_id: Option<String>,
@@ -301,6 +331,46 @@ result_field!(
     CapabilityDescription,
     String,
     "description"
+);
+result_field!(
+    capability_input_schema_json_result,
+    CapabilityResultField,
+    CapabilityInputSchemaJsonSlot,
+    CapabilityInputSchemaJson,
+    String,
+    "input_schema_json"
+);
+result_field!(
+    capability_output_schema_json_result,
+    CapabilityResultField,
+    CapabilityOutputSchemaJsonSlot,
+    CapabilityOutputSchemaJson,
+    String,
+    "output_schema_json"
+);
+result_field!(
+    capability_preconditions_json_result,
+    CapabilityResultField,
+    CapabilityPreconditionsJsonSlot,
+    CapabilityPreconditionsJson,
+    String,
+    "preconditions_json"
+);
+result_field!(
+    capability_postconditions_json_result,
+    CapabilityResultField,
+    CapabilityPostconditionsJsonSlot,
+    CapabilityPostconditionsJson,
+    String,
+    "postconditions_json"
+);
+result_field!(
+    capability_publication_json_result,
+    CapabilityResultField,
+    CapabilityPublicationJsonSlot,
+    CapabilityPublicationJson,
+    String,
+    "publication_json"
 );
 result_field!(
     capability_status_result,
@@ -516,6 +586,11 @@ impl primary_graph::WorthQueryApplicationProjection<InterfaceCompilerSchema, Cap
             application_id: row.field(capability_application_id_result())?,
             name: row.field(capability_name_result())?,
             description: row.field(capability_description_result())?,
+            input_schema_json: row.field(capability_input_schema_json_result())?,
+            output_schema_json: row.field(capability_output_schema_json_result())?,
+            preconditions_json: row.field(capability_preconditions_json_result())?,
+            postconditions_json: row.field(capability_postconditions_json_result())?,
+            publication_json: row.field(capability_publication_json_result())?,
             status: row.field(capability_status_result())?,
             active_replay_id: Some(row.field(capability_active_replay_id_result())?),
             candidate_replay_id: row.optional_field(capability_candidate_replay_id_result())?,

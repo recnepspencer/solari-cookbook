@@ -9,15 +9,16 @@ use crate::application::{
     application_id_parameter, Application, ApplicationBaseUrl, ApplicationIdentifier,
     ApplicationName, ApplicationReadQuery, ApplicationRevision, Capability,
     CapabilityActiveReplayIdentifier, CapabilityApplicationIdentifier, CapabilityDescription,
-    CapabilityIdentifier, CapabilityName, CapabilityRevision, CapabilityStatus, EventJournal,
-    EventJournalEventsJson, EventJournalIdentifier, EventJournalRevision, Execution,
-    ExecutionCapabilityIdentifier, ExecutionIdentifier, ExecutionLifecycle, ExecutionMode,
-    ExecutionReplayIdentifier, ExecutionRevision, ExecutionSettlementJson,
-    ExecutionStartMetricsJson, InterfaceCompilerApplicationProjection,
-    InterfaceCompilerPrincipalBinding, InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier,
-    ReplayConfidenceMillis, ReplayCreatedAt, ReplayDiscoveredFromExperimentIdentifier,
-    ReplayIdentifier, ReplayRevision, ReplayStatus, ReplayStepsJson, ReplayVerificationJson,
-    ReplayVerifiedAt, ReplayVersion,
+    CapabilityIdentifier, CapabilityInputSchemaJson, CapabilityName, CapabilityOutputSchemaJson,
+    CapabilityPostconditionsJson, CapabilityPreconditionsJson, CapabilityPublicationJson,
+    CapabilityRevision, CapabilityStatus, EventJournal, EventJournalEventsJson,
+    EventJournalIdentifier, EventJournalRevision, Execution, ExecutionCapabilityIdentifier,
+    ExecutionIdentifier, ExecutionLifecycle, ExecutionMode, ExecutionReplayIdentifier,
+    ExecutionRevision, ExecutionSettlementJson, ExecutionStartMetricsJson,
+    InterfaceCompilerApplicationProjection, InterfaceCompilerPrincipalBinding,
+    InterfaceCompilerSchema, Replay, ReplayCapabilityIdentifier, ReplayConfidenceMillis,
+    ReplayCreatedAt, ReplayDiscoveredFromExperimentIdentifier, ReplayIdentifier, ReplayRevision,
+    ReplayStatus, ReplayStepsJson, ReplayVerificationJson, ReplayVerifiedAt, ReplayVersion,
 };
 
 mod bootstrap;
@@ -173,7 +174,9 @@ fn demo_application_base_url_from_environment() -> Result<String, InterfaceCompi
     validate_demo_application_base_url(configured)
 }
 
-fn validate_demo_application_base_url(value: String) -> Result<String, InterfaceCompilerHostSetupError> {
+fn validate_demo_application_base_url(
+    value: String,
+) -> Result<String, InterfaceCompilerHostSetupError> {
     let base_url = value.trim().trim_end_matches('/');
     if (!base_url.starts_with("http://") && !base_url.starts_with("https://"))
         || base_url.len() <= "https://".len()

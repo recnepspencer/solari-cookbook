@@ -2,7 +2,9 @@ import { normalizeObservation, type Clock, type IdSource, type Interactable, typ
 import type { SolariDomElement, SolariSdkPage } from "./solari-sdk.js"
 
 const INTERACTABLE_SELECTOR = "a,button,input,select,form,table,[role]"
-const MAX_TEXT_LENGTH = 200
+// Business receipts routinely include identifiers plus a full content digest.
+// Keep the observation bounded without truncating those verification fields.
+const MAX_TEXT_LENGTH = 512
 
 export async function readPageObservation(
   page: SolariSdkPage,
@@ -31,10 +33,11 @@ async function readInteractables(page: SolariSdkPage): Promise<readonly Interact
     role: element.getAttribute("role"),
     name: element.getAttribute("aria-label") ?? element.getAttribute("name"),
     text: element.textContent,
+    disabled: element.getAttribute("disabled") !== null || element.getAttribute("aria-disabled") === "true",
     visible: element.getAttribute("hidden") === null && element.getAttribute("aria-hidden") !== "true" && (element.getClientRects?.().length ?? 1) > 0,
   })))
 
-  return rows.filter((row) => row.visible).map((row) => {
+  return rows.filter((row) => row.visible && !row.disabled).map((row) => {
     const text = boundedText(row.text ?? "")
     const name = boundedText(row.name ?? "")
     const role = boundedText(row.role ?? inferredRole(row.tagName) ?? "")

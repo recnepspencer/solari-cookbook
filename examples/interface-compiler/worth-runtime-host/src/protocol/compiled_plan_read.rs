@@ -5,7 +5,8 @@ use crate::application::{
 use crate::host::{
     InterfaceCompilerActiveReplayReadOutcome, InterfaceCompilerCapabilityReadOutcome,
     InterfaceCompilerCompiledReadDenial, InterfaceCompilerCompiledReadRequest,
-    InterfaceCompilerWorthHost, DEFAULT_REQUEST_TIMEOUT,
+    InterfaceCompilerRecoveryProjectionReadOutcome, InterfaceCompilerWorthHost,
+    DEFAULT_REQUEST_TIMEOUT,
 };
 use std::time::Duration;
 
@@ -39,10 +40,76 @@ pub(super) fn handle_compiled_plan_read(
             .map(Duration::from_millis)
             .unwrap_or(DEFAULT_REQUEST_TIMEOUT),
     );
-    if operation == READ_CAPABILITY_OPERATION {
+    if operation == READ_RECOVERY_PROJECTION_OPERATION {
+        map_recovery_projection(request_id, host.read_recovery_projection(input))
+    } else if operation == READ_CAPABILITY_OPERATION {
         map_capability(request_id, host.read_capability(input))
     } else {
         map_replay(request_id, host.read_active_replay(input))
+    }
+}
+
+fn map_recovery_projection(
+    request_id: String,
+    outcome: InterfaceCompilerRecoveryProjectionReadOutcome,
+) -> InterfaceCompilerHostResponse {
+    match outcome {
+        InterfaceCompilerRecoveryProjectionReadOutcome::Found {
+            capability,
+            capability_evidence,
+            replay,
+            replay_evidence,
+        } => {
+            let capability_id = capability.id.clone();
+            let capability = match map_capability_projection(capability) {
+                Ok(value) => value,
+                Err(message) => {
+                    return denied(
+                        request_id,
+                        READ_RECOVERY_PROJECTION_OPERATION,
+                        capability_id,
+                        InterfaceCompilerCompiledReadDenial::Projection(message),
+                    )
+                }
+            };
+            let replay = match map_replay_projection(replay) {
+                Ok(value) => value,
+                Err(message) => {
+                    return denied(
+                        request_id,
+                        READ_RECOVERY_PROJECTION_OPERATION,
+                        capability_id,
+                        InterfaceCompilerCompiledReadDenial::Projection(message),
+                    )
+                }
+            };
+            InterfaceCompilerHostResponse::RecoveryProjectionFound {
+                protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+                request_id,
+                operation: READ_RECOVERY_PROJECTION_OPERATION,
+                capability,
+                replay,
+                capability_evidence: map_evidence(capability_evidence),
+                replay_evidence: map_evidence(replay_evidence),
+            }
+        }
+        InterfaceCompilerRecoveryProjectionReadOutcome::NotFound { capability_id } => {
+            InterfaceCompilerHostResponse::CompiledReadNotFound {
+                protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+                request_id,
+                operation: READ_RECOVERY_PROJECTION_OPERATION,
+                capability_id,
+            }
+        }
+        InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+            capability_id,
+            denial,
+        } => denied(
+            request_id,
+            READ_RECOVERY_PROJECTION_OPERATION,
+            capability_id,
+            denial,
+        ),
     }
 }
 
@@ -142,6 +209,17 @@ fn map_replay(
 pub(super) fn map_capability_projection(
     projection: InterfaceCompilerCapabilityProjection,
 ) -> Result<InterfaceCompilerHostCapability, String> {
+    let input_schema: serde_json::Value = serde_json::from_str(&projection.input_schema_json)
+        .map_err(|error| format!("capability input schema is malformed: {error}"))?;
+    let output_schema: serde_json::Value = serde_json::from_str(&projection.output_schema_json)
+        .map_err(|error| format!("capability output schema is malformed: {error}"))?;
+    let preconditions: serde_json::Value = serde_json::from_str(&projection.preconditions_json)
+        .map_err(|error| format!("capability preconditions are malformed: {error}"))?;
+    let postconditions: serde_json::Value =
+        serde_json::from_str(&projection.postconditions_json)
+            .map_err(|error| format!("capability postconditions are malformed: {error}"))?;
+    let publication: serde_json::Value = serde_json::from_str(&projection.publication_json)
+        .map_err(|error| format!("capability publication contract is malformed: {error}"))?;
     let failure = projection
         .failure_json
         .as_deref()
@@ -157,13 +235,13 @@ pub(super) fn map_capability_projection(
         }
         "degraded" => {
             projection.active_replay_id.is_some()
-                && projection.broken_replay_id == projection.active_replay_id
+                && projection.broken_replay_id.is_some()
                 && projection.candidate_replay_id.is_none()
                 && failure.as_ref().is_some_and(serde_json::Value::is_object)
         }
         "verifying" => {
             projection.active_replay_id.is_some()
-                && projection.broken_replay_id == projection.active_replay_id
+                && projection.broken_replay_id.is_some()
                 && projection.candidate_replay_id.is_some()
                 && failure.as_ref().is_some_and(serde_json::Value::is_object)
         }
@@ -179,6 +257,11 @@ pub(super) fn map_capability_projection(
         application_id: projection.application_id,
         name: projection.name,
         description: projection.description,
+        input_schema,
+        output_schema,
+        preconditions,
+        postconditions,
+        publication,
         status: projection.status,
         active_replay_version_id: projection.active_replay_id,
         candidate_replay_version_id: projection.candidate_replay_id,
@@ -278,11 +361,20 @@ fn validate_replay_payload(
         .iter()
         .filter(|run| run.outcome == "success")
         .count() as u64;
+    let mut run_ids = std::collections::BTreeSet::new();
+    let mut session_ids = std::collections::BTreeSet::new();
+    let mut evidence_ids = std::collections::BTreeSet::new();
     for run in &verification.runs {
         if run.id.trim().is_empty()
             || run.session_id.trim().is_empty()
+            || !run_ids.insert(run.id.as_str())
+            || !session_ids.insert(run.session_id.as_str())
             || !run.fresh_session
             || run.evidence_ids.is_empty()
+            || run
+                .evidence_ids
+                .iter()
+                .any(|evidence_id| !evidence_ids.insert(evidence_id.as_str()))
             || run.completed_at.trim().is_empty()
             || run.capability_id != capability_id
             || run.replay_version_id != replay_id
@@ -307,11 +399,7 @@ fn validate_replay_payload(
             Ok(())
         }
         "verifying" if verified_at.is_none() && failure.is_none() && broken_at.is_none() => Ok(()),
-        "broken"
-            if verified_at.is_some()
-                && failure.is_some_and(serde_json::Value::is_object)
-                && broken_at.is_some() =>
-        {
+        "broken" if failure.is_some_and(serde_json::Value::is_object) && broken_at.is_some() => {
             Ok(())
         }
         _ => Err("the WORTH replay lifecycle projection is inconsistent".to_string()),
@@ -382,6 +470,7 @@ mod tests {
     fn replay_payload_rejects_foreign_verification_lineage_and_invalid_steps() {
         let verification = InterfaceCompilerHostReplayVerification {
             required_successful_runs: 1,
+            evidence: Vec::new(),
             runs: vec![InterfaceCompilerHostVerificationRun {
                 id: "run-1".to_string(),
                 capability_id: "capability.foreign".to_string(),
@@ -401,6 +490,46 @@ mod tests {
             &[InterfaceCompilerHostReplayStep::Wait { milliseconds: 1 }],
             &verification,
             Some("2026-08-31T18:01:00.000Z"),
+            None,
+            None,
+        )
+        .is_err());
+
+        let duplicate_runs = InterfaceCompilerHostReplayVerification {
+            required_successful_runs: 2,
+            evidence: Vec::new(),
+            runs: vec![
+                InterfaceCompilerHostVerificationRun {
+                    id: "run-1".to_string(),
+                    capability_id: "capability.expected".to_string(),
+                    replay_version_id: "replay.expected".to_string(),
+                    session_id: "session-shared".to_string(),
+                    fresh_session: true,
+                    outcome: "success".to_string(),
+                    failure_message: None,
+                    evidence_ids: vec!["evidence-shared".to_string()],
+                    completed_at: "2026-08-31T18:00:00.000Z".to_string(),
+                },
+                InterfaceCompilerHostVerificationRun {
+                    id: "run-2".to_string(),
+                    capability_id: "capability.expected".to_string(),
+                    replay_version_id: "replay.expected".to_string(),
+                    session_id: "session-shared".to_string(),
+                    fresh_session: true,
+                    outcome: "success".to_string(),
+                    failure_message: None,
+                    evidence_ids: vec!["evidence-shared".to_string()],
+                    completed_at: "2026-08-31T18:01:00.000Z".to_string(),
+                },
+            ],
+        };
+        assert!(validate_replay_payload(
+            "replay.expected",
+            "capability.expected",
+            "active",
+            &[InterfaceCompilerHostReplayStep::Wait { milliseconds: 1 }],
+            &duplicate_runs,
+            Some("2026-08-31T18:02:00.000Z"),
             None,
             None,
         )

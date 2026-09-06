@@ -20,6 +20,7 @@ export { mapReplayRecoveryResponse } from "./replay-recovery.js"
 export type {
   ReplayDegradationRequest,
   ReplayRecoveryPort,
+  ReplayRecoveryProjectionResult,
   ReplayRecoveryResult,
   ReplacementActivationRequest,
   ReplacementCandidateRequest,

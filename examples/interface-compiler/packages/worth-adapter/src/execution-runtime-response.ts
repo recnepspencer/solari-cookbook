@@ -20,7 +20,27 @@ export function mapRuntimeSettlementResponse(executionId: ExecutionId, response:
   if (response.outcome === "execution_stale" && response.execution_id === executionId) return { kind: "stale", executionId, expectedRevision: response.expected_revision, actualRevision: response.actual_revision }
   if (response.outcome === "execution_lifecycle_invalid" && response.execution_id === executionId) return { kind: "lifecycle_invalid", executionId, message: `execution lifecycle is ${response.current_lifecycle}` }
   if (response.outcome === "execution_denied" && response.execution_id === executionId) return { kind: "denied", executionId, message: response.message }
-  return { kind: "unavailable", executionId, message: "the WORTH host returned a mismatched settlement response" }
+  return { kind: "unavailable", executionId, message: settlementMismatch(response, executionId, authoritativeCompletion) }
+}
+
+function settlementMismatch(response: HostResponse, executionId: ExecutionId, completion: ExecutionCompletion | undefined): string {
+  if (response.outcome !== "execution_settled") return "the WORTH host returned a mismatched settlement outcome"
+  if (response.execution.execution_id !== executionId) return "the WORTH host returned a different settled execution identity"
+  if (!isTerminalLifecycle(response.execution.lifecycle)) return "the WORTH host returned a non-terminal settled lifecycle"
+  if (!isTerminalExecutionMetrics(response.execution.metrics)) return "the WORTH host returned invalid terminal execution metrics"
+  if (completion === undefined) return invalidCompletionMessage(response)
+  if (!lifecycleMatchesCompletion(response.execution.lifecycle, completion)) return "the WORTH host lifecycle did not match its authoritative completion"
+  return "the WORTH host returned an unrecognized settlement response"
+}
+
+function invalidCompletionMessage(response: Extract<HostResponse, { readonly outcome: "execution_settled" }>): string {
+  const settlement = response.execution.settlement
+  if (settlement === null || typeof settlement !== "object") return "the WORTH host returned no authoritative completion"
+  const completion = (settlement as { completion?: unknown }).completion
+  if (completion === null || typeof completion !== "object") return "the WORTH host returned no authoritative completion"
+  const issues = validateExecutionCompletion(completion as ExecutionCompletion)
+  if (issues.length > 0) return `the WORTH host returned an invalid authoritative completion: ${issues.map((issue) => `${issue.path}: ${issue.message}`).join("; ")}`
+  return "the WORTH host returned an invalid authoritative safety completion"
 }
 
 function mapEvidence(evidence: HostEvidence): WorthExecutionQueryEvidence {

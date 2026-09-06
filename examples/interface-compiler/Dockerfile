@@ -18,14 +18,15 @@ RUN curl --fail --silent --show-error --location https://sh.rustup.rs \
 ENV PATH="/root/.cargo/bin:${PATH}"
 WORKDIR /workspace
 
-COPY . .
 RUN git init --initial-branch=pinned-source .local/worth \
     && git -C .local/worth remote add origin https://github.com/recnepspencer/worth.git \
     && git -C .local/worth fetch --depth 1 origin "$WORTH_COMMIT" \
     && git -C .local/worth checkout --detach FETCH_HEAD \
     && test "$(git -C .local/worth rev-parse HEAD)" = "$WORTH_COMMIT" \
-    && test -f .local/worth/workspaces/worth-query/crates/worth-query-host/Cargo.toml \
-    && npm install \
+    && test -f .local/worth/workspaces/worth-query/crates/worth-query-host/Cargo.toml
+
+COPY . .
+RUN npm install \
     && npm install --prefix apps/dashboard
 
 CMD ["npm", "test"]

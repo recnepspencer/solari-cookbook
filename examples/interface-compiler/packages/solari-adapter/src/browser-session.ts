@@ -18,6 +18,7 @@ import {
 } from "@interface-compiler/domain"
 import { readPageObservation } from "./page-observation.js"
 import {
+  admitSessionOperation,
   readClockMilliseconds,
   runSolariOperationWithinBoundary,
   type BoundedOperationResult,
@@ -69,6 +70,7 @@ export class SolariBrowserSession implements SolariSession {
   private closeResultPromise: Promise<SolariCloseResult> | undefined
   private recordingReference: string | undefined
   private recordingEvidenceId: EvidenceId | undefined
+  private sessionReceiptEvidenceId: EvidenceId | undefined
 
   constructor(options: SolariBrowserSessionOptions) {
     this.client = options.client
@@ -96,8 +98,8 @@ export class SolariBrowserSession implements SolariSession {
     }
   }
 
-  async executeStep(step: ReplayStep, context: OperationContext): Promise<SolariStepResult> {
-    return this.executeStepAt(0, step, context)
+  async executeStep(step: ReplayStep, context: OperationContext, stepIndex = 0): Promise<SolariStepResult> {
+    return this.executeStepAt(stepIndex, step, context)
   }
 
   async executeStepAt(stepIndex: number, step: ReplayStep, context: OperationContext): Promise<SolariStepResult> {
@@ -118,7 +120,7 @@ export class SolariBrowserSession implements SolariSession {
         return this.stepResultFromBoundary(assertionResult, stepIndex, context)
       }
 
-      const result = await this.runOperation(context, "execute_step", "browser_action", true, () => executeReplayStepOnPage(pageResult.value, step, this.applicationOrigin), step.type)
+      const result = await this.runOperation(context, "execute_step", "browser_action", true, () => executeReplayStepOnPage(pageResult.value, step, this.applicationOrigin, () => this.assertActionDispatch(context)), step.type)
       if (result.kind === "completed") return { kind: "completed", effect: { kind: "completed" } }
       return this.stepResultFromBoundary(result, stepIndex, context)
     } finally {
@@ -132,6 +134,15 @@ export class SolariBrowserSession implements SolariSession {
     if (evidenceKind === undefined) {
       this.emit(context, "capture_evidence", "failed", "invalid_request")
       return evidenceFailure("invalid_request", false)
+    }
+    if (evidenceKind === "session_receipt") {
+      const admission = this.beginWorkflow(context, "capture_evidence", undefined, evidenceKind)
+      if (admission !== "acquired") return evidenceResultFromAdmission(admission)
+      try {
+        return this.captureSessionReceipt(context)
+      } finally {
+        this.endWorkflow()
+      }
     }
     if (evidenceKind !== "session_recording") {
       this.emit(context, "capture_evidence", "failed", "unsupported_evidence", undefined, evidenceKind)
@@ -281,8 +292,16 @@ export class SolariBrowserSession implements SolariSession {
     return result
   }
 
+  private assertActionDispatch(context: OperationContext): void {
+    const now = readClockMilliseconds(this.clock)
+    // The action was reserved once before inspection. Recheck control without reserving it again.
+    if (now === undefined || admitSessionOperation(context, this.budget, "observation", now).kind !== "allowed") {
+      throw new Error("Solari action admission expired during target inspection")
+    }
+  }
+
   private async failedStep(stepIndex: number, code: SolariFailureCode, effect: PartialEffectPosture, context: OperationContext): Promise<SolariStepResult> {
-    const evidence = await this.captureFailureRecording(context)
+    const evidence = this.captureFailureEvidence(context)
     return {
       kind: "failed",
       failure: {
@@ -295,10 +314,26 @@ export class SolariBrowserSession implements SolariSession {
     }
   }
 
-  private async captureFailureRecording(context: OperationContext): Promise<readonly EvidenceId[]> {
-    if (this.budget.closed || this.recordingEvidenceId !== undefined) return this.recordingEvidenceId === undefined ? [] : [this.recordingEvidenceId]
-    const result = await this.captureEvidenceWithinWorkflow(context)
+  private captureFailureEvidence(context: OperationContext): readonly EvidenceId[] {
+    const result = this.captureSessionReceipt(context)
     return result.kind === "captured" ? [result.reference.evidenceId] : []
+  }
+
+  private captureSessionReceipt(context: OperationContext): SolariEvidenceResult {
+    if (this.sessionReceiptEvidenceId !== undefined) {
+      return { kind: "captured", reference: { evidenceId: this.sessionReceiptEvidenceId, kind: "session_receipt", externalRef: `solari-session:${this.sessionId}` }, effect: { kind: "completed" } }
+    }
+    if (context.budget.maxEvidenceBytes === 0 || this.budget.maxEvidenceBytes === 0) return evidenceFailure("budget_exhausted", false)
+    let evidenceId: EvidenceId
+    try {
+      evidenceId = this.idSource.nextEvidenceId()
+    } catch {
+      return evidenceFailure("id_source_failure", false)
+    }
+    if (typeof evidenceId !== "string" || evidenceId.trim() === "") return evidenceFailure("id_source_failure", false)
+    this.sessionReceiptEvidenceId = evidenceId
+    this.emit(context, "capture_evidence", "completed", undefined, undefined, "session_receipt")
+    return { kind: "captured", reference: { evidenceId, kind: "session_receipt", externalRef: `solari-session:${this.sessionId}` }, effect: { kind: "completed" } }
   }
 
   private beginWorkflow(context: OperationContext, operation: SolariTelemetryOperation, stepType?: ReplayStep["type"], evidenceKind?: EvidenceCaptureRequest["kind"]): WorkflowAdmission {
@@ -403,7 +438,7 @@ function safeStepIndex(stepIndex: number): number {
 function readEvidenceKind(value: unknown): EvidenceCaptureRequest["kind"] | undefined {
   if (value === null || typeof value !== "object") return undefined
   const kind = (value as { readonly kind?: unknown }).kind
-  return kind === "session_recording" || kind === "screenshot" || kind === "snapshot" ? kind : undefined
+  return kind === "session_recording" || kind === "session_receipt" || kind === "screenshot" || kind === "snapshot" ? kind : undefined
 }
 
 function admissionFailureCode(admission: Exclude<WorkflowAdmission, "acquired">): SolariFailureCode {

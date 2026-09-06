@@ -1,7 +1,11 @@
 use worth_query_host::facade::primary_graph;
 
 use super::{decision::VerificationAdmission, Admission};
-use crate::application::{InterfaceCompilerSchema, Replay, ReplayRevision, ReplayVerificationJson};
+use crate::application::{
+    Capability, CapabilityBrokenReplayIdentifier, CapabilityCandidateReplayIdentifier,
+    CapabilityFailureJson, CapabilityRevision, CapabilityStatus, InterfaceCompilerSchema, Replay,
+    ReplayBrokenAt, ReplayFailureJson, ReplayRevision, ReplayStatus, ReplayVerificationJson,
+};
 use crate::host::replay_recovery::{
     denied, recovery_binding, InterfaceCompilerReplayRecoveryOutcome,
     InterfaceCompilerReplayRecoveryStage, RecordReplacementVerificationRequest,
@@ -10,10 +14,13 @@ use crate::host::InterfaceCompilerWorthHost;
 
 type ReplayIdentity =
     primary_graph::WorthQueryApplicationEntityIdentity<InterfaceCompilerSchema, Replay>;
+type CapabilityIdentity =
+    primary_graph::WorthQueryApplicationEntityIdentity<InterfaceCompilerSchema, Capability>;
 
 pub(super) fn commit_verification(
     host: &InterfaceCompilerWorthHost,
     request: &RecordReplacementVerificationRequest,
+    capability: &CapabilityIdentity,
     replay: &ReplayIdentity,
     admission: Admission,
     admitted: VerificationAdmission,
@@ -32,7 +39,7 @@ pub(super) fn commit_verification(
         }
     };
     let mut effects = dependencies.begin_effect_program();
-    let target = match effects.existing_entity(replay) {
+    let replay_target = match effects.existing_entity(replay) {
         Ok(value) => value,
         Err(error) => {
             return denied(
@@ -41,20 +48,90 @@ pub(super) fn commit_verification(
             )
         }
     };
-    if let Err(error) = effects
+    let capability_target = match effects.existing_entity(capability) {
+        Ok(value) => value,
+        Err(error) => {
+            return denied(
+                InterfaceCompilerReplayRecoveryStage::EffectProgram,
+                format!("verification capability target denied: {error:?}"),
+            )
+        }
+    };
+    let writes = effects
         .write_field(
-            &target,
+            &replay_target,
             ReplayRevision::reference(),
             admitted.next_replay_revision,
         )
         .and_then(|_| {
             effects.write_field(
-                &target,
+                &replay_target,
                 ReplayVerificationJson::reference(),
-                admitted.retained_json,
+                admitted.retained_json.clone(),
             )
-        })
-    {
+        });
+    let writes = if let Some(failure) = admitted.failure {
+        writes
+            .and_then(|_| {
+                effects.write_field(
+                    &capability_target,
+                    CapabilityRevision::reference(),
+                    failure.next_capability_revision,
+                )
+            })
+            .and_then(|_| {
+                effects.write_field(
+                    &capability_target,
+                    CapabilityStatus::reference(),
+                    "degraded".to_string(),
+                )
+            })
+            .and_then(|_| {
+                effects.write_optional_field(
+                    &capability_target,
+                    CapabilityCandidateReplayIdentifier::reference(),
+                    None,
+                )
+            })
+            .and_then(|_| {
+                effects.write_optional_field(
+                    &capability_target,
+                    CapabilityBrokenReplayIdentifier::reference(),
+                    Some(request.replay_version_id.clone()),
+                )
+            })
+            .and_then(|_| {
+                effects.write_optional_field(
+                    &capability_target,
+                    CapabilityFailureJson::reference(),
+                    Some(failure.failure_json.clone()),
+                )
+            })
+            .and_then(|_| {
+                effects.write_field(
+                    &replay_target,
+                    ReplayStatus::reference(),
+                    "broken".to_string(),
+                )
+            })
+            .and_then(|_| {
+                effects.write_optional_field(
+                    &replay_target,
+                    ReplayFailureJson::reference(),
+                    Some(failure.failure_json),
+                )
+            })
+            .and_then(|_| {
+                effects.write_optional_field(
+                    &replay_target,
+                    ReplayBrokenAt::reference(),
+                    Some(request.run.completed_at.clone()),
+                )
+            })
+    } else {
+        writes
+    };
+    if let Err(error) = writes {
         return denied(
             InterfaceCompilerReplayRecoveryStage::EffectProgram,
             format!("verification effects denied: {error:?}"),

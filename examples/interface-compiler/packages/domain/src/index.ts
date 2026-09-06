@@ -163,6 +163,6 @@ export type {
   OperationId,
 } from "./identity.js"
 export type { JsonAnySchema, JsonArraySchema, JsonBooleanSchema, JsonIntegerSchema, JsonNullSchema, JsonNumberSchema, JsonObjectSchema, JsonPrimitive, JsonSchema, JsonStringSchema, JsonValue, Schema, Condition } from "./schema.js"
-export { createCondition, createSchema, isCondition, isJsonValue, validateCondition, validateJsonSchema } from "./schema.js"
+export { createCondition, createSchema, isCondition, isJsonValue, matchesJsonSchema, validateCondition, validateJsonSchema } from "./schema.js"
 export type { ValidationIssue, ValidationResult } from "./validation.js"
 export { validateOperationContext } from "./operation-context.js"

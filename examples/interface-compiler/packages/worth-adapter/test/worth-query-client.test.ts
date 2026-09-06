@@ -107,7 +107,7 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
     assert.equal(replay.value.capabilityId, capability.value.id)
     assert.equal(capability.evidence.queryName, "interface_compiler_capability_read")
     assert.equal(replay.evidence.queryName, "interface_compiler_active_replay_read")
-    assert.equal(capability.evidence.projectedFieldCount, 10)
+    assert.equal(capability.evidence.projectedFieldCount, 15)
     assert.equal(replay.evidence.projectedFieldCount, 14)
     assert.equal(capability.evidence.basisReleased, true)
     assert.equal(replay.evidence.basisReleased, true)
@@ -117,7 +117,7 @@ test("compiled-plan adapter reads a healthy capability and its matching active r
 })
 
 test("compiled-plan reads fail closed on a mismatched projection identity", async () => {
-  const reply = JSON.stringify({ outcome: "capability_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_capability", capability: { projection_kind: "worth_capability", id: "capability.foreign", revision: 1, application_id: "application.interface-compiler", name: "foreign", description: "foreign", status: "healthy", active_replay_version_id: "replay.foreign" }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 7, basis_released: true } })
+  const reply = JSON.stringify({ outcome: "capability_found", protocol: "interface-compiler.worth-host.v1", request_id: "interface-compiler-client-1", operation: "read_capability", capability: { projection_kind: "worth_capability", id: "capability.foreign", revision: 1, application_id: "application.interface-compiler", name: "foreign", description: "foreign", input_schema: { type: "object" }, output_schema: { type: "object" }, preconditions: [], postconditions: [], publication: { audience: "gemini_consumer", disclosure: "semantic_only" }, status: "healthy", active_replay_version_id: "replay.foreign" }, evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 12, basis_released: true } })
   const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
   const result = await client.readCapability(capabilityId("capability.expected"), context("operation.client-capability-mismatch"))
   await client.close()
@@ -141,6 +141,50 @@ test("compiled-plan replay does not mint missing fresh-session evidence", async 
   await client.close()
   assert.equal(result.kind, "unavailable")
   if (result.kind === "unavailable") assert.equal(result.reason, "transport_unavailable")
+})
+
+test("compiled-plan replay rejects duplicate verification session and evidence identities", async () => {
+  const verificationRun = {
+    capabilityId: "capability.expected",
+    replayVersionId: "replay.expected",
+    freshSession: true,
+    outcome: "success",
+    completedAt: "2026-08-31T18:00:00.000Z",
+  }
+  const reply = JSON.stringify({
+    outcome: "active_replay_found",
+    protocol: "interface-compiler.worth-host.v1",
+    request_id: "interface-compiler-client-1",
+    operation: "read_active_replay",
+    replay: {
+      projection_kind: "worth_replay",
+      id: "replay.expected",
+      revision: 1,
+      capability_id: "capability.expected",
+      version: 1,
+      steps: [{ type: "wait", milliseconds: 1 }],
+      confidence: 1,
+      status: "active",
+      created_at: "2026-08-31T17:00:00.000Z",
+      discovered_from_experiment_id: "experiment.expected",
+      verified_at: "2026-08-31T18:00:00.000Z",
+      verification: {
+        requiredSuccessfulRuns: 2,
+        runs: [
+          { ...verificationRun, id: "run-1", sessionId: "session-shared", evidenceIds: ["evidence-shared"] },
+          { ...verificationRun, id: "run-2", sessionId: "session-shared", evidenceIds: ["evidence-shared"] },
+        ],
+      },
+    },
+    evidence: { query_name: "q", query_identity: "i", basis_version: 1, projected_record_count: 1, projected_field_count: 14, basis_released: true },
+  })
+  const client = new InterfaceCompilerWorthClient({ process: { command: process.execPath, args: ["-e", `process.stdin.once('data',()=>process.stdout.write(${JSON.stringify(`${reply}\n`)}))`] }, credential: "interface-compiler-demo" })
+
+  const result = await client.readActiveReplay(capabilityId("capability.expected"), context("operation.client-replay-duplicates"))
+  await client.close()
+
+  assert.equal(result.kind, "unavailable")
+  if (result.kind === "unavailable") assert.equal(result.reason, "malformed_response")
 })
 
 test("client preserves WORTH authentication denial as a typed denial", async (testContext) => {
@@ -342,6 +386,12 @@ test("live recovery facade degrades a failed replay and activates a verified exp
   if (degraded.kind !== "applied") throw new Error("expected WORTH degradation")
   assert.equal(degraded.capability.status, "degraded")
   assert.equal(degraded.replay.status, "broken")
+  const degradedPair = await client.readRecoveryProjection(capability, context("operation.recovery-read-degraded"))
+  assert.equal(degradedPair.kind, "found")
+  if (degradedPair.kind !== "found") throw new Error("expected WORTH degraded recovery pair")
+  assert.equal(degradedPair.capability.status, "degraded")
+  assert.equal(degradedPair.replay.status, "broken")
+  assert.equal(degradedPair.capabilityEvidence.basisVersion, degradedPair.replayEvidence.basisVersion)
 
   const candidate: CandidateReplayInput = {
     id: replacement,
@@ -365,17 +415,38 @@ test("live recovery facade degrades a failed replay and activates a verified exp
   if (accepted.kind !== "applied") throw new Error("expected WORTH candidate admission")
   assert.equal(accepted.capability.status, "verifying")
   assert.equal(accepted.replay.status, "verifying")
+  const verifyingPair = await client.readRecoveryProjection(capability, context("operation.recovery-read-verifying"))
+  assert.equal(verifyingPair.kind, "found")
+  if (verifyingPair.kind !== "found") throw new Error("expected WORTH verifying recovery pair")
+  assert.equal(verifyingPair.capability.status, "verifying")
+  assert.equal(verifyingPair.replay.status, "verifying")
+  assert.equal(verifyingPair.capabilityEvidence.basisVersion, verifyingPair.replayEvidence.basisVersion)
   const premature = await client.activateReplacement({ capabilityId: capability, replayVersionId: replacement, expectedCapabilityRevision: accepted.capability.revision, expectedReplayRevision: accepted.replay.revision, verifiedAt: "2026-09-01T12:05:00.000Z" as IsoTimestamp }, context("operation.recovery-premature"))
   assert.equal(premature.kind, "denied")
 
   let current = accepted
   for (const index of [1, 2, 3]) {
+    const sessionId = `solari.session.typescript.${index}` as never
+    const evidenceId = `evidence.typescript.${index}` as never
+    const completedAt = `2026-09-01T12:0${index + 1}:00.000Z` as IsoTimestamp
+    const registered = await client.registerVerificationEvidence({
+      capabilityId: capability,
+      replayVersionId: replacement,
+      expectedCapabilityRevision: current.capability.revision,
+      expectedReplayRevision: current.replay.revision,
+      sessionId,
+      evidence: { evidenceId, kind: "session_receipt", externalRef: `solari-session:${sessionId}` },
+      capturedAt: completedAt,
+    }, context(`operation.recovery-evidence-${index}`))
+    assert.equal(registered.kind, "applied")
+    if (registered.kind !== "applied") throw new Error("expected WORTH verification evidence registration")
+    current = registered
     const recorded = await client.recordReplacementVerification({
       capabilityId: capability,
       replayVersionId: replacement,
       expectedCapabilityRevision: current.capability.revision,
       expectedReplayRevision: current.replay.revision,
-      receipt: { id: `verification.typescript.${index}` as never, sessionId: `solari.session.typescript.${index}` as never, capabilityId: capability, replayVersionId: replacement, sessionFreshness: "fresh", outcome: "success", evidenceIds: [`evidence.typescript.${index}` as never], completedAt: `2026-09-01T12:0${index + 1}:00.000Z` as IsoTimestamp },
+      receipt: { id: `verification.typescript.${index}` as never, sessionId, capabilityId: capability, replayVersionId: replacement, sessionFreshness: "fresh", outcome: "success", evidenceIds: [evidenceId], completedAt },
     }, context(`operation.recovery-verification-${index}`))
     assert.equal(recorded.kind, "applied")
     if (recorded.kind !== "applied") throw new Error("expected WORTH verification retention")
@@ -415,4 +486,40 @@ test("live narrow runtime port admits an arbitrary execution and returns WORTH-p
   assert.equal(settled.kind, "settled")
   if (settled.kind !== "settled") throw new Error("expected settlement")
   assert.deepEqual(settled.projection.metrics, { startedAt, endedAt: "2026-09-01T12:00:02.250Z", wallClockMs: 2250, modelCalls: 1, inputTokens: 13, outputTokens: 5, browserObservations: 1, browserActions: 0, estimatedModelCostMicrocents: 3100000 })
+})
+
+test("runtime settlement preserves a WORTH denial instead of reporting malformed transport", async (testContext) => {
+  const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "interface-compiler-demo" })
+  testContext.after(() => client.close())
+  const execution = executionId("execution.typescript-settlement-denied")
+  const admitted = await client.admitExecution({
+    id: execution,
+    capabilityId: capabilityId("capability.trades.ingest-incoming-trade"),
+    mode: "direct",
+    metrics: { startedAt: "2026-09-01T12:00:00.000Z" as IsoTimestamp, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostMicrocents: 0 },
+  }, context("operation.live-settlement-denied-admit"))
+  if (admitted.kind !== "admitted") throw new Error("expected admission")
+
+  const denied = await client.settleExecution(
+    execution,
+    { kind: "success" },
+    "2026-09-01T11:59:59.000Z" as IsoTimestamp,
+    admitted.projection.revision,
+    context("operation.live-settlement-denied"),
+  )
+
+  assert.equal(denied.kind, "denied")
+  if (denied.kind === "denied") assert.match(denied.message, /endedAt precedes/)
+})
+
+test("runtime admission preserves a WORTH denial as typed authority", async (testContext) => {
+  const client = new InterfaceCompilerWorthClient({ process: liveHostProcess(), credential: "wrong-demo-credential" })
+  testContext.after(() => client.close())
+  const result = await client.admitExecution({
+    id: executionId("execution.typescript-denied"),
+    capabilityId: capabilityId("capability.trades.ingest-incoming-trade"),
+    mode: "direct",
+    metrics: { startedAt: "2026-09-01T12:00:00.000Z" as IsoTimestamp, modelCalls: 0, inputTokens: 0, outputTokens: 0, browserObservations: 0, browserActions: 0, estimatedModelCostMicrocents: 0 },
+  }, context("operation.live-admit-denied"))
+  assert.equal(result.kind, "denied")
 })

@@ -13,20 +13,20 @@ export class ReplayStepExecutionError extends Error {
   }
 }
 
-export async function executeReplayStepOnPage(page: SolariSdkPage, step: ReplayStep, applicationOrigin: string): Promise<ReplayStepValue> {
+export async function executeReplayStepOnPage(page: SolariSdkPage, step: ReplayStep, applicationOrigin: string, assertActionDispatch: () => void): Promise<ReplayStepValue> {
   switch (step.type) {
     case "navigate":
       assertApplicationNavigation(step.url, applicationOrigin)
       await page.goto(step.url)
       return { kind: "none" }
     case "click":
-      await resolveLocator(page, step.target).click()
+      await dispatchLocatedAction(page, step.target, assertActionDispatch, (locator) => locator.click())
       return { kind: "none" }
     case "fill":
-      await resolveLocator(page, step.target).fill(step.value)
+      await dispatchLocatedAction(page, step.target, assertActionDispatch, (locator) => locator.fill(step.value))
       return { kind: "none" }
     case "select":
-      await resolveLocator(page, step.target).selectOption(step.value)
+      await dispatchLocatedAction(page, step.target, assertActionDispatch, (locator) => locator.selectOption(step.value))
       return { kind: "none" }
     case "wait":
       await waitForMilliseconds(step.milliseconds)
@@ -37,6 +37,15 @@ export async function executeReplayStepOnPage(page: SolariSdkPage, step: ReplayS
       // Postcondition semantics belong to the replay engine. The adapter returns the current observation for that owner.
       return { kind: "none" }
   }
+}
+
+async function dispatchLocatedAction(page: SolariSdkPage, target: LocatorTarget, assertActionDispatch: () => void, action: (locator: SolariSdkLocator) => Promise<unknown>): Promise<void> {
+  const locator = resolveLocator(page, target)
+  // Establish absence before dispatch. A click error alone cannot prove that no effect occurred.
+  const matches = await locator.evaluateAll((elements) => elements.length)
+  assertActionDispatch()
+  if (matches === 0) throw new ReplayStepExecutionError("locator_unavailable")
+  await action(locator)
 }
 
 function resolveLocator(page: SolariSdkPage, target: LocatorTarget): SolariSdkLocator {

@@ -28,8 +28,10 @@ pub const COMPLETE_EXECUTION_OPERATION: &str = "complete_execution";
 pub const PUBLISH_DOMAIN_EVENT_OPERATION: &str = "publish_domain_event";
 pub const READ_CAPABILITY_OPERATION: &str = "read_capability";
 pub const READ_ACTIVE_REPLAY_OPERATION: &str = "read_active_replay";
+pub const READ_RECOVERY_PROJECTION_OPERATION: &str = "read_recovery_projection";
 pub const DEGRADE_REPLAY_OPERATION: &str = "degrade_replay";
 pub const ACCEPT_REPLACEMENT_CANDIDATE_OPERATION: &str = "accept_replacement_candidate";
+pub const REGISTER_VERIFICATION_EVIDENCE_OPERATION: &str = "register_verification_evidence";
 pub const RECORD_REPLACEMENT_VERIFICATION_OPERATION: &str = "record_replacement_verification";
 pub const ACTIVATE_REPLACEMENT_OPERATION: &str = "activate_replacement";
 pub const MAX_PROCESS_LINE_BYTES: usize = 64 * 1024;
@@ -55,6 +57,7 @@ pub struct InterfaceCompilerHostRequest {
     pub settlement: Option<serde_json::Value>,
     pub event: Option<serde_json::Value>,
     pub candidate: Option<serde_json::Value>,
+    pub verification_evidence: Option<serde_json::Value>,
     pub verification_run: Option<serde_json::Value>,
     pub verified_at: Option<String>,
 }
@@ -124,6 +127,11 @@ pub struct InterfaceCompilerHostCapability {
     pub application_id: String,
     pub name: String,
     pub description: String,
+    pub input_schema: serde_json::Value,
+    pub output_schema: serde_json::Value,
+    pub preconditions: serde_json::Value,
+    pub postconditions: serde_json::Value,
+    pub publication: serde_json::Value,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_replay_version_id: Option<String>,
@@ -205,7 +213,20 @@ pub struct InterfaceCompilerHostLocator {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InterfaceCompilerHostReplayVerification {
     pub required_successful_runs: u64,
+    #[serde(default, skip_serializing)]
+    pub evidence: Vec<InterfaceCompilerHostVerificationEvidence>,
     pub runs: Vec<InterfaceCompilerHostVerificationRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InterfaceCompilerHostVerificationEvidence {
+    pub evidence_id: String,
+    pub replay_version_id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub external_ref: String,
+    pub captured_at: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -317,6 +338,15 @@ pub enum InterfaceCompilerHostResponse {
         operation: &'static str,
         replay: InterfaceCompilerHostActiveReplay,
         evidence: InterfaceCompilerHostQueryEvidence,
+    },
+    RecoveryProjectionFound {
+        protocol: &'static str,
+        request_id: String,
+        operation: &'static str,
+        capability: InterfaceCompilerHostCapability,
+        replay: InterfaceCompilerHostActiveReplay,
+        capability_evidence: InterfaceCompilerHostQueryEvidence,
+        replay_evidence: InterfaceCompilerHostQueryEvidence,
     },
     ReplayRecoveryApplied {
         protocol: &'static str,
@@ -431,6 +461,7 @@ pub fn handle_request(
     }
     if request.operation == READ_CAPABILITY_OPERATION
         || request.operation == READ_ACTIVE_REPLAY_OPERATION
+        || request.operation == READ_RECOVERY_PROJECTION_OPERATION
     {
         return compiled_plan_read::handle_compiled_plan_read(request_id, request, host);
     }
@@ -438,6 +469,7 @@ pub fn handle_request(
         request.operation.as_str(),
         DEGRADE_REPLAY_OPERATION
             | ACCEPT_REPLACEMENT_CANDIDATE_OPERATION
+            | REGISTER_VERIFICATION_EVIDENCE_OPERATION
             | RECORD_REPLACEMENT_VERIFICATION_OPERATION
             | ACTIVATE_REPLACEMENT_OPERATION
     ) {

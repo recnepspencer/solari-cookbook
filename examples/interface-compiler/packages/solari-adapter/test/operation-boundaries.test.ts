@@ -4,6 +4,7 @@ import { context, createWorld, delayed, executeStepAt, TestCancellation, session
 
 test("cancellation during a pending browser action returns unknown effect posture and closes the session", async () => {
   const world = createWorld()
+  world.browser.page.addElement({ tagName: "button", textContent: "Add to cart" })
   const cancellation = new TestCancellation()
   const operationContext = context(world.clock, cancellation)
   const created = await world.port.createSession(sessionRequest(), operationContext)
@@ -33,6 +34,7 @@ test("cancellation during a pending browser action returns unknown effect postur
 
 test("deadline during a pending browser action returns unknown effect posture and closes the session", async () => {
   const world = createWorld()
+  world.browser.page.addElement({ tagName: "button", textContent: "Add to cart" })
   const operationContext = context(world.clock, new TestCancellation(), {}, 20)
   const created = await world.port.createSession(sessionRequest(), operationContext)
   assert.equal(created.kind, "created")
@@ -57,8 +59,37 @@ test("deadline during a pending browser action returns unknown effect posture an
   pendingClick.resolve()
 })
 
+for (const interruption of ["cancelled", "timed_out"] as const) test(`${interruption} during target inspection cannot dispatch a late click`, async () => {
+  const world = createWorld()
+  world.browser.page.addElement({ tagName: "button", textContent: "Add to cart" })
+  const cancellation = new TestCancellation()
+  const operationContext = context(world.clock, cancellation)
+  const created = await world.port.createSession(sessionRequest(), operationContext)
+  assert.equal(created.kind, "created")
+  if (created.kind !== "created") throw new Error("expected a session")
+  const inspected = delayed<void>()
+  const releaseInspection = delayed<void>()
+  const locator = world.browser.page.locatorValue
+  locator.evaluateAll = async (evaluate) => {
+    inspected.resolve()
+    await releaseInspection.promise
+    return evaluate(locator.elements)
+  }
+  const pending = executeStepAt(created.lease.session, 0, { type: "click", target: { semanticDescription: "Add to cart", role: "button" } }, operationContext)
+  await inspected.promise
+  if (interruption === "cancelled") cancellation.cancel()
+  else world.clock.currentMs = Date.parse(operationContext.deadlineAt) + 1
+  releaseInspection.resolve()
+  const result = await pending
+  assert.notEqual(result.kind, "completed")
+  await new Promise<void>((resolve) => setImmediate(resolve))
+  assert.equal(locator.clickCalls, 0)
+  await created.lease.release(operationContext)
+})
+
 test("browser-action budget denial occurs before the second SDK action", async () => {
   const world = createWorld()
+  world.browser.page.addElement({ tagName: "button", textContent: "Add to cart" })
   const operationContext = context(world.clock, new TestCancellation(), { maxBrowserActions: 1 })
   const created = await world.port.createSession(sessionRequest(), operationContext)
   assert.equal(created.kind, "created")
@@ -80,6 +111,9 @@ test("browser-action budget denial occurs before the second SDK action", async (
   assert.equal(second.failure.message, "Solari resource budget is exhausted")
   assert.equal(second.failure.stepIndex, 1)
   assert.equal(world.browser.page.locatorValue.clickCalls, 1)
+  assert.equal(world.browser.closeCalls, 0)
+  assert.equal(world.client.closeCalls, 0)
+  await created.lease.release(operationContext)
   assert.equal(world.browser.closeCalls, 1)
   assert.equal(world.client.closeCalls, 1)
 })

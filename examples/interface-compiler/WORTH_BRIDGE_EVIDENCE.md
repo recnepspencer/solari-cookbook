@@ -18,19 +18,26 @@ typed recovery operations needed by this demo. The TypeScript adapter owns
 process transport and request correlation only; it has no replay reducer,
 ledger, or local fallback.
 
-The seeded replay is `replay.trades.ingest-incoming-trade.v1`. It deliberately
+The semantic capability executor reads the full contract and seeded replay
+`replay.trades.ingest-incoming-trade.v1` from WORTH. The replay deliberately
 clicks the removed **Open attachment** control and fails. WORTH then records
-the degradation. A supplied v2 replay delivers the fixed trade email, posts it
-to Financials, and verifies `POSTED FT-1042` in three fresh Solari sessions.
-Only after those receipts does WORTH activate v2 under the unchanged capability
-identity `capability.trades.ingest-incoming-trade`.
+the degradation only after the orchestrator diagnoses confirmed UI drift.
+Gemini 3.7 Flash then explores the changed UI through Solari. Candidate v2 is
+compiled from the semantic actions that completed during that WORTH-admitted
+execution; model-proposed selectors and unexecuted actions cannot enter it.
+WORTH admits the candidate and retains three fresh-session receipts that verify
+`POSTED FT-1042`. Only after those receipts does WORTH activate v2 under the
+unchanged capability identity `capability.trades.ingest-incoming-trade`.
 
 ## Evidence paths
 
-- [Typed public contract](apps/orchestrator/src/enron-online/contracts.ts)
+- [Generic semantic capability executor](apps/orchestrator/src/semantic-capability-executor.ts)
+- [Enron capability binding](apps/orchestrator/src/enron-online/capability.ts)
 - [Semantic tool publication](apps/orchestrator/src/enron-online/tool-publication.ts)
-- [Deterministic ingestion and idempotency](apps/orchestrator/src/enron-online/ingestion.ts)
+- [Typed receipt verifier](apps/orchestrator/src/enron-online/outcome-verifier.ts)
 - [Live recovery scenario](apps/orchestrator/test/live/enron-recovery.ts)
+- [Gemini-to-replay compiler](apps/orchestrator/src/replay-discovery.ts)
+- [Failure diagnosis gate](apps/orchestrator/src/failure-diagnosis.ts)
 - [WORTH host seed and recovery API](worth-runtime-host/src/host.rs)
 - [Narrow WORTH fixture](worth-runtime-host/src/host/demo_fixture.rs)
 
@@ -41,9 +48,11 @@ duplicate verification sessions, and insufficient fresh-session verification.
 
 ## Limits kept explicit
 
-The WORTH graph and portal state are intentionally in memory for the demo.
-The initial replay and candidate are supplied fixtures, not discovered from a
-production UI. Solari evidence establishes browser execution; WORTH retains
-the lifecycle decisions and verification receipts. The generic benchmark
-library remains an independent package, but it is not a demo workflow or
-portal surface.
+The WORTH graph and portal state are intentionally in memory for the demo, and
+the initial broken replay is a seeded fixture. Candidate v2 is discovered live;
+if any candidate fails verification, WORTH records the failed receipt, breaks
+that candidate, and permits another discovery cycle until cancellation or the
+operation deadline. Solari evidence establishes browser execution; WORTH
+retains lifecycle decisions and verification receipts. The
+generic benchmark library remains an independent package, but it is not a demo
+workflow or portal surface.

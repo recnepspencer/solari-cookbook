@@ -88,8 +88,105 @@ pub enum InterfaceCompilerReplayReadOutcome {
         denial: InterfaceCompilerCompiledReadDenial,
     },
 }
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum InterfaceCompilerRecoveryProjectionReadOutcome {
+    Found {
+        capability: InterfaceCompilerCapabilityProjection,
+        capability_evidence: InterfaceCompilerApplicationReadEvidence,
+        replay: InterfaceCompilerActiveReplayProjection,
+        replay_evidence: InterfaceCompilerApplicationReadEvidence,
+    },
+    NotFound {
+        capability_id: String,
+    },
+    Denied {
+        capability_id: String,
+        denial: InterfaceCompilerCompiledReadDenial,
+    },
+}
 
 impl InterfaceCompilerWorthHost {
+    pub fn read_recovery_projection(
+        &self,
+        capability_request: InterfaceCompilerCompiledReadRequest,
+    ) -> InterfaceCompilerRecoveryProjectionReadOutcome {
+        let started_at = Instant::now();
+        let capability_id = capability_request.capability_id.clone();
+        let capability = match self.read_capability(capability_request.clone()) {
+            InterfaceCompilerCapabilityReadOutcome::Found {
+                projection,
+                evidence,
+            } => (projection, evidence),
+            InterfaceCompilerCapabilityReadOutcome::NotFound { capability_id } => {
+                return InterfaceCompilerRecoveryProjectionReadOutcome::NotFound { capability_id }
+            }
+            InterfaceCompilerCapabilityReadOutcome::Denied {
+                capability_id,
+                denial,
+            } => {
+                return InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+                    capability_id,
+                    denial,
+                }
+            }
+        };
+        let Some(remaining) = capability_request.timeout.checked_sub(started_at.elapsed()) else {
+            return InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+                capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::QueryAdmission(
+                    "recovery_projection_deadline_elapsed".to_string(),
+                ),
+            };
+        };
+        let Some(replay_id) = recovery_replay_id(&capability.0).map(str::to_owned) else {
+            return InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+                capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::Projection(
+                    "recovery_projection_lifecycle_pointer_missing".to_string(),
+                ),
+            };
+        };
+        let replay = match self.read_replay(InterfaceCompilerReplayReadRequest {
+            capability_id: capability_id.clone(),
+            replay_id,
+            credential: capability_request.credential,
+            timeout: remaining,
+        }) {
+            InterfaceCompilerReplayReadOutcome::Found {
+                projection,
+                evidence,
+            } => (projection, evidence),
+            InterfaceCompilerReplayReadOutcome::NotFound { .. } => {
+                return InterfaceCompilerRecoveryProjectionReadOutcome::NotFound { capability_id }
+            }
+            InterfaceCompilerReplayReadOutcome::Denied { denial, .. } => {
+                return InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+                    capability_id,
+                    denial,
+                }
+            }
+        };
+        if !recovery_projection_pair_is_consistent(
+            &capability.0,
+            &capability.1,
+            &replay.0,
+            &replay.1,
+        ) {
+            return InterfaceCompilerRecoveryProjectionReadOutcome::Denied {
+                capability_id,
+                denial: InterfaceCompilerCompiledReadDenial::Projection(
+                    "recovery_projection_pair_inconsistent".to_string(),
+                ),
+            };
+        }
+        InterfaceCompilerRecoveryProjectionReadOutcome::Found {
+            capability: capability.0,
+            capability_evidence: capability.1,
+            replay: replay.0,
+            replay_evidence: replay.1,
+        }
+    }
+
     pub fn read_capability(
         &self,
         request: InterfaceCompilerCompiledReadRequest,
@@ -452,6 +549,32 @@ impl InterfaceCompilerWorthHost {
             projection,
             evidence: receipt_evidence(ACTIVE_REPLAY_READ_QUERY_NAME, &result),
         }
+    }
+}
+
+pub(super) fn recovery_projection_pair_is_consistent(
+    capability: &InterfaceCompilerCapabilityProjection,
+    capability_evidence: &InterfaceCompilerApplicationReadEvidence,
+    replay: &InterfaceCompilerActiveReplayProjection,
+    replay_evidence: &InterfaceCompilerApplicationReadEvidence,
+) -> bool {
+    replay.capability_id == capability.id
+        && recovery_replay_id(capability) == Some(replay.id.as_str())
+        && match capability.status.as_str() {
+            "degraded" => replay.status == "broken",
+            "verifying" => replay.status == "verifying",
+            "healthy" => replay.status == "active",
+            _ => false,
+        }
+        && capability_evidence.basis_version == replay_evidence.basis_version
+}
+
+fn recovery_replay_id(capability: &InterfaceCompilerCapabilityProjection) -> Option<&str> {
+    match capability.status.as_str() {
+        "degraded" => capability.broken_replay_id.as_deref(),
+        "verifying" => capability.candidate_replay_id.as_deref(),
+        "healthy" => capability.active_replay_id.as_deref(),
+        _ => None,
     }
 }
 

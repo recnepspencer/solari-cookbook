@@ -16,6 +16,7 @@ use crate::application::{
 mod activation;
 mod candidate;
 mod degradation;
+mod evidence;
 mod validation;
 mod verification;
 
@@ -148,7 +149,31 @@ pub struct InterfaceCompilerReplacementVerificationRun {
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct InterfaceCompilerReplacementVerification {
     pub required_successful_runs: u64,
+    #[serde(default)]
+    pub evidence: Vec<InterfaceCompilerVerificationEvidence>,
     pub runs: Vec<InterfaceCompilerReplacementVerificationRun>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct InterfaceCompilerVerificationEvidence {
+    pub evidence_id: String,
+    pub replay_version_id: String,
+    pub session_id: String,
+    pub kind: String,
+    pub external_ref: String,
+    pub captured_at: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct RegisterVerificationEvidenceRequest {
+    pub capability_id: String,
+    pub replay_version_id: String,
+    pub expected_capability_revision: u64,
+    pub expected_replay_revision: u64,
+    pub evidence: InterfaceCompilerVerificationEvidence,
+    pub credential: String,
+    pub timeout: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -263,16 +288,23 @@ impl InterfaceCompilerWorthHost {
         timeout: Duration,
         commit: InterfaceCompilerExecutionCommitKind,
     ) -> InterfaceCompilerReplayRecoveryOutcome {
+        let started_at = std::time::Instant::now();
         let capability = self.read_capability(super::InterfaceCompilerCompiledReadRequest::new(
             capability_id,
             credential,
             timeout,
         ));
+        let Some(remaining) = timeout.checked_sub(started_at.elapsed()) else {
+            return InterfaceCompilerReplayRecoveryOutcome::CommittedProjectionUnavailable {
+                commit,
+                detail: "WORTH committed recovery but projection deadline elapsed".to_string(),
+            };
+        };
         let replay = self.read_replay(super::InterfaceCompilerReplayReadRequest {
             capability_id: capability_id.to_string(),
             replay_id: replay_id.to_string(),
             credential: credential.to_string(),
-            timeout,
+            timeout: remaining,
         });
         match (capability, replay) {
             (
@@ -284,6 +316,11 @@ impl InterfaceCompilerWorthHost {
                     projection: replay,
                     evidence: replay_evidence,
                 },
+            ) if super::compiled_plan_read::recovery_projection_pair_is_consistent(
+                &capability,
+                &capability_evidence,
+                &replay,
+                &replay_evidence,
             ) => InterfaceCompilerReplayRecoveryOutcome::Applied {
                 commit,
                 capability,

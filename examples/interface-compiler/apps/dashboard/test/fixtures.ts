@@ -55,6 +55,7 @@ export function fixtureProjection(): WorthDashboardProjection {
           applicationId: applicationId("app-shop"),
           name: "Search products",
           description: "Find products by a natural-language query.",
+          ...capabilityProjectionContract(),
           status: "healthy",
           activeReplayVersionId: activeReplayId,
         },
@@ -68,6 +69,7 @@ export function fixtureProjection(): WorthDashboardProjection {
           applicationId: applicationId("app-shop"),
           name: "Begin checkout",
           description: "Start checkout after cart validation.",
+          ...capabilityProjectionContract(),
           status: "verifying",
           candidateReplayVersionId: verifyingReplayId,
         },
@@ -81,6 +83,7 @@ export function fixtureProjection(): WorthDashboardProjection {
           applicationId: applicationId("app-shop"),
           name: "Add to cart <script>",
           description: "The previous replay failed during a cart update.",
+          ...capabilityProjectionContract(),
           status: "degraded",
           brokenReplayVersionId: brokenReplayId,
           failure: { kind: "step_failed", stepIndex: 2, message: "Cart control was not found", evidenceIds: [evidenceId("e-failure")] },
@@ -95,6 +98,7 @@ export function fixtureProjection(): WorthDashboardProjection {
           applicationId: applicationId("app-shop"),
           name: "Account overview",
           description: "Discovery has not produced a candidate replay yet.",
+          ...capabilityProjectionContract(),
           status: "discovering",
           discovery: { kind: "initial" },
         },
@@ -153,6 +157,16 @@ export function fixtureProjection(): WorthDashboardProjection {
       },
       { capabilityId: degradedCapabilityId, kind: "missing", reason: "no_measured_runs", measuredExecutionIds: [] },
     ],
+  }
+}
+
+function capabilityProjectionContract() {
+  return {
+    inputSchema: { type: "object", additionalProperties: true } as const,
+    outputSchema: { type: "object", additionalProperties: true } as const,
+    preconditions: [] as const,
+    postconditions: [] as const,
+    publication: { audience: "gemini_consumer", disclosure: "semantic_only" } as const,
   }
 }
 

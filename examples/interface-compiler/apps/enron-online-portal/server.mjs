@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { createReadStream, existsSync, statSync } from "node:fs"
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs"
 import { createServer } from "node:http"
 import { extname, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL(".", import.meta.url))
 const port = Number(process.env.ENRON_ONLINE_PORT || 4310)
 const host = process.env.ENRON_ONLINE_HOST === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1"
 const release = process.env.ENRON_ONLINE_RELEASE === "v2" ? "v2" : "v1"
+const indexTemplate = readFileSync(resolve(root, "index.html"), "utf8")
 
 const fixture = Object.freeze({
   id: "msg.enron-mailroom.2026-10-1042",
@@ -89,5 +90,10 @@ createServer((request, response) => {
   }
   const contentType = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8" }[extname(target)] || "application/octet-stream"
   response.writeHead(200, { "content-type": contentType, "cache-control": "no-store" })
+  if (extname(target) === ".html") {
+    const initialState = JSON.stringify(state()).replaceAll("<", "\\u003c")
+    response.end(indexTemplate.replace("__ENRON_INITIAL_STATE__", initialState))
+    return
+  }
   createReadStream(target).pipe(response)
 }).listen(port, host, () => console.log(`Solari UI API Builder demo: http://${host}:${port}`))

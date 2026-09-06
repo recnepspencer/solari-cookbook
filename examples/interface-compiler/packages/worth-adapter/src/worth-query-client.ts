@@ -23,8 +23,10 @@ import {
   INTERFACE_COMPILER_WORTH_PUBLISH_DOMAIN_EVENT_OPERATION,
   INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION,
   INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION,
+  INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION,
   INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION,
   INTERFACE_COMPILER_WORTH_ACCEPT_REPLACEMENT_CANDIDATE_OPERATION,
+  INTERFACE_COMPILER_WORTH_REGISTER_VERIFICATION_EVIDENCE_OPERATION,
   INTERFACE_COMPILER_WORTH_RECORD_REPLACEMENT_VERIFICATION_OPERATION,
   INTERFACE_COMPILER_WORTH_ACTIVATE_REPLACEMENT_OPERATION,
   parseHostResponse,
@@ -41,17 +43,21 @@ import type { WorthExecutionSettlementPort, WorthExecutionSettlementResult } fro
 import type { WorthExecutionAdmissionResult, WorthExecutionRuntimePort, WorthRuntimeSettlementResult } from "./execution-runtime.js"
 import { mapAdmissionResponse, mapRuntimeSettlementResponse } from "./execution-runtime-response.js"
 import type { WorthApplicationReadAdapter, WorthApplicationReadResult } from "./worth-application-read.js"
-import { mapCompiledCapability, mapCompiledReplay, type CompiledPlanReadPort, type CompiledPlanReadResult } from "./compiled-plan-read.js"
+import { mapCompiledCapability, mapCompiledReplay, mapHostEvidence, type CompiledPlanReadPort, type CompiledPlanReadResult } from "./compiled-plan-read.js"
+import { decodeCapabilityProjection, decodeReplayProjection } from "./projection-decoding.js"
 import {
   mapReplayRecoveryResponse,
+  recoveryPairMatches,
   type ReplayDegradationRequest,
   type ReplayRecoveryPort,
   type ReplayRecoveryResult,
+  type ReplayRecoveryProjectionResult,
   type ReplacementActivationRequest,
   type ReplacementCandidateRequest,
+  type VerificationEvidenceRegistrationRequest,
   type ReplacementVerificationRequest,
 } from "./replay-recovery.js"
-export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_ACCEPT_REPLACEMENT_CANDIDATE_OPERATION, INTERFACE_COMPILER_WORTH_RECORD_REPLACEMENT_VERIFICATION_OPERATION, INTERFACE_COMPILER_WORTH_ACTIVATE_REPLACEMENT_OPERATION } from "./worth-query-wire.js"
+export { INTERFACE_COMPILER_WORTH_PROTOCOL, INTERFACE_COMPILER_WORTH_READ_OPERATION, INTERFACE_COMPILER_WORTH_START_EXECUTION_OPERATION, INTERFACE_COMPILER_WORTH_READ_CAPABILITY_OPERATION, INTERFACE_COMPILER_WORTH_READ_ACTIVE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION, INTERFACE_COMPILER_WORTH_DEGRADE_REPLAY_OPERATION, INTERFACE_COMPILER_WORTH_ACCEPT_REPLACEMENT_CANDIDATE_OPERATION, INTERFACE_COMPILER_WORTH_REGISTER_VERIFICATION_EVIDENCE_OPERATION, INTERFACE_COMPILER_WORTH_RECORD_REPLACEMENT_VERIFICATION_OPERATION, INTERFACE_COMPILER_WORTH_ACTIVATE_REPLACEMENT_OPERATION } from "./worth-query-wire.js"
 
 const MAX_WORTH_REQUEST_MS = 60_000
 
@@ -256,6 +262,47 @@ export class InterfaceCompilerWorthClient implements WorthApplicationReadAdapter
         ...(request.receipt.outcome === "failure" ? { failureMessage: request.receipt.failureMessage } : {}),
         evidenceIds: request.receipt.evidenceIds,
         completedAt: request.receipt.completedAt,
+      },
+      credential: this.credential,
+      deadline_ms: deadlineMs,
+    }))
+  }
+
+  public async readRecoveryProjection(capabilityId: CapabilityId, context: OperationContext): Promise<ReplayRecoveryProjectionResult> {
+    const budget = this.remainingRequestBudget(context)
+    if (budget.kind === "cancelled" || budget.kind === "timed_out") return { kind: budget.kind, operationId: context.operationId, posture: { kind: "not_started" } }
+    if (budget.kind === "invalid") return { kind: "denied", message: budget.message }
+    const response = await this.send({ protocol: INTERFACE_COMPILER_WORTH_PROTOCOL, request_id: this.nextRequestId(), operation: INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION, capability_id: capabilityId, credential: this.credential, deadline_ms: budget.milliseconds }, context, budget.milliseconds)
+    if (response === "cancelled" || response === "timed_out") return { kind: response, operationId: context.operationId, posture: unknownReadPosture() }
+    if (response === undefined) return { kind: "unavailable", reason: "transport_unavailable", message: this.processFailure ?? "the WORTH host process is unavailable" }
+    if (response.outcome === "compiled_read_not_found" && response.operation === INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION && response.capability_id === capabilityId) return { kind: "not_found", capabilityId }
+    if (response.outcome === "compiled_read_denied" && response.operation === INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION && response.capability_id === capabilityId) return { kind: "denied", message: response.message }
+    if (response.outcome === "unavailable" && response.operation === INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION) return { kind: "unavailable", reason: response.reason, message: response.message }
+    if (response.outcome !== "recovery_projection_found" || response.operation !== INTERFACE_COMPILER_WORTH_READ_RECOVERY_PROJECTION_OPERATION) return { kind: "unavailable", reason: "malformed_response", message: "the WORTH host returned a mismatched recovery projection" }
+    const capability = decodeCapabilityProjection(response.capability, capabilityId)
+    const replay = decodeReplayProjection(response.replay, capabilityId)
+    const capabilityEvidence = mapHostEvidence(response.capability_evidence)
+    const replayEvidence = mapHostEvidence(response.replay_evidence)
+    if (capability === undefined || replay === undefined || !recoveryPairMatches(capability, replay) || capabilityEvidence.basisVersion !== replayEvidence.basisVersion) return { kind: "unavailable", reason: "malformed_response", message: "the WORTH host returned an inconsistent recovery projection" }
+    return { kind: "found", capability, replay, capabilityEvidence, replayEvidence }
+  }
+
+  public registerVerificationEvidence(request: VerificationEvidenceRegistrationRequest, context: OperationContext): Promise<ReplayRecoveryResult> {
+    return this.recover(INTERFACE_COMPILER_WORTH_REGISTER_VERIFICATION_EVIDENCE_OPERATION, request.capabilityId, request.replayVersionId, context, (requestId, deadlineMs) => ({
+      protocol: INTERFACE_COMPILER_WORTH_PROTOCOL,
+      request_id: requestId,
+      operation: INTERFACE_COMPILER_WORTH_REGISTER_VERIFICATION_EVIDENCE_OPERATION,
+      capability_id: request.capabilityId,
+      replay_version_id: request.replayVersionId,
+      expected_capability_revision: request.expectedCapabilityRevision,
+      expected_replay_revision: request.expectedReplayRevision,
+      verification_evidence: {
+        evidenceId: request.evidence.evidenceId,
+        replayVersionId: request.replayVersionId,
+        sessionId: request.sessionId,
+        kind: request.evidence.kind,
+        externalRef: request.evidence.externalRef,
+        capturedAt: request.capturedAt,
       },
       credential: this.credential,
       deadline_ms: deadlineMs,

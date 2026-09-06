@@ -52,6 +52,10 @@ services:
     env_file:
       - path: .env
         required: false
+    # Quick-tunnel hostnames are created seconds before this container starts;
+    # bypass Docker's negative DNS cache so the live runner can resolve them.
+    dns:
+      - 1.1.1.1
     volumes:
       - cargo-registry:/root/.cargo/registry
       - worth-runtime-target:/workspace/worth-runtime-host/target

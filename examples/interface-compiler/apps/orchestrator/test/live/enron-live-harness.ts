@@ -7,26 +7,35 @@ import {
   type IdSource,
   type OperationContext,
   type OperationId,
+  type ReasoningModel,
   type SolariPort,
 } from "@interface-compiler/domain"
+import { createGeminiReasoningModelFromEnvironment } from "@interface-compiler/gemini-adapter"
 import { createSolariPortFromEnv } from "@interface-compiler/solari-adapter"
 import { InterfaceCompilerWorthClient } from "@interface-compiler/worth-adapter"
-import { createOperationController, type OperationController, type SemanticVerificationRequest, type SemanticVerificationResult, type SemanticVerifier } from "../../src/index.js"
+import { createEnronOutcomeVerifier, createOperationController, type CandidateVerificationEnvironment, type IngestIncomingTradeReceipt, type OperationController, type SemanticVerifier } from "../../src/index.js"
 import { ENRON_ONLINE_APPLICATION_ID, ENRON_ONLINE_BASE_URL } from "../../src/enron-online/contracts.js"
 
 const DEFAULT_TIMEOUT_MS = "30000"
 const DEMO_CREDENTIAL = "interface-compiler-demo"
+// Gemini 3.7 Flash introductory paid-tier pricing through 2026-12-31:
+// https://ai.google.dev/gemini-api/docs/pricing
+const GEMINI_37_FLASH_PRICING = Object.freeze({ inputMicrocentsPerToken: 75, outputMicrocentsPerToken: 375 })
 
 export interface EnronLiveHarness {
   readonly application: Application
   readonly clock: Clock
   readonly ids: IdSource
   readonly solari: SolariPort
+  readonly model: ReasoningModel
   readonly verifier: SemanticVerifier
   readonly worth: InterfaceCompilerWorthClient
+  readonly verificationEnvironment: CandidateVerificationEnvironment
   context(label: string, budget?: { readonly maxModelCalls?: number; readonly maxBrowserActions?: number }): OperationContext
   controller(label: string, budget?: { readonly maxModelCalls?: number; readonly maxBrowserActions?: number }): OperationController
   resetPortal(): Promise<void>
+  deliverPortal(): Promise<void>
+  readPortalReceipts(): Promise<readonly IngestIncomingTradeReceipt[]>
   close(): Promise<void>
 }
 
@@ -45,8 +54,12 @@ export function createEnronLiveHarness(repositoryRoot = process.cwd()): EnronLiv
   const ids = createLiveIds()
   const applicationResult = createApplication({ id: ENRON_ONLINE_APPLICATION_ID, name: "Enron Online", baseUrl: ENRON_ONLINE_BASE_URL })
   if (!applicationResult.ok) throw new Error("unable to construct the Enron Online demo application")
-  const configuredSolari = createSolariPortFromEnv({ clock, idSource: ids })
+  const configuredSolari = createSolariPortFromEnv({ clock, idSource: ids, telemetry: { emit: (event) => {
+    if (event.outcome !== "completed") console.error(`[Solari] ${JSON.stringify(event)}`)
+  } } })
   if (configuredSolari.kind !== "configured") throw new Error(`Solari configuration is unavailable: ${configuredSolari.kind}`)
+  const configuredGemini = createGeminiReasoningModelFromEnvironment({ pricing: GEMINI_37_FLASH_PRICING, clock })
+  if (configuredGemini.kind !== "created") throw new Error(`Gemini configuration is unavailable: ${configuredGemini.kind}`)
   const worth = new InterfaceCompilerWorthClient({
     process: hostCommand(repositoryRoot),
     credential: process.env.WORTH_DEMO_CREDENTIAL?.trim() || DEMO_CREDENTIAL,
@@ -76,7 +89,29 @@ export function createEnronLiveHarness(repositoryRoot = process.cwd()): EnronLiv
     const response = await fetch(`${applicationResult.value.baseUrl}/api/reset`, { method: "POST" })
     if (!response.ok) throw new Error(`could not reset the in-memory Enron portal (${response.status})`)
   }
-  return Object.freeze({ application: applicationResult.value, clock, ids, solari: configuredSolari.port, verifier: semanticVerifier(), worth, context, controller, resetPortal, close: () => worth.close() })
+  const deliverPortal = async (): Promise<void> => {
+    const response = await fetch(`${applicationResult.value.baseUrl}/api/deliver`, { method: "POST" })
+    if (!response.ok) throw new Error(`could not deliver the demo trade (${response.status})`)
+  }
+  const readPortalReceipts = async (): Promise<readonly IngestIncomingTradeReceipt[]> => {
+    const response = await fetch(`${applicationResult.value.baseUrl}/api/state`)
+    if (!response.ok) throw new Error(`could not read the in-memory Enron portal (${response.status})`)
+    const state = await response.json() as { readonly receipts?: readonly IngestIncomingTradeReceipt[] }
+    if (!Array.isArray(state.receipts)) throw new Error("the Enron portal returned malformed Financials state")
+    return state.receipts
+  }
+  const verificationEnvironment: CandidateVerificationEnvironment = Object.freeze({
+    prepareFreshRun: async () => {
+      try {
+        await resetPortal()
+        await deliverPortal()
+        return { kind: "ready" as const }
+      } catch (error) {
+        return { kind: "blocked" as const, message: error instanceof Error ? error.message : String(error) }
+      }
+    },
+  })
+  return Object.freeze({ application: applicationResult.value, clock, ids, solari: configuredSolari.port, model: configuredGemini.model, verifier: createEnronOutcomeVerifier({ readReceipts: () => readPortalReceipts() }), worth, verificationEnvironment, context, controller, resetPortal, deliverPortal, readPortalReceipts, close: () => worth.close() })
 }
 
 function hostCommand(repositoryRoot: string): { readonly command: string; readonly args: readonly string[]; readonly cwd: string } {
@@ -102,21 +137,5 @@ function createLiveIds(): IdSource {
     nextObservationId: () => next("observation"),
     nextVerificationRunId: () => next("verification"),
     nextOperationId: () => next("operation"),
-  })
-}
-
-function semanticVerifier(): SemanticVerifier {
-  return Object.freeze({
-    async verify(request: SemanticVerificationRequest): Promise<SemanticVerificationResult> {
-      const condition = request.conditions[0]
-      if (condition === undefined) throw new Error("live semantic verification requires a postcondition")
-      if (condition.kind !== "text_present") return { kind: "failed", condition, message: `live harness does not support ${condition.kind} verification`, retryable: false, evidenceIds: [], effect: { kind: "completed" } }
-      const observedText = request.observation === undefined
-        ? ""
-        : [request.observation.pageSummary, ...request.observation.interactables.flatMap((item) => [item.text, item.name])].filter((value): value is string => typeof value === "string").join("\n")
-      return observedText.includes(condition.text)
-        ? { kind: "verified", effect: { kind: "completed" } }
-        : { kind: "failed", condition, message: `visible business postcondition was not present: ${condition.text}`, retryable: false, evidenceIds: [], effect: { kind: "completed" } }
-    },
   })
 }

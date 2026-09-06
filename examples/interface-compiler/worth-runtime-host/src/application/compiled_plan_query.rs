@@ -19,6 +19,11 @@ pub fn capability_read_query_definition(
     .field(capability_application_id_result())
     .field(capability_name_result())
     .field(capability_description_result())
+    .field(capability_input_schema_json_result())
+    .field(capability_output_schema_json_result())
+    .field(capability_preconditions_json_result())
+    .field(capability_postconditions_json_result())
+    .field(capability_publication_json_result())
     .field(capability_status_result())
     .field(capability_active_replay_id_result())
     .optional_field(capability_candidate_replay_id_result())
@@ -33,7 +38,7 @@ pub fn capability_read_query_definition(
     .result_shape(shape)
     .cardinality(declaration::application_query::ApplicationQueryCardinality::ExactlyOne)
     .dependency_ceiling(
-        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 10),
+        declaration::application_query::ApplicationQueryDependencyCeiling::bounded(0, 0, 15),
     )
     .disclosure(declaration::application_query::ApplicationQueryDisclosureContract::public())
     .basis_support(
